@@ -1,8 +1,7 @@
 using System.IO;
 using System.Globalization;
-using System.Net;
-using System.Text;
 using System.Printing;
+using System.Runtime.InteropServices;
 using System.Text.Json;
 using System.Windows;
 using System.Windows.Controls;
@@ -17,8 +16,7 @@ namespace PdfMergeTool;
 
 public partial class MainWindow : Window
 {
-    private const string PdfContentHost = "pdfviewer.local";
-    private const string PdfContentPath = "/pdf/current.pdf";
+    private const string ViewerHost = "pdfviewer.local";
     private const int A4ImageMaxWidthPixels = 2480;
     private const int A4ImageMaxHeightPixels = 3508;
     private const int A4OptimizedMaxWidthPixels = 2200;
@@ -49,8 +47,8 @@ public partial class MainWindow : Window
     private readonly List<ExportedA4Page> _a4ExportedPages = [];
     private int _a4ExportExpectedPages;
     private readonly List<NativeFileDropTarget> _viewerDropTargets = [];
-    private string? _servedPdfPath;
-    private string _servedPdfToken = Guid.NewGuid().ToString("N");
+    private int? _lastLoggedPageCount;
+    private string? _servedPdfLinkPath;
 
     public MainWindow(IEnumerable<string> initialFiles, bool openMergeWindow)
     {
@@ -119,10 +117,6 @@ public partial class MainWindow : Window
         PdfViewer.AllowExternalDrop = false;
         PdfViewer.CoreWebView2.Settings.AreDefaultContextMenusEnabled = false;
         PdfViewer.CoreWebView2.Settings.IsZoomControlEnabled = false;
-        PdfViewer.CoreWebView2.AddWebResourceRequestedFilter(
-            $"https://{PdfContentHost}/pdf/*",
-            CoreWebView2WebResourceContext.All);
-        PdfViewer.CoreWebView2.WebResourceRequested += OnPdfWebResourceRequested;
         RegisterNativeViewerDropTargets();
         PdfViewer.CoreWebView2.NavigationCompleted += (_, _) => RegisterNativeViewerDropTargets();
         PdfViewer.CoreWebView2.WebMessageReceived += async (_, args) =>
@@ -221,6 +215,20 @@ public partial class MainWindow : Window
                 return;
             }
 
+            if (type == "viewerLoadFailed")
+            {
+                var message = document.RootElement.TryGetProperty("message", out var messageElement)
+                    ? messageElement.GetString()
+                    : "알 수 없는 오류";
+                MessageBox.Show(
+                    this,
+                    $"PDF를 열지 못했습니다.\n\n{message}",
+                    "PDF 열기 실패",
+                    MessageBoxButton.OK,
+                    MessageBoxImage.Error);
+                return;
+            }
+
             if (type == "pageOrderChanged" &&
                 document.RootElement.TryGetProperty("pageOrder", out var pageOrderElement))
             {
@@ -241,16 +249,22 @@ public partial class MainWindow : Window
                     : null;
                 _isDirty = document.RootElement.TryGetProperty("isDirty", out var dirtyElement) &&
                            dirtyElement.GetBoolean();
+                if (_pageOrder.Count > 0 && _lastLoggedPageCount != _pageOrder.Count)
+                {
+                    _lastLoggedPageCount = _pageOrder.Count;
+                    AppLogger.Info($"PDF 로드 완료: {_pageOrder.Count}페이지, {_referencePdfPath ?? _currentPdfPath}");
+                }
+
                 UpdateWindowTitle();
             }
         };
 
         var viewerFolder = Path.Combine(AppContext.BaseDirectory, "Assets", "PdfViewer");
         PdfViewer.CoreWebView2.SetVirtualHostNameToFolderMapping(
-            "pdfviewer.local",
+            ViewerHost,
             viewerFolder,
             CoreWebView2HostResourceAccessKind.Allow);
-        PdfViewer.CoreWebView2.Navigate("https://pdfviewer.local/viewer.html");
+        PdfViewer.CoreWebView2.Navigate($"https://{ViewerHost}/viewer.html");
     }
 
     private async void LoadPdf(string path, string? referencePath = null, bool dirtyAfterLoad = false)
@@ -262,6 +276,7 @@ public partial class MainWindow : Window
         _selectedPages = [];
         _activePage = null;
         _isDirty = dirtyAfterLoad;
+        _lastLoggedPageCount = null;
         CurrentFileText.Text = IsSamePath(path, _referencePdfPath)
             ? path
             : $"{_referencePdfPath} (편집 중)";
@@ -305,9 +320,9 @@ public partial class MainWindow : Window
 
     private Task SendPdfToViewerAsync(string path, bool dirtyAfterLoad = false)
     {
-        _servedPdfPath = path;
-        _servedPdfToken = Guid.NewGuid().ToString("N");
-        var pdfUrl = $"https://{PdfContentHost}{PdfContentPath}?token={_servedPdfToken}";
+        var servedPath = PrepareServedPdfPath(path);
+        var servedFileName = Path.GetFileName(servedPath);
+        var pdfUrl = $"https://{ViewerHost}/ServedPdf/{Uri.EscapeDataString(servedFileName)}?v={Guid.NewGuid():N}";
         var message = JsonSerializer.Serialize(new
         {
             type = "loadPdf",
@@ -319,280 +334,88 @@ public partial class MainWindow : Window
         return Task.CompletedTask;
     }
 
-    private void OnPdfWebResourceRequested(object? sender, CoreWebView2WebResourceRequestedEventArgs e)
+    private string PrepareServedPdfPath(string sourcePath)
     {
+        CleanupServedPdfLink();
+
+        var viewerFolder = Path.Combine(AppContext.BaseDirectory, "Assets", "PdfViewer");
+        var servedFolder = Path.Combine(viewerFolder, "ServedPdf");
+        Directory.CreateDirectory(servedFolder);
+        CleanupServedPdfFolder(servedFolder);
+
+        var servedPath = Path.Combine(servedFolder, $"current-{Guid.NewGuid():N}.pdf");
+        if (!TryCreateHardLink(servedPath, sourcePath))
+        {
+            File.Copy(sourcePath, servedPath, overwrite: true);
+        }
+
+        _servedPdfLinkPath = servedPath;
+        return servedPath;
+    }
+
+    private void CleanupServedPdfLink()
+    {
+        if (string.IsNullOrWhiteSpace(_servedPdfLinkPath))
+        {
+            return;
+        }
+
         try
         {
-            if (!Uri.TryCreate(e.Request.Uri, UriKind.Absolute, out var uri) ||
-                !string.Equals(uri.Host, PdfContentHost, StringComparison.OrdinalIgnoreCase) ||
-                !string.Equals(uri.AbsolutePath, PdfContentPath, StringComparison.OrdinalIgnoreCase) ||
-                !QueryHasToken(uri.Query, _servedPdfToken) ||
-                string.IsNullOrWhiteSpace(_servedPdfPath) ||
-                !File.Exists(_servedPdfPath))
+            if (File.Exists(_servedPdfLinkPath))
             {
-                e.Response = CreateTextWebResourceResponse(HttpStatusCode.NotFound, "Not Found", "PDF not found.");
-                return;
+                File.Delete(_servedPdfLinkPath);
             }
-
-            e.Response = CreatePdfWebResourceResponse(e, _servedPdfPath);
         }
         catch (Exception ex)
         {
-            AppLogger.Error(ex, "PDF 파일 스트리밍 응답을 만들지 못했습니다.");
-            e.Response = CreateTextWebResourceResponse(
-                HttpStatusCode.InternalServerError,
-                "Internal Server Error",
-                ex.Message);
+            AppLogger.Error(ex, $"PDF 뷰어 임시 링크를 삭제하지 못했습니다: {_servedPdfLinkPath}");
         }
-    }
-
-    private CoreWebView2WebResourceResponse CreatePdfWebResourceResponse(
-        CoreWebView2WebResourceRequestedEventArgs args,
-        string path)
-    {
-        var fileInfo = new FileInfo(path);
-        var fileLength = fileInfo.Length;
-        var rangeHeader = GetHeader(args.Request, "Range");
-
-        if (TryParseRange(rangeHeader, fileLength, out var start, out var end))
+        finally
         {
-            var stream = OpenPdfStream(path);
-            stream.Position = start;
-            var contentLength = end - start + 1;
-            var headers = string.Join("\r\n",
-            [
-                "Content-Type: application/pdf",
-                "Accept-Ranges: bytes",
-                $"Content-Length: {contentLength}",
-                $"Content-Range: bytes {start}-{end}/{fileLength}"
-            ]);
-
-            return PdfViewer.CoreWebView2.Environment.CreateWebResourceResponse(
-                new LimitedReadStream(stream, contentLength),
-                (int)HttpStatusCode.PartialContent,
-                "Partial Content",
-                headers);
+            _servedPdfLinkPath = null;
         }
-
-        if (!string.IsNullOrWhiteSpace(rangeHeader))
-        {
-            return CreateTextWebResourceResponse(
-                HttpStatusCode.RequestedRangeNotSatisfiable,
-                "Range Not Satisfiable",
-                "Invalid range.",
-                $"Content-Range: bytes */{fileLength}");
-        }
-
-        var fullStream = OpenPdfStream(path);
-        var fullHeaders = string.Join("\r\n",
-        [
-            "Content-Type: application/pdf",
-            "Accept-Ranges: bytes",
-            $"Content-Length: {fileLength}"
-        ]);
-
-        return PdfViewer.CoreWebView2.Environment.CreateWebResourceResponse(
-            fullStream,
-            (int)HttpStatusCode.OK,
-            "OK",
-            fullHeaders);
     }
 
-    private CoreWebView2WebResourceResponse CreateTextWebResourceResponse(
-        HttpStatusCode statusCode,
-        string reasonPhrase,
-        string text,
-        string? extraHeaders = null)
-    {
-        var bytes = Encoding.UTF8.GetBytes(text);
-        var headers = string.Join("\r\n",
-            new[]
-            {
-                "Content-Type: text/plain; charset=utf-8",
-                $"Content-Length: {bytes.Length}"
-            }.Concat(string.IsNullOrWhiteSpace(extraHeaders) ? [] : [extraHeaders]));
-
-        return PdfViewer.CoreWebView2.Environment.CreateWebResourceResponse(
-            new MemoryStream(bytes),
-            (int)statusCode,
-            reasonPhrase,
-            headers);
-    }
-
-    private static FileStream OpenPdfStream(string path)
-    {
-        return new FileStream(
-            path,
-            FileMode.Open,
-            FileAccess.Read,
-            FileShare.ReadWrite | FileShare.Delete,
-            bufferSize: 1024 * 64,
-            FileOptions.SequentialScan);
-    }
-
-    private static string? GetHeader(CoreWebView2WebResourceRequest request, string name)
+    private static void CleanupServedPdfFolder(string servedFolder)
     {
         try
         {
-            return request.Headers.GetHeader(name);
+            foreach (var file in Directory.EnumerateFiles(servedFolder, "current-*.pdf"))
+            {
+                try
+                {
+                    if (File.GetLastWriteTimeUtc(file) < DateTime.UtcNow.AddHours(-12))
+                    {
+                        File.Delete(file);
+                    }
+                }
+                catch
+                {
+                    // A currently loading viewer may still hold its own link.
+                }
+            }
+        }
+        catch (Exception ex)
+        {
+            AppLogger.Error(ex, $"PDF 뷰어 임시 링크 폴더를 정리하지 못했습니다: {servedFolder}");
+        }
+    }
+
+    private static bool TryCreateHardLink(string linkPath, string sourcePath)
+    {
+        try
+        {
+            return CreateHardLink(linkPath, sourcePath, IntPtr.Zero);
         }
         catch
         {
-            return null;
+            return false;
         }
     }
 
-    private static bool QueryHasToken(string query, string token)
-    {
-        if (string.IsNullOrWhiteSpace(query) || string.IsNullOrWhiteSpace(token))
-        {
-            return false;
-        }
-
-        var normalizedQuery = query.TrimStart('?').Split('&', StringSplitOptions.RemoveEmptyEntries);
-        foreach (var item in normalizedQuery)
-        {
-            var parts = item.Split('=', 2);
-            if (parts.Length == 2 &&
-                string.Equals(Uri.UnescapeDataString(parts[0]), "token", StringComparison.OrdinalIgnoreCase) &&
-                string.Equals(Uri.UnescapeDataString(parts[1]), token, StringComparison.Ordinal))
-            {
-                return true;
-            }
-        }
-
-        return false;
-    }
-
-    private static bool TryParseRange(string? rangeHeader, long fileLength, out long start, out long end)
-    {
-        start = 0;
-        end = 0;
-
-        if (string.IsNullOrWhiteSpace(rangeHeader) ||
-            !rangeHeader.StartsWith("bytes=", StringComparison.OrdinalIgnoreCase) ||
-            fileLength <= 0)
-        {
-            return false;
-        }
-
-        var range = rangeHeader["bytes=".Length..].Split(',', 2)[0].Trim();
-        var separatorIndex = range.IndexOf('-', StringComparison.Ordinal);
-        if (separatorIndex < 0)
-        {
-            return false;
-        }
-
-        var startText = range[..separatorIndex].Trim();
-        var endText = range[(separatorIndex + 1)..].Trim();
-
-        if (startText.Length == 0)
-        {
-            if (!long.TryParse(endText, NumberStyles.None, CultureInfo.InvariantCulture, out var suffixLength) ||
-                suffixLength <= 0)
-            {
-                return false;
-            }
-
-            start = Math.Max(0, fileLength - suffixLength);
-            end = fileLength - 1;
-            return true;
-        }
-
-        if (!long.TryParse(startText, NumberStyles.None, CultureInfo.InvariantCulture, out start))
-        {
-            return false;
-        }
-
-        end = fileLength - 1;
-        if (endText.Length > 0 &&
-            (!long.TryParse(endText, NumberStyles.None, CultureInfo.InvariantCulture, out end) || end >= fileLength))
-        {
-            end = fileLength - 1;
-        }
-
-        return start >= 0 && start <= end && start < fileLength;
-    }
-
-    private sealed class LimitedReadStream : Stream
-    {
-        private readonly Stream _inner;
-        private readonly long _length;
-        private long _remaining;
-
-        public LimitedReadStream(Stream inner, long length)
-        {
-            _inner = inner;
-            _length = length;
-            _remaining = length;
-        }
-
-        public override bool CanRead => _inner.CanRead;
-        public override bool CanSeek => false;
-        public override bool CanWrite => false;
-        public override long Length => _length;
-        public override long Position
-        {
-            get => _length - _remaining;
-            set => throw new NotSupportedException();
-        }
-
-        public override void Flush()
-        {
-        }
-
-        public override int Read(byte[] buffer, int offset, int count)
-        {
-            if (_remaining <= 0)
-            {
-                return 0;
-            }
-
-            var read = _inner.Read(buffer, offset, (int)Math.Min(count, _remaining));
-            _remaining -= read;
-            return read;
-        }
-
-        public override int Read(Span<byte> buffer)
-        {
-            if (_remaining <= 0)
-            {
-                return 0;
-            }
-
-            var read = _inner.Read(buffer[..(int)Math.Min(buffer.Length, _remaining)]);
-            _remaining -= read;
-            return read;
-        }
-
-        public override async ValueTask<int> ReadAsync(Memory<byte> buffer, CancellationToken cancellationToken = default)
-        {
-            if (_remaining <= 0)
-            {
-                return 0;
-            }
-
-            var read = await _inner.ReadAsync(buffer[..(int)Math.Min(buffer.Length, _remaining)], cancellationToken);
-            _remaining -= read;
-            return read;
-        }
-
-        public override long Seek(long offset, SeekOrigin origin) => throw new NotSupportedException();
-
-        public override void SetLength(long value) => throw new NotSupportedException();
-
-        public override void Write(byte[] buffer, int offset, int count) => throw new NotSupportedException();
-
-        protected override void Dispose(bool disposing)
-        {
-            if (disposing)
-            {
-                _inner.Dispose();
-            }
-
-            base.Dispose(disposing);
-        }
-    }
+    [DllImport("kernel32.dll", SetLastError = true, CharSet = CharSet.Unicode)]
+    private static extern bool CreateHardLink(string lpFileName, string lpExistingFileName, IntPtr lpSecurityAttributes);
 
     private static IReadOnlyDictionary<int, int> ReadPageRotations(JsonElement rotationsElement)
     {
@@ -633,6 +456,7 @@ public partial class MainWindow : Window
 
         SaveWindowSettings();
         DisposeNativeViewerDropTargets();
+        CleanupServedPdfLink();
     }
 
     private void ApplyWindowSettings()

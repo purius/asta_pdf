@@ -917,19 +917,32 @@
       app.style.display = 'grid';
       setStatus('PDF 여는 중...');
 
-      const loadingSource = source?.url
-        ? { url: source.url }
-        : { data: bytesFromBase64(source) };
-      pdfDocument = await pdfjsLib.getDocument(loadingSource).promise;
-      pageOrder = Array.from({ length: pdfDocument.numPages }, (_, index) => index + 1);
-      pageRotations = {};
-      undoStack = [];
-      redoStack = [];
-      isDirty = Boolean(dirtyAfterLoad);
-      pageCount.textContent = `총 ${pdfDocument.numPages} 페이지`;
-      postPageOrder();
-      fitPageMode = true;
-      await renderDocument(false);
+      try {
+        const loadingSource = source?.url
+          ? { url: source.url }
+          : { data: bytesFromBase64(source) };
+        pdfDocument = await pdfjsLib.getDocument(loadingSource).promise;
+        pageOrder = Array.from({ length: pdfDocument.numPages }, (_, index) => index + 1);
+        pageRotations = {};
+        undoStack = [];
+        redoStack = [];
+        isDirty = Boolean(dirtyAfterLoad);
+        pageCount.textContent = `총 ${pdfDocument.numPages} 페이지`;
+        postPageOrder();
+        fitPageMode = true;
+        await renderDocument(false);
+      } catch (error) {
+        pdfDocument = null;
+        pageOrder = [];
+        pageRotations = {};
+        selectedPages.clear();
+        pageCount.textContent = '총 0 페이지';
+        setStatus('PDF를 열지 못했습니다.');
+        window.chrome?.webview?.postMessage({
+          type: 'viewerLoadFailed',
+          message: error?.message ?? String(error)
+        });
+      }
     }
 
     function goToPage(pageNumber, smooth = true) {
