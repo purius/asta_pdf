@@ -631,6 +631,10 @@
       targetThumb.classList.add('drop-target', placement === 'before' ? 'drop-before' : 'drop-after');
     }
 
+    function updateNativeFileDropIndicator(clientX, clientY) {
+      updateNativeDropIndicator(clientX, clientY);
+    }
+
     function handleNativePageTransferDrop(raw, clientX, clientY) {
       clearDropIndicators();
       if (!raw) return;
@@ -654,6 +658,17 @@
       } catch (error) {
         setStatus(error?.message ?? '드롭한 페이지 정보를 읽지 못했습니다.');
       }
+    }
+
+    function handleNativeFileDrop(paths, clientX, clientY) {
+      clearDropIndicators();
+      if (!Array.isArray(paths) || paths.length === 0) return;
+
+      window.chrome?.webview?.postMessage({
+        type: 'insertExternalFiles',
+        paths,
+        insertionIndex: getDropInsertionIndex({ clientX, clientY })
+      });
     }
 
     function isInsideElement(event, element) {
@@ -1372,6 +1387,10 @@
           clearDropIndicators();
         } else if (event.data?.type === 'nativePageTransferDrop') {
           handleNativePageTransferDrop(event.data.payload, event.data.clientX, event.data.clientY);
+        } else if (event.data?.type === 'nativeFileDragOver') {
+          updateNativeFileDropIndicator(event.data.clientX, event.data.clientY);
+        } else if (event.data?.type === 'nativeFileDrop') {
+          handleNativeFileDrop(event.data.paths, event.data.clientX, event.data.clientY);
         }
       });
       window.chrome.webview.postMessage({ type: 'viewerReady' });

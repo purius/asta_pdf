@@ -64,6 +64,7 @@ public partial class MainWindow : Window
     private sealed record ExportedA4Page(int Index, PdfImagePage Image);
     private sealed record PageTransferPayload(string SourcePath, List<PdfPageTransform> Pages, bool Cut);
     private sealed record ExternalPagesDropMessage(string SourcePath, List<PdfPageTransform> Pages, int InsertionIndex);
+    private sealed record ExternalFilesDropMessage(List<string> Paths, int InsertionIndex);
 
     public void OpenFiles(IEnumerable<string> paths, bool openMergeWindow = false)
     {
@@ -203,6 +204,12 @@ public partial class MainWindow : Window
                 return;
             }
 
+            if (type == "insertExternalFiles")
+            {
+                await InsertExternalFilesAsync(document.RootElement);
+                return;
+            }
+
             if (type == "a4PageImage")
             {
                 ReceiveA4PageImage(document.RootElement);
@@ -316,6 +323,21 @@ public partial class MainWindow : Window
         }
 
         return string.Equals(Path.GetFullPath(left), Path.GetFullPath(right), StringComparison.OrdinalIgnoreCase);
+    }
+
+    private static bool IsPdfFile(string path)
+    {
+        return string.Equals(Path.GetExtension(path), ".pdf", StringComparison.OrdinalIgnoreCase);
+    }
+
+    private static bool IsSupportedImageFile(string path)
+    {
+        return Path.GetExtension(path).ToLowerInvariant() is ".jpg" or ".jpeg" or ".png" or ".bmp" or ".gif" or ".tif" or ".tiff";
+    }
+
+    private static bool IsSupportedInsertionFile(string path)
+    {
+        return IsPdfFile(path) || IsSupportedImageFile(path);
     }
 
     private Task SendPdfToViewerAsync(string path, bool dirtyAfterLoad = false)
@@ -506,11 +528,12 @@ public partial class MainWindow : Window
             try
             {
                 var dropTarget = new NativeFileDropTarget(
-                hwnd,
-                paths => Dispatcher.BeginInvoke(() => OpenFiles(paths)),
-                (payload, screenPoint) => Dispatcher.BeginInvoke(() => SendNativePageTransferMessage("nativePageTransferDragOver", payload, screenPoint)),
-                () => Dispatcher.BeginInvoke(SendNativePageTransferLeaveMessage),
-                (payload, screenPoint) => Dispatcher.BeginInvoke(() => SendNativePageTransferMessage("nativePageTransferDrop", payload, screenPoint)));
+                    hwnd,
+                    (paths, screenPoint) => Dispatcher.BeginInvoke(() => HandleNativeFileDragOver(paths, screenPoint)),
+                    (paths, screenPoint) => Dispatcher.BeginInvoke(() => HandleNativeFileDrop(paths, screenPoint)),
+                    (payload, screenPoint) => Dispatcher.BeginInvoke(() => SendNativePageTransferMessage("nativePageTransferDragOver", payload, screenPoint)),
+                    () => Dispatcher.BeginInvoke(SendNativeDropLeaveMessage),
+                    (payload, screenPoint) => Dispatcher.BeginInvoke(() => SendNativePageTransferMessage("nativePageTransferDrop", payload, screenPoint)));
                 dropTarget.Register();
                 _viewerDropTargets.Add(dropTarget);
             }
@@ -549,7 +572,25 @@ public partial class MainWindow : Window
         PdfViewer.CoreWebView2.PostWebMessageAsJson(message);
     }
 
-    private void SendNativePageTransferLeaveMessage()
+    private void SendNativeFileDropMessage(string type, IReadOnlyList<string> paths, Point screenPoint)
+    {
+        if (!_viewerReady || PdfViewer.CoreWebView2 is null)
+        {
+            return;
+        }
+
+        var clientPoint = PdfViewer.PointFromScreen(screenPoint);
+        var message = JsonSerializer.Serialize(new
+        {
+            type,
+            paths,
+            clientX = clientPoint.X,
+            clientY = clientPoint.Y
+        });
+        PdfViewer.CoreWebView2.PostWebMessageAsJson(message);
+    }
+
+    private void SendNativeDropLeaveMessage()
     {
         if (!_viewerReady || PdfViewer.CoreWebView2 is null)
         {
@@ -559,6 +600,33 @@ public partial class MainWindow : Window
         PdfViewer.CoreWebView2.PostWebMessageAsJson("""
             {"type":"nativePageTransferDragLeave"}
             """);
+    }
+
+    private void HandleNativeFileDragOver(IReadOnlyList<string> paths, Point screenPoint)
+    {
+        if (CanInsertDroppedFilesIntoCurrentDocument())
+        {
+            SendNativeFileDropMessage("nativeFileDragOver", paths, screenPoint);
+        }
+    }
+
+    private void HandleNativeFileDrop(IReadOnlyList<string> paths, Point screenPoint)
+    {
+        if (CanInsertDroppedFilesIntoCurrentDocument())
+        {
+            SendNativeFileDropMessage("nativeFileDrop", paths, screenPoint);
+            return;
+        }
+
+        OpenFiles(paths.Where(IsPdfFile));
+    }
+
+    private bool CanInsertDroppedFilesIntoCurrentDocument()
+    {
+        return _viewerReady &&
+               PdfViewer.CoreWebView2 is not null &&
+               !string.IsNullOrWhiteSpace(_currentPdfPath) &&
+               _pageOrder.Count > 0;
     }
 
     private void SendViewerCommand(string command, object? options = null)
@@ -1176,6 +1244,81 @@ public partial class MainWindow : Window
         }
     }
 
+    private async Task InsertExternalFilesAsync(JsonElement root)
+    {
+        if (!EnsurePdfLoaded("파일 삽입"))
+        {
+            return;
+        }
+
+        var tempPaths = new List<string>();
+        try
+        {
+            var message = JsonSerializer.Deserialize<ExternalFilesDropMessage>(root.GetRawText(), PageTransferJsonOptions)
+                ?? throw new InvalidOperationException("드롭한 파일 정보를 읽을 수 없습니다.");
+
+            var paths = message.Paths
+                .Where(File.Exists)
+                .Where(IsSupportedInsertionFile)
+                .Select(Path.GetFullPath)
+                .ToList();
+
+            if (paths.Count == 0)
+            {
+                throw new InvalidOperationException("삽입할 수 있는 PDF 또는 이미지 파일이 없습니다.");
+            }
+
+            var pdfParts = new List<string>();
+            foreach (var path in paths)
+            {
+                if (IsPdfFile(path))
+                {
+                    pdfParts.Add(path);
+                    continue;
+                }
+
+                var imagePdfPath = CreateTempPdfPath("dropped-image");
+                var image = LoadBitmapFromFile(path);
+                var encodedImage = EncodeJpegForA4(image);
+                _pdfService.CreateImageA4Pdf(
+                    imagePdfPath,
+                    encodedImage.JpegBytes,
+                    encodedImage.Width,
+                    encodedImage.Height);
+                tempPaths.Add(imagePdfPath);
+                pdfParts.Add(imagePdfPath);
+            }
+
+            var insertPath = pdfParts.Count == 1
+                ? pdfParts[0]
+                : CreateTempPdfPath("dropped-files");
+
+            if (pdfParts.Count > 1)
+            {
+                tempPaths.Add(insertPath);
+                await _pdfService.CombinePdfFilesAsync(pdfParts, insertPath, CancellationToken.None);
+            }
+
+            await InsertPreparedPdfPagesAsync(
+                insertPath,
+                Math.Clamp(message.InsertionIndex, 0, _pageOrder.Count),
+                "파일 삽입",
+                showMessage: false);
+            CurrentFileText.Text = $"{paths.Count}개 파일을 현재 PDF에 삽입했습니다.";
+        }
+        catch (Exception ex)
+        {
+            MessageBox.Show(this, ex.Message, "파일 삽입 실패", MessageBoxButton.OK, MessageBoxImage.Error);
+        }
+        finally
+        {
+            foreach (var tempPath in tempPaths)
+            {
+                TryDeleteTempFile(tempPath);
+            }
+        }
+    }
+
     private async void OnFitAllPagesToA4Click(object sender, RoutedEventArgs e)
     {
         if (!EnsurePdfLoaded("A4 맞춤"))
@@ -1351,6 +1494,19 @@ public partial class MainWindow : Window
         using var stream = new MemoryStream();
         encoder.Save(stream);
         return new EncodedJpegImage(stream.ToArray(), frameSource.PixelWidth, frameSource.PixelHeight);
+    }
+
+    private static BitmapSource LoadBitmapFromFile(string path)
+    {
+        using var stream = File.OpenRead(path);
+        var decoder = BitmapDecoder.Create(
+            stream,
+            BitmapCreateOptions.PreservePixelFormat,
+            BitmapCacheOption.OnLoad);
+        var frame = decoder.Frames.FirstOrDefault()
+            ?? throw new InvalidOperationException("이미지 파일을 읽을 수 없습니다.");
+        frame.Freeze();
+        return frame;
     }
 
     private sealed record EncodedJpegImage(byte[] JpegBytes, int Width, int Height);
@@ -1666,6 +1822,15 @@ public partial class MainWindow : Window
 
     private void OnWindowDragOver(object sender, DragEventArgs e)
     {
+        if (CanInsertDroppedFilesIntoCurrentDocument() &&
+            TryGetDroppedInsertionPaths(e, out var insertionPaths))
+        {
+            e.Effects = DragDropEffects.Copy;
+            SendNativeFileDropMessage("nativeFileDragOver", insertionPaths, PdfViewer.PointToScreen(e.GetPosition(PdfViewer)));
+            e.Handled = true;
+            return;
+        }
+
         if (TryGetDroppedPdfPaths(e, out _))
         {
             e.Effects = DragDropEffects.Copy;
@@ -1675,6 +1840,14 @@ public partial class MainWindow : Window
 
     private void OnWindowDrop(object sender, DragEventArgs e)
     {
+        if (CanInsertDroppedFilesIntoCurrentDocument() &&
+            TryGetDroppedInsertionPaths(e, out var insertionPaths))
+        {
+            SendNativeFileDropMessage("nativeFileDrop", insertionPaths, PdfViewer.PointToScreen(e.GetPosition(PdfViewer)));
+            e.Handled = true;
+            return;
+        }
+
         if (TryGetDroppedPdfPaths(e, out var paths))
         {
             OpenFiles(paths);
@@ -1694,7 +1867,25 @@ public partial class MainWindow : Window
 
         paths = droppedPaths
             .Where(path => File.Exists(path))
-            .Where(path => string.Equals(Path.GetExtension(path), ".pdf", StringComparison.OrdinalIgnoreCase))
+            .Where(IsPdfFile)
+            .ToArray();
+
+        return paths.Length > 0;
+    }
+
+    private static bool TryGetDroppedInsertionPaths(DragEventArgs e, out string[] paths)
+    {
+        paths = [];
+
+        if (!e.Data.GetDataPresent(DataFormats.FileDrop) ||
+            e.Data.GetData(DataFormats.FileDrop) is not string[] droppedPaths)
+        {
+            return false;
+        }
+
+        paths = droppedPaths
+            .Where(path => File.Exists(path))
+            .Where(IsSupportedInsertionFile)
             .ToArray();
 
         return paths.Length > 0;

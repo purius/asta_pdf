@@ -13,6 +13,17 @@ internal sealed class NativeFileDropTarget : IDisposable
     private const int DropEffectCopy = 1;
     private const int DragDropAlreadyRegistered = unchecked((int)0x80040101);
     private const string PageTransferTextPrefix = "PDFMERGETOOL_PAGES:";
+    private static readonly string[] SupportedFileExtensions =
+    [
+        ".pdf",
+        ".jpg",
+        ".jpeg",
+        ".png",
+        ".bmp",
+        ".gif",
+        ".tif",
+        ".tiff"
+    ];
 
     private readonly IntPtr _hwnd;
     private readonly OleDropTarget _target;
@@ -20,13 +31,15 @@ internal sealed class NativeFileDropTarget : IDisposable
 
     public NativeFileDropTarget(
         IntPtr hwnd,
-        Action<IReadOnlyList<string>> filesDropped,
+        Action<IReadOnlyList<string>, Point> filesDragOver,
+        Action<IReadOnlyList<string>, Point> filesDropped,
         Action<string, Point> pageTransferDragOver,
         Action pageTransferDragLeave,
         Action<string, Point> pageTransferDropped)
     {
         _hwnd = hwnd;
         _target = new OleDropTarget(
+            filesDragOver,
             filesDropped,
             pageTransferDragOver,
             pageTransferDragLeave,
@@ -132,18 +145,22 @@ internal sealed class NativeFileDropTarget : IDisposable
     [ComVisible(true)]
     private sealed class OleDropTarget : IOleDropTarget
     {
-        private readonly Action<IReadOnlyList<string>> _filesDropped;
+        private readonly Action<IReadOnlyList<string>, Point> _filesDragOver;
+        private readonly Action<IReadOnlyList<string>, Point> _filesDropped;
         private readonly Action<string, Point> _pageTransferDragOver;
         private readonly Action _pageTransferDragLeave;
         private readonly Action<string, Point> _pageTransferDropped;
         private string? _currentPageTransferText;
+        private IReadOnlyList<string> _currentFilePaths = [];
 
         public OleDropTarget(
-            Action<IReadOnlyList<string>> filesDropped,
+            Action<IReadOnlyList<string>, Point> filesDragOver,
+            Action<IReadOnlyList<string>, Point> filesDropped,
             Action<string, Point> pageTransferDragOver,
             Action pageTransferDragLeave,
             Action<string, Point> pageTransferDropped)
         {
+            _filesDragOver = filesDragOver;
             _filesDropped = filesDropped;
             _pageTransferDragOver = pageTransferDragOver;
             _pageTransferDragLeave = pageTransferDragLeave;
@@ -153,6 +170,9 @@ internal sealed class NativeFileDropTarget : IDisposable
         public int DragEnter(ComTypes.IDataObject dataObject, int keyState, PointL point, ref int effect)
         {
             _currentPageTransferText = TryReadPageTransferText(dataObject);
+            _currentFilePaths = string.IsNullOrWhiteSpace(_currentPageTransferText)
+                ? TryReadSupportedPaths(dataObject)
+                : [];
             UpdateEffectAndIndicator(dataObject, point, ref effect);
             return 0;
         }
@@ -166,39 +186,50 @@ internal sealed class NativeFileDropTarget : IDisposable
                 return 0;
             }
 
-            effect = effect == DropEffectNone ? DropEffectNone : DropEffectCopy;
+            if (_currentFilePaths.Count > 0)
+            {
+                effect = DropEffectCopy;
+                _filesDragOver(_currentFilePaths, ToPoint(point));
+                return 0;
+            }
+
+            effect = DropEffectNone;
             return 0;
         }
 
         public int DragLeave()
         {
             _currentPageTransferText = null;
+            _currentFilePaths = [];
             _pageTransferDragLeave();
             return 0;
         }
 
         public int Drop(ComTypes.IDataObject dataObject, int keyState, PointL point, ref int effect)
         {
-            var pdfPaths = TryReadPdfPaths(dataObject);
-            if (pdfPaths.Count > 0)
-            {
-                effect = DropEffectCopy;
-                _filesDropped(pdfPaths);
-                _currentPageTransferText = null;
-                return 0;
-            }
-
             var pageTransferText = _currentPageTransferText ?? TryReadPageTransferText(dataObject);
             if (!string.IsNullOrWhiteSpace(pageTransferText))
             {
                 effect = DropEffectCopy;
                 _pageTransferDropped(pageTransferText, ToPoint(point));
                 _currentPageTransferText = null;
+                _currentFilePaths = [];
+                return 0;
+            }
+
+            var filePaths = _currentFilePaths.Count > 0 ? _currentFilePaths : TryReadSupportedPaths(dataObject);
+            if (filePaths.Count > 0)
+            {
+                effect = DropEffectCopy;
+                _filesDropped(filePaths, ToPoint(point));
+                _currentPageTransferText = null;
+                _currentFilePaths = [];
                 return 0;
             }
 
             effect = DropEffectNone;
             _currentPageTransferText = null;
+            _currentFilePaths = [];
             return 0;
         }
 
@@ -211,12 +242,20 @@ internal sealed class NativeFileDropTarget : IDisposable
                 return;
             }
 
-            effect = TryReadPdfPaths(dataObject).Count > 0 ? DropEffectCopy : DropEffectNone;
+            _currentFilePaths = TryReadSupportedPaths(dataObject);
+            if (_currentFilePaths.Count > 0)
+            {
+                effect = DropEffectCopy;
+                _filesDragOver(_currentFilePaths, ToPoint(point));
+                return;
+            }
+
+            effect = DropEffectNone;
         }
 
         private static Point ToPoint(PointL point) => new(point.X, point.Y);
 
-        private static List<string> TryReadPdfPaths(ComTypes.IDataObject dataObject)
+        private static List<string> TryReadSupportedPaths(ComTypes.IDataObject dataObject)
         {
             var paths = new List<string>();
             var format = CreateFormat(CfHdrop);
@@ -237,8 +276,7 @@ internal sealed class NativeFileDropTarget : IDisposable
                     var buffer = new char[length + 1];
                     DragQueryFile(medium.unionmember, index, buffer, (uint)buffer.Length);
                     var path = new string(buffer).TrimEnd('\0');
-                    if (File.Exists(path) &&
-                        string.Equals(Path.GetExtension(path), ".pdf", StringComparison.OrdinalIgnoreCase))
+                    if (File.Exists(path) && IsSupportedFile(path))
                     {
                         paths.Add(Path.GetFullPath(path));
                     }
@@ -257,6 +295,12 @@ internal sealed class NativeFileDropTarget : IDisposable
             }
 
             return paths;
+        }
+
+        private static bool IsSupportedFile(string path)
+        {
+            var extension = Path.GetExtension(path);
+            return SupportedFileExtensions.Contains(extension, StringComparer.OrdinalIgnoreCase);
         }
 
         private static string? TryReadPageTransferText(ComTypes.IDataObject dataObject)

@@ -200,6 +200,32 @@ public sealed class PdfMergeService
         }
     }
 
+    public async Task<PdfMergeResult> CombinePdfFilesAsync(
+        IReadOnlyList<string> inputPaths,
+        string outputPath,
+        CancellationToken cancellationToken)
+    {
+        if (inputPaths.Count == 0)
+        {
+            throw new InvalidOperationException("결합할 PDF 파일이 없습니다.");
+        }
+
+        foreach (var inputPath in inputPaths)
+        {
+            if (!File.Exists(inputPath))
+            {
+                throw new FileNotFoundException("결합할 PDF 파일을 찾을 수 없습니다.", inputPath);
+            }
+        }
+
+        return await RunPageAssemblyAsync(
+            inputPaths.Select(path => (path, (string?)"1-z")).ToList(),
+            outputPath,
+            null,
+            "PDF 파일 결합 실패",
+            cancellationToken);
+    }
+
     public void CreateBlankA4Pdf(string outputPath)
     {
         WriteSingleA4PagePdf(outputPath, null);
