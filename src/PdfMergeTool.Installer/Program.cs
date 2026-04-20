@@ -15,7 +15,7 @@ internal static class Program
     private const string ProductId = "PdfMergeTool";
     private const string AppName = "PDF 뷰어";
     private const string Publisher = "PdfMergeTool";
-    private const string AppVersion = "1.0.6";
+    private const string AppVersion = "1.0.7";
     private const string AppExeName = "PdfMergeTool.exe";
     private const string SetupExeName = "PdfMergeToolSetup.exe";
     private const string PayloadResourceName = "PdfMergeToolPayload.zip";

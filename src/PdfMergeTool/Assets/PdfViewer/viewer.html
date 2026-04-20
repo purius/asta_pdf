@@ -328,6 +328,7 @@
     const pages = document.getElementById('pages');
     const printPages = document.getElementById('printPages');
     const status = document.getElementById('status');
+    const maxRenderedPages = 18;
 
     let pdfDocument = null;
     let activePage = 1;
@@ -344,6 +345,9 @@
     let redoStack = [];
     let isDirty = false;
     let documentSourcePath = '';
+    let renderedStartIndex = 0;
+    let renderedEndIndex = 0;
+    let scrollWindowSwitching = false;
     const windowInstanceId = crypto.randomUUID?.() ?? `${Date.now()}-${Math.random()}`;
 
     const clamp = (value, min, max) => Math.max(min, Math.min(max, value));
@@ -410,6 +414,8 @@
       thumbs.replaceChildren();
       pages.replaceChildren();
       activePage = 1;
+      renderedStartIndex = 0;
+      renderedEndIndex = 0;
     }
 
     function bytesFromBase64(base64) {
@@ -817,11 +823,29 @@
       return clamp(Math.min(availableWidth / viewport.width, availableHeight / viewport.height), 0.2, 3);
     }
 
+    function getPageOrderIndex(pageNumber) {
+      const index = pageOrder.indexOf(pageNumber);
+      return index >= 0 ? index : 0;
+    }
+
+    function getRenderWindow(targetPage) {
+      if (pageOrder.length <= maxRenderedPages) {
+        return { start: 0, end: pageOrder.length };
+      }
+
+      const targetIndex = getPageOrderIndex(targetPage);
+      const before = Math.floor(maxRenderedPages / 2);
+      let start = clamp(targetIndex - before, 0, Math.max(0, pageOrder.length - maxRenderedPages));
+      let end = Math.min(pageOrder.length, start + maxRenderedPages);
+      start = Math.max(0, end - maxRenderedPages);
+      return { start, end };
+    }
+
     async function renderPage(pageNumber, displayIndex, token) {
       const page = await pdfDocument.getPage(pageNumber);
       if (token !== renderToken) return;
 
-      if (fitPageMode && pageNumber === 1) {
+      if (fitPageMode && displayIndex === renderedStartIndex) {
         mainScale = calculateFitScale(page);
       }
 
@@ -888,24 +912,34 @@
       ]);
     }
 
-    async function renderDocument(keepPage = true) {
+    async function renderDocument(keepPage = true, targetPageOverride = null) {
       if (!pdfDocument) return;
-      const targetPage = keepPage ? activePage : 1;
+      const targetPage = targetPageOverride ?? (keepPage ? activePage : pageOrder[0] ?? 1);
       const token = ++renderToken;
       setStatus('렌더링 중...');
       clearRenderedPages();
       updateThumbGridSize();
+      const windowRange = getRenderWindow(targetPage);
+      renderedStartIndex = windowRange.start;
+      renderedEndIndex = windowRange.end;
       pageCount.textContent = pageOrder.length === pdfDocument.numPages
         ? `총 ${pdfDocument.numPages} 페이지`
         : `총 ${pageOrder.length} / 원본 ${pdfDocument.numPages} 페이지`;
 
-      for (let index = 0; index < pageOrder.length; index += 1) {
+      if (pageOrder.length > maxRenderedPages) {
+        setStatus(`${renderedStartIndex + 1}-${renderedEndIndex} / ${pageOrder.length} 페이지 표시 중`);
+      }
+
+      for (let index = renderedStartIndex; index < renderedEndIndex; index += 1) {
         await renderPage(pageOrder[index], index, token);
         if (token !== renderToken) return;
       }
 
       setActive(targetPage);
-      goToPage(targetPage, false);
+      document.getElementById(`page-${targetPage}`)?.scrollIntoView({
+        behavior: 'auto',
+        block: 'start'
+      });
     }
 
     async function loadPdf(source, dirtyAfterLoad = false, sourcePath = '') {
@@ -945,9 +979,13 @@
       }
     }
 
-    function goToPage(pageNumber, smooth = true) {
+    async function goToPage(pageNumber, smooth = true) {
       if (!pdfDocument) return;
       const page = clamp(pageNumber, 1, pdfDocument.numPages);
+      if (!document.getElementById(`page-${page}`)) {
+        await renderDocument(true, page);
+      }
+
       document.getElementById(`page-${page}`)?.scrollIntoView({
         behavior: smooth ? 'smooth' : 'auto',
         block: 'start'
@@ -1188,6 +1226,26 @@
         }
       });
       setActive(closest);
+
+      if (pageOrder.length > maxRenderedPages && !scrollWindowSwitching) {
+        const nearBottom = pages.scrollTop + pages.clientHeight >= pages.scrollHeight - 48;
+        const nearTop = pages.scrollTop <= 24;
+        let targetPage = null;
+
+        if (nearBottom && renderedEndIndex < pageOrder.length) {
+          targetPage = pageOrder[renderedEndIndex];
+        } else if (nearTop && renderedStartIndex > 0) {
+          targetPage = pageOrder[renderedStartIndex - 1];
+        }
+
+        if (targetPage !== null) {
+          scrollWindowSwitching = true;
+          renderDocument(true, targetPage)
+            .finally(() => {
+              scrollWindowSwitching = false;
+            });
+        }
+      }
     }, { passive: true });
 
     window.addEventListener('wheel', (event) => {
