@@ -1,0 +1,9 @@
+.tools/
+dist/
+bin/
+obj/
+*.user
+*.suo
+.vs/
+src/PdfMergeTool.Installer/Payload/*.zip
+tmp/

@@ -1,0 +1,1308 @@
+<!doctype html>
+<html lang="ko">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>PDF Viewer</title>
+  <style>
+    :root {
+      color-scheme: light;
+      --bg: #f5f7fa;
+      --panel: #ffffff;
+      --line: #d9e1ec;
+      --ink: #1f2937;
+      --muted: #6b7280;
+      --accent: #2563eb;
+      --accent-soft: #eaf1ff;
+      --danger: #dc2626;
+      --thumb-width: 180px;
+      --thumb-card-width: 72px;
+    }
+
+    * { box-sizing: border-box; }
+
+    body {
+      margin: 0;
+      height: 100vh;
+      overflow: hidden;
+      background: var(--bg);
+      color: var(--ink);
+      font-family: "Segoe UI Variable", "Segoe UI", system-ui, sans-serif;
+    }
+
+    #empty {
+      display: grid;
+      height: 100vh;
+      place-items: center;
+      text-align: center;
+      padding: 32px;
+      color: var(--muted);
+      background:
+        linear-gradient(180deg, rgba(255, 255, 255, 0.88), rgba(245, 247, 250, 0.96));
+    }
+
+    #empty > div {
+      width: min(520px, 100%);
+      padding: 34px;
+      border: 1px dashed #9db7f5;
+      border-radius: 8px;
+      background: #fff;
+      box-shadow: 0 14px 34px rgba(31, 41, 55, 0.08);
+    }
+
+    #empty strong {
+      display: block;
+      margin-bottom: 8px;
+      color: var(--ink);
+      font-size: 24px;
+    }
+
+    #app {
+      display: none;
+      height: 100vh;
+      grid-template-columns: var(--thumb-width) 6px 1fr;
+      gap: 8px;
+      padding: 10px 10px 36px;
+    }
+
+    #thumbPanel {
+      display: grid;
+      grid-template-rows: auto 1fr;
+      min-width: 0;
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      background: var(--panel);
+      overflow: hidden;
+      box-shadow: 0 8px 24px rgba(31, 41, 55, 0.06);
+    }
+
+    #thumbHeader {
+      padding: 10px;
+      border-bottom: 1px solid var(--line);
+      background: #f8fafc;
+    }
+
+    #pageCount {
+      font-size: 13px;
+      font-weight: 800;
+      color: var(--ink);
+    }
+
+    #selectionHint {
+      margin-top: 4px;
+      font-size: 11px;
+      font-weight: 700;
+      color: var(--muted);
+    }
+
+    #thumbs {
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(var(--thumb-card-width), 1fr));
+      align-content: start;
+      gap: 8px;
+      overflow-y: auto;
+      overflow-x: hidden;
+      padding: 8px;
+    }
+
+    #splitter {
+      width: 6px;
+      border-radius: 8px;
+      background: #d8dee7;
+      cursor: col-resize;
+    }
+
+    #splitter:hover,
+    #splitter.dragging {
+      background: var(--accent);
+    }
+
+    .thumb {
+      display: block;
+      width: 100%;
+      min-width: 0;
+      margin: 0;
+      padding: 5px;
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      background: #fff;
+      cursor: pointer;
+      user-select: none;
+      touch-action: none;
+    }
+
+    .thumb.dragging {
+      opacity: 0.45;
+    }
+
+    .thumb.drop-target {
+      position: relative;
+    }
+
+    .thumb.drop-before::before,
+    .thumb.drop-after::after {
+      content: "";
+      position: absolute;
+      top: -5px;
+      bottom: -5px;
+      width: 4px;
+      border-radius: 4px;
+      background: #d92d20;
+      box-shadow: 0 0 0 2px rgba(217, 45, 32, 0.18);
+      z-index: 5;
+    }
+
+    .thumb.drop-before::before {
+      left: -6px;
+    }
+
+    .thumb.drop-after::after {
+      right: -6px;
+    }
+
+    .thumb.active {
+      border-color: var(--accent);
+      box-shadow: 0 0 0 2px rgba(37, 99, 235, 0.14);
+    }
+
+    .thumb.selected {
+      background: var(--accent-soft);
+      border-color: #8fb0ff;
+    }
+
+    .thumb canvas {
+      display: block;
+      width: 100%;
+      height: auto;
+      border-radius: 4px;
+      background: #fff;
+      box-shadow: 0 1px 4px rgba(16, 24, 40, 0.12);
+      pointer-events: none;
+    }
+
+    .thumb span {
+      display: block;
+      margin-top: 5px;
+      font-size: 11px;
+      font-weight: 700;
+      text-align: center;
+      color: var(--muted);
+      pointer-events: none;
+    }
+
+    #pages {
+      overflow-y: auto;
+      overflow-x: auto;
+      padding: 18px;
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      background: #e9eef5;
+      box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.74);
+    }
+
+    .page-wrap {
+      width: min-content;
+      margin: 0 auto 18px;
+    }
+
+    .page-wrap canvas {
+      display: block;
+      background: #fff;
+      border-radius: 4px;
+      box-shadow: 0 12px 32px rgba(31, 41, 55, 0.18);
+    }
+
+    .page-label {
+      margin-top: 8px;
+      font-size: 12px;
+      font-weight: 700;
+      text-align: center;
+      color: var(--muted);
+    }
+
+    #status {
+      position: fixed;
+      left: 0;
+      right: 0;
+      bottom: 0;
+      padding: 7px 14px;
+      border-top: 1px solid var(--line);
+      background: rgba(255, 255, 255, 0.96);
+      color: var(--muted);
+      font-size: 12px;
+      font-weight: 700;
+      pointer-events: none;
+    }
+
+    #printPages {
+      display: none;
+    }
+
+    @media print {
+      @page {
+        margin: 0;
+      }
+
+      html,
+      body {
+        width: 100%;
+        margin: 0;
+        padding: 0;
+      }
+
+      body {
+        overflow: visible;
+        background: #fff;
+      }
+
+      #empty,
+      #app,
+      #thumbPanel,
+      #splitter,
+      #status {
+        display: none !important;
+      }
+
+      #printPages {
+        display: block !important;
+        width: 100%;
+        margin: 0;
+        padding: 0;
+      }
+
+      .print-page {
+        display: block;
+        width: 100%;
+        margin: 0;
+        break-after: page;
+        page-break-after: always;
+      }
+
+      .print-page:last-child {
+        break-after: auto;
+        page-break-after: auto;
+      }
+
+      .print-page img {
+        display: block;
+        width: 100%;
+        max-width: 100%;
+        height: auto;
+      }
+    }
+  </style>
+</head>
+<body>
+  <div id="empty">
+    <div>
+      <strong>PDF를 여기에 놓으세요.</strong>
+      <div>빈 영역, 썸네일 영역, 본문 어디에 놓아도 PDF가 열립니다.</div>
+    </div>
+  </div>
+  <main id="app">
+    <aside id="thumbPanel" aria-label="페이지 썸네일">
+      <div id="thumbHeader">
+        <div id="pageCount">0 페이지</div>
+        <div id="selectionHint">Ctrl/Shift 클릭으로 여러 페이지 선택</div>
+      </div>
+      <div id="thumbs"></div>
+    </aside>
+    <div id="splitter" title="썸네일 영역 너비 조절"></div>
+    <section id="pages" aria-label="PDF 페이지"></section>
+  </main>
+  <div id="printPages" aria-hidden="true"></div>
+  <div id="status">준비됨</div>
+
+  <script type="module">
+    import * as pdfjsLib from './pdf.min.mjs';
+
+    pdfjsLib.GlobalWorkerOptions.workerSrc = './pdf.worker.min.mjs';
+    const pageTransferMime = 'application/x-pdfmergetool-pages';
+    const pageTransferTextPrefix = 'PDFMERGETOOL_PAGES:';
+    const empty = document.getElementById('empty');
+    const app = document.getElementById('app');
+    const pageCount = document.getElementById('pageCount');
+    const selectionHint = document.getElementById('selectionHint');
+    const thumbs = document.getElementById('thumbs');
+    const splitter = document.getElementById('splitter');
+    const pages = document.getElementById('pages');
+    const printPages = document.getElementById('printPages');
+    const status = document.getElementById('status');
+
+    let pdfDocument = null;
+    let activePage = 1;
+    let mainScale = 1.25;
+    let thumbScale = 0.22;
+    let fitPageMode = false;
+    let renderToken = 0;
+    let pageOrder = [];
+    let pageRotations = {};
+    let selectedPages = new Set();
+    let lastSelectedPage = null;
+    let pageDrag = null;
+    let undoStack = [];
+    let redoStack = [];
+    let isDirty = false;
+    let documentSourcePath = '';
+    const windowInstanceId = crypto.randomUUID?.() ?? `${Date.now()}-${Math.random()}`;
+
+    const clamp = (value, min, max) => Math.max(min, Math.min(max, value));
+
+    function setStatus(text) {
+      status.textContent = text;
+    }
+
+    function updateThumbGridSize() {
+      const cardWidth = clamp(Math.round(340 * thumbScale), 42, 190);
+      app.style.setProperty('--thumb-card-width', `${cardWidth}px`);
+    }
+
+    function postPageOrder() {
+      if (window.chrome?.webview) {
+        window.chrome.webview.postMessage({
+          type: 'pageOrderChanged',
+          pageOrder,
+          rotations: pageRotations,
+          selectedPages: [...selectedPages],
+          activePage,
+          isDirty,
+          canUndo: undoStack.length > 0,
+          canRedo: redoStack.length > 0
+        });
+      }
+    }
+
+    function createSnapshot() {
+      return {
+        pageOrder: [...pageOrder],
+        pageRotations: { ...pageRotations },
+        selectedPages: [...selectedPages],
+        activePage,
+        lastSelectedPage
+      };
+    }
+
+    function restoreSnapshot(snapshot, dirty = true) {
+      pageOrder = [...snapshot.pageOrder];
+      pageRotations = { ...snapshot.pageRotations };
+      selectedPages = new Set(snapshot.selectedPages ?? []);
+      activePage = snapshot.activePage ?? pageOrder[0] ?? 1;
+      lastSelectedPage = snapshot.lastSelectedPage ?? null;
+      isDirty = dirty;
+      postPageOrder();
+      renderDocument(true);
+    }
+
+    function pushHistory() {
+      undoStack.push(createSnapshot());
+      if (undoStack.length > 50) {
+        undoStack.shift();
+      }
+      redoStack = [];
+    }
+
+    function markDirty() {
+      isDirty = true;
+      postPageOrder();
+    }
+
+    function clearRenderedPages() {
+      thumbs.replaceChildren();
+      pages.replaceChildren();
+      activePage = 1;
+    }
+
+    function bytesFromBase64(base64) {
+      const binary = atob(base64);
+      const bytes = new Uint8Array(binary.length);
+      for (let i = 0; i < binary.length; i += 1) {
+        bytes[i] = binary.charCodeAt(i);
+      }
+      return bytes;
+    }
+
+    async function preparePrint() {
+      if (!pdfDocument || pageOrder.length === 0) return false;
+
+      setStatus('인쇄 준비 중...');
+      printPages.replaceChildren();
+
+      const printScale = 2;
+      for (let index = 0; index < pageOrder.length; index += 1) {
+        const pageNumber = pageOrder[index];
+        const page = await pdfDocument.getPage(pageNumber);
+        const rotation = (page.rotate + (pageRotations[pageNumber] ?? 0)) % 360;
+        const viewport = page.getViewport({ scale: printScale, rotation });
+        const canvas = document.createElement('canvas');
+        const context = canvas.getContext('2d', { alpha: false });
+        canvas.width = Math.floor(viewport.width);
+        canvas.height = Math.floor(viewport.height);
+        await page.render({ canvasContext: context, viewport }).promise;
+
+        const image = document.createElement('img');
+        image.alt = `${index + 1} 페이지`;
+        image.src = canvas.toDataURL('image/png');
+
+        const wrapper = document.createElement('div');
+        wrapper.className = 'print-page';
+        wrapper.appendChild(image);
+        printPages.appendChild(wrapper);
+      }
+
+      setStatus('인쇄 준비 완료');
+      return true;
+    }
+
+    async function exportA4PageImages(options = {}) {
+      if (!pdfDocument || pageOrder.length === 0) {
+        window.chrome?.webview?.postMessage({
+          type: 'a4ExportComplete',
+          success: false,
+          message: 'PDF가 열려 있지 않습니다.'
+        });
+        return;
+      }
+
+      try {
+        const statusText = options.statusText ?? 'A4 맞춤 이미지 생성 중...';
+        setStatus(statusText);
+        const maxExportWidth = options.maxWidth ?? 2480;
+        const maxExportHeight = options.maxHeight ?? 3508;
+        const maxExportScale = options.maxScale ?? 2;
+        const jpegQuality = options.quality ?? 0.92;
+        for (let index = 0; index < pageOrder.length; index += 1) {
+          const pageNumber = pageOrder[index];
+          const page = await pdfDocument.getPage(pageNumber);
+          const rotation = (page.rotate + (pageRotations[pageNumber] ?? 0)) % 360;
+          const baseViewport = page.getViewport({ scale: 1, rotation });
+          const exportScale = Math.min(
+            maxExportScale,
+            maxExportWidth / baseViewport.width,
+            maxExportHeight / baseViewport.height);
+          const viewport = page.getViewport({ scale: Math.max(exportScale, 0.05), rotation });
+          const canvas = document.createElement('canvas');
+          const context = canvas.getContext('2d', { alpha: false });
+          canvas.width = Math.floor(viewport.width);
+          canvas.height = Math.floor(viewport.height);
+          context.fillStyle = '#ffffff';
+          context.fillRect(0, 0, canvas.width, canvas.height);
+          await page.render({ canvasContext: context, viewport }).promise;
+
+          window.chrome?.webview?.postMessage({
+            type: 'a4PageImage',
+            index,
+            total: pageOrder.length,
+            width: canvas.width,
+            height: canvas.height,
+            base64: canvas.toDataURL('image/jpeg', jpegQuality)
+          });
+          setStatus(`${statusText} ${index + 1} / ${pageOrder.length}`);
+          await new Promise((resolve) => setTimeout(resolve, 0));
+        }
+
+        window.chrome?.webview?.postMessage({
+          type: 'a4ExportComplete',
+          success: true
+        });
+      } catch (error) {
+        window.chrome?.webview?.postMessage({
+          type: 'a4ExportComplete',
+          success: false,
+          message: error?.message ?? 'A4 맞춤 이미지 생성 실패'
+        });
+      }
+    }
+
+    function setActive(pageNumber) {
+      if (!pdfDocument) return;
+      const previousPage = activePage;
+      activePage = clamp(pageNumber, 1, pdfDocument.numPages);
+      updateThumbClasses();
+      setStatus(`${activePage} / ${pdfDocument.numPages} 페이지 · 본문 ${Math.round(mainScale * 100)}% · 썸네일 ${Math.round(thumbScale * 100)}%`);
+      if (previousPage !== activePage) {
+        postPageOrder();
+      }
+    }
+
+    function updateThumbClasses() {
+      document.querySelectorAll('.thumb').forEach((node) => {
+        const page = Number(node.dataset.page);
+        node.classList.toggle('active', page === activePage);
+        node.classList.toggle('selected', selectedPages.has(page));
+      });
+      const selectedCount = selectedPages.size;
+      selectionHint.textContent = selectedCount > 0
+        ? `${selectedCount}개 선택됨 · 드래그로 묶음 이동`
+        : 'Ctrl/Shift 클릭으로 여러 페이지 선택';
+    }
+
+    function clearDropIndicators() {
+      document.querySelectorAll('.thumb').forEach((node) => {
+        node.classList.remove('dragging', 'drop-target', 'drop-before', 'drop-after');
+      });
+    }
+
+    function markDraggingPages(pagesToMark) {
+      document.querySelectorAll('.thumb').forEach((node) => {
+        node.classList.toggle('dragging', pagesToMark.includes(Number(node.dataset.page)));
+      });
+    }
+
+    function getSelectedPagesInOrder(fallbackPage = null) {
+      if (fallbackPage !== null && !selectedPages.has(fallbackPage)) {
+        selectedPages = new Set([fallbackPage]);
+        lastSelectedPage = fallbackPage;
+        updateThumbClasses();
+        postPageOrder();
+      }
+
+      const selected = pageOrder.filter((page) => selectedPages.has(page));
+      if (selected.length > 0) return selected;
+      return activePage ? [activePage] : [];
+    }
+
+    function buildPageTransferPayload(fallbackPage = null) {
+      return {
+        sourceInstanceId: windowInstanceId,
+        sourcePath: documentSourcePath,
+        pages: getSelectedPagesInOrder(fallbackPage).map((page) => ({
+          pageNumber: page,
+          rotation: pageRotations[page] ?? 0
+        })),
+        cut: false
+      };
+    }
+
+    function hasPageTransferData(event) {
+      const types = Array.from(event.dataTransfer?.types ?? []);
+      return types.includes(pageTransferMime) || types.includes('text/plain');
+    }
+
+    function readPageTransferData(dataTransfer) {
+      const customData = dataTransfer.getData(pageTransferMime);
+      if (customData) return customData;
+
+      const textData = dataTransfer.getData('text/plain');
+      if (textData?.startsWith(pageTransferTextPrefix)) {
+        return textData.slice(pageTransferTextPrefix.length);
+      }
+
+      return '';
+    }
+
+    function getDropInsertionIndex(event) {
+      const targetThumb = event.target?.closest?.('.thumb') ?? getThumbFromPoint(event);
+      if (!targetThumb) return pageOrder.length;
+
+      const targetPage = Number(targetThumb.dataset.page);
+      const targetIndex = pageOrder.indexOf(targetPage);
+      if (targetIndex < 0) return pageOrder.length;
+
+      const rect = targetThumb.getBoundingClientRect();
+      return event.clientX < rect.left + rect.width / 2 ? targetIndex : targetIndex + 1;
+    }
+
+    function updateExternalDropIndicator(event) {
+      clearDropIndicators();
+      if (!hasPageTransferData(event)) return;
+
+      const targetThumb = event.target?.closest?.('.thumb') ?? getThumbFromPoint(event);
+      if (!targetThumb) return;
+
+      const rect = targetThumb.getBoundingClientRect();
+      const placement = event.clientX < rect.left + rect.width / 2 ? 'before' : 'after';
+      targetThumb.classList.add('drop-target', placement === 'before' ? 'drop-before' : 'drop-after');
+    }
+
+    function updateNativeDropIndicator(clientX, clientY) {
+      clearDropIndicators();
+
+      const targetThumb = getThumbFromPoint({ clientX, clientY });
+      if (!targetThumb) return;
+
+      const rect = targetThumb.getBoundingClientRect();
+      const placement = clientX < rect.left + rect.width / 2 ? 'before' : 'after';
+      targetThumb.classList.add('drop-target', placement === 'before' ? 'drop-before' : 'drop-after');
+    }
+
+    function handleNativePageTransferDrop(raw, clientX, clientY) {
+      clearDropIndicators();
+      if (!raw) return;
+
+      try {
+        const payload = JSON.parse(raw);
+        const insertionIndex = getDropInsertionIndex({ clientX, clientY });
+        if (payload.sourceInstanceId === windowInstanceId) {
+          movePagesToIndex(
+            (payload.pages ?? []).map((page) => page.pageNumber),
+            insertionIndex);
+          return;
+        }
+
+        window.chrome?.webview?.postMessage({
+          type: 'insertExternalPages',
+          sourcePath: payload.sourcePath,
+          pages: payload.pages ?? [],
+          insertionIndex
+        });
+      } catch (error) {
+        setStatus(error?.message ?? '드롭한 페이지 정보를 읽지 못했습니다.');
+      }
+    }
+
+    function isInsideElement(event, element) {
+      const rect = element.getBoundingClientRect();
+      return event.clientX >= rect.left
+        && event.clientX <= rect.right
+        && event.clientY >= rect.top
+        && event.clientY <= rect.bottom;
+    }
+
+    function getThumbFromPoint(event) {
+      return document.elementFromPoint(event.clientX, event.clientY)?.closest?.('.thumb') ?? null;
+    }
+
+    function updatePointerDropTarget(event) {
+      if (!pageDrag?.dragging) return;
+
+      clearDropIndicators();
+      markDraggingPages(pageDrag.pages);
+
+      const targetThumb = getThumbFromPoint(event);
+      pageDrag.isInsideThumbs = isInsideElement(event, thumbs);
+      pageDrag.overThumb = Boolean(targetThumb);
+      pageDrag.targetPage = null;
+
+      if (!targetThumb) return;
+
+      const targetPage = Number(targetThumb.dataset.page);
+      if (pageDrag.pages.includes(targetPage)) return;
+
+      const rect = targetThumb.getBoundingClientRect();
+      const placement = event.clientX < rect.left + rect.width / 2 ? 'before' : 'after';
+      pageDrag.targetPage = targetPage;
+      pageDrag.placement = placement;
+      targetThumb.classList.add('drop-target', placement === 'before' ? 'drop-before' : 'drop-after');
+    }
+
+    function beginThumbPointerDrag(event, pageNumber, thumb) {
+      if (event.button !== 0) return;
+
+      pageDrag = {
+        pointerId: event.pointerId,
+        sourceThumb: thumb,
+        pageNumber,
+        startX: event.clientX,
+        startY: event.clientY,
+        clickEvent: {
+          ctrlKey: event.ctrlKey,
+          metaKey: event.metaKey,
+          shiftKey: event.shiftKey
+        },
+        pages: [],
+        dragging: false,
+        targetPage: null,
+        placement: 'before',
+        isInsideThumbs: false,
+        overThumb: false
+      };
+
+      thumb.setPointerCapture(event.pointerId);
+      window.addEventListener('pointermove', handleThumbPointerMove);
+      window.addEventListener('pointerup', handleThumbPointerUp);
+      window.addEventListener('pointercancel', handleThumbPointerCancel);
+    }
+
+    function handleThumbPointerMove(event) {
+      if (!pageDrag || event.pointerId !== pageDrag.pointerId) return;
+
+      const distance = Math.hypot(event.clientX - pageDrag.startX, event.clientY - pageDrag.startY);
+      if (!pageDrag.dragging && distance >= 5) {
+        if (!selectedPages.has(pageDrag.pageNumber)) {
+          selectedPages = new Set([pageDrag.pageNumber]);
+          lastSelectedPage = pageDrag.pageNumber;
+          updateThumbClasses();
+        }
+
+        pageDrag.pages = pageOrder.filter((page) => selectedPages.has(page));
+        pageDrag.dragging = pageDrag.pages.length > 0;
+        markDraggingPages(pageDrag.pages);
+      }
+
+      if (pageDrag.dragging) {
+        event.preventDefault();
+        updatePointerDropTarget(event);
+      }
+    }
+
+    async function handleThumbPointerUp(event) {
+      if (!pageDrag || event.pointerId !== pageDrag.pointerId) return;
+
+      const finishedDrag = pageDrag;
+      window.removeEventListener('pointermove', handleThumbPointerMove);
+      window.removeEventListener('pointerup', handleThumbPointerUp);
+      window.removeEventListener('pointercancel', handleThumbPointerCancel);
+
+      try {
+        finishedDrag.sourceThumb.releasePointerCapture(event.pointerId);
+      } catch {
+        // Pointer capture can already be released by the browser when the pointer leaves the window.
+      }
+
+      pageDrag = null;
+      clearDropIndicators();
+
+      if (!finishedDrag.dragging) {
+        selectPage(finishedDrag.pageNumber, finishedDrag.clickEvent);
+        goToPage(finishedDrag.pageNumber);
+        return;
+      }
+
+      event.preventDefault();
+      if (finishedDrag.targetPage !== null) {
+        await movePages(finishedDrag.pages, finishedDrag.targetPage, finishedDrag.placement);
+      } else if (finishedDrag.isInsideThumbs && !finishedDrag.overThumb) {
+        await movePagesToEnd(finishedDrag.pages);
+      } else {
+        updateThumbClasses();
+      }
+    }
+
+    function handleThumbPointerCancel(event) {
+      if (!pageDrag || event.pointerId !== pageDrag.pointerId) return;
+
+      window.removeEventListener('pointermove', handleThumbPointerMove);
+      window.removeEventListener('pointerup', handleThumbPointerUp);
+      window.removeEventListener('pointercancel', handleThumbPointerCancel);
+      try {
+        pageDrag.sourceThumb.releasePointerCapture(event.pointerId);
+      } catch {
+        // Pointer capture can already be released by the browser when the pointer leaves the window.
+      }
+      pageDrag = null;
+      clearDropIndicators();
+      updateThumbClasses();
+    }
+
+    function selectPage(pageNumber, event) {
+      if (event?.shiftKey && lastSelectedPage !== null) {
+        const startIndex = pageOrder.indexOf(lastSelectedPage);
+        const endIndex = pageOrder.indexOf(pageNumber);
+        if (startIndex >= 0 && endIndex >= 0) {
+          const [from, to] = startIndex < endIndex ? [startIndex, endIndex] : [endIndex, startIndex];
+          for (let index = from; index <= to; index += 1) {
+            selectedPages.add(pageOrder[index]);
+          }
+        }
+      } else if (event?.ctrlKey || event?.metaKey) {
+        if (selectedPages.has(pageNumber)) {
+          selectedPages.delete(pageNumber);
+        } else {
+          selectedPages.add(pageNumber);
+        }
+        lastSelectedPage = pageNumber;
+      } else {
+        selectedPages = new Set([pageNumber]);
+        lastSelectedPage = pageNumber;
+      }
+
+      updateThumbClasses();
+      postPageOrder();
+    }
+
+    function calculateFitScale(page) {
+      const viewport = page.getViewport({ scale: 1 });
+      const availableWidth = Math.max(240, pages.clientWidth - 52);
+      const availableHeight = Math.max(260, pages.clientHeight - 54);
+      return clamp(Math.min(availableWidth / viewport.width, availableHeight / viewport.height), 0.2, 3);
+    }
+
+    async function renderPage(pageNumber, displayIndex, token) {
+      const page = await pdfDocument.getPage(pageNumber);
+      if (token !== renderToken) return;
+
+      if (fitPageMode && pageNumber === 1) {
+        mainScale = calculateFitScale(page);
+      }
+
+      const rotation = (page.rotate + (pageRotations[pageNumber] ?? 0)) % 360;
+      const pageViewport = page.getViewport({ scale: mainScale, rotation });
+      const pageCanvas = document.createElement('canvas');
+      const pageContext = pageCanvas.getContext('2d', { alpha: false });
+      pageCanvas.width = Math.floor(pageViewport.width);
+      pageCanvas.height = Math.floor(pageViewport.height);
+
+      const pageWrap = document.createElement('div');
+      pageWrap.id = `page-${pageNumber}`;
+      pageWrap.className = 'page-wrap';
+      pageWrap.dataset.page = String(pageNumber);
+      pageWrap.appendChild(pageCanvas);
+
+      const label = document.createElement('div');
+      label.className = 'page-label';
+      label.textContent = `${displayIndex + 1} 페이지`;
+      pageWrap.appendChild(label);
+      pages.appendChild(pageWrap);
+
+      const thumbViewport = page.getViewport({ scale: thumbScale, rotation });
+      const thumbCanvas = document.createElement('canvas');
+      const thumbContext = thumbCanvas.getContext('2d', { alpha: false });
+      thumbCanvas.width = Math.floor(thumbViewport.width);
+      thumbCanvas.height = Math.floor(thumbViewport.height);
+
+      const thumb = document.createElement('button');
+      thumb.className = 'thumb';
+      thumb.dataset.page = String(pageNumber);
+      thumb.type = 'button';
+      thumb.draggable = true;
+      thumb.appendChild(thumbCanvas);
+
+      const thumbLabel = document.createElement('span');
+      thumbLabel.textContent = String(displayIndex + 1);
+      thumb.appendChild(thumbLabel);
+      thumb.addEventListener('dragstart', (event) => {
+        const payload = buildPageTransferPayload(pageNumber);
+        if (!payload.sourcePath || payload.pages.length === 0) {
+          event.preventDefault();
+          return;
+        }
+
+        event.dataTransfer.effectAllowed = 'copy';
+        const payloadJson = JSON.stringify(payload);
+        event.dataTransfer.setData(pageTransferMime, payloadJson);
+        event.dataTransfer.setData('text/plain', `${pageTransferTextPrefix}${payloadJson}`);
+        markDraggingPages(payload.pages.map((page) => page.pageNumber));
+      });
+      thumb.addEventListener('dragend', () => {
+        clearDropIndicators();
+        updateThumbClasses();
+      });
+      thumb.addEventListener('pointerdown', (event) => {
+        beginThumbPointerDrag(event, pageNumber, thumb);
+      });
+      thumbs.appendChild(thumb);
+
+      await Promise.all([
+        page.render({ canvasContext: pageContext, viewport: pageViewport }).promise,
+        page.render({ canvasContext: thumbContext, viewport: thumbViewport }).promise
+      ]);
+    }
+
+    async function renderDocument(keepPage = true) {
+      if (!pdfDocument) return;
+      const targetPage = keepPage ? activePage : 1;
+      const token = ++renderToken;
+      setStatus('렌더링 중...');
+      clearRenderedPages();
+      updateThumbGridSize();
+      pageCount.textContent = pageOrder.length === pdfDocument.numPages
+        ? `총 ${pdfDocument.numPages} 페이지`
+        : `총 ${pageOrder.length} / 원본 ${pdfDocument.numPages} 페이지`;
+
+      for (let index = 0; index < pageOrder.length; index += 1) {
+        await renderPage(pageOrder[index], index, token);
+        if (token !== renderToken) return;
+      }
+
+      setActive(targetPage);
+      goToPage(targetPage, false);
+    }
+
+    async function loadPdf(base64, dirtyAfterLoad = false, sourcePath = '') {
+      selectedPages.clear();
+      lastSelectedPage = null;
+      documentSourcePath = sourcePath ?? '';
+      clearRenderedPages();
+      empty.style.display = 'none';
+      app.style.display = 'grid';
+      setStatus('PDF 여는 중...');
+
+      pdfDocument = await pdfjsLib.getDocument({ data: bytesFromBase64(base64) }).promise;
+      pageOrder = Array.from({ length: pdfDocument.numPages }, (_, index) => index + 1);
+      pageRotations = {};
+      undoStack = [];
+      redoStack = [];
+      isDirty = Boolean(dirtyAfterLoad);
+      pageCount.textContent = `총 ${pdfDocument.numPages} 페이지`;
+      postPageOrder();
+      fitPageMode = true;
+      await renderDocument(false);
+    }
+
+    function goToPage(pageNumber, smooth = true) {
+      if (!pdfDocument) return;
+      const page = clamp(pageNumber, 1, pdfDocument.numPages);
+      document.getElementById(`page-${page}`)?.scrollIntoView({
+        behavior: smooth ? 'smooth' : 'auto',
+        block: 'start'
+      });
+      setActive(page);
+    }
+
+    function goRelative(offset) {
+      if (!pdfDocument || pageOrder.length === 0) return;
+      const currentIndex = Math.max(0, pageOrder.indexOf(activePage));
+      const nextIndex = clamp(currentIndex + offset, 0, pageOrder.length - 1);
+      goToPage(pageOrder[nextIndex]);
+    }
+
+    async function movePages(pagesToMove, targetPage, placement) {
+      if (!pdfDocument || pagesToMove.length === 0 || pagesToMove.includes(targetPage)) return;
+      pushHistory();
+      const moving = pageOrder.filter((page) => pagesToMove.includes(page));
+      const remaining = pageOrder.filter((page) => !pagesToMove.includes(page));
+      let targetIndex = remaining.indexOf(targetPage);
+      if (targetIndex < 0) return;
+      if (placement === 'after') {
+        targetIndex += 1;
+      }
+      pageOrder = [
+        ...remaining.slice(0, targetIndex),
+        ...moving,
+        ...remaining.slice(targetIndex)
+      ];
+      markDirty();
+      selectedPages = new Set(moving);
+      activePage = moving[0];
+      await renderDocument(true);
+    }
+
+    async function movePagesToEnd(pagesToMove) {
+      if (!pdfDocument || pagesToMove.length === 0) return;
+      pushHistory();
+      const moving = pageOrder.filter((page) => pagesToMove.includes(page));
+      const remaining = pageOrder.filter((page) => !pagesToMove.includes(page));
+      if (moving.length === 0) return;
+      pageOrder = [...remaining, ...moving];
+      markDirty();
+      selectedPages = new Set(moving);
+      activePage = moving[0];
+      await renderDocument(true);
+    }
+
+    async function movePagesToIndex(pagesToMove, insertionIndex) {
+      if (!pdfDocument || pagesToMove.length === 0) return;
+      const moving = pageOrder.filter((page) => pagesToMove.includes(page));
+      if (moving.length === 0) return;
+
+      pushHistory();
+      const movingBeforeIndex = pageOrder
+        .slice(0, insertionIndex)
+        .filter((page) => pagesToMove.includes(page))
+        .length;
+      const remaining = pageOrder.filter((page) => !pagesToMove.includes(page));
+      const adjustedIndex = clamp(insertionIndex - movingBeforeIndex, 0, remaining.length);
+      pageOrder = [
+        ...remaining.slice(0, adjustedIndex),
+        ...moving,
+        ...remaining.slice(adjustedIndex)
+      ];
+      selectedPages = new Set(moving);
+      activePage = moving[0];
+      markDirty();
+      await renderDocument(true);
+    }
+
+    function handleExternalThumbDragOver(event) {
+      if (!hasPageTransferData(event)) return;
+      event.preventDefault();
+      event.stopPropagation();
+      event.dataTransfer.dropEffect = 'copy';
+      updateExternalDropIndicator(event);
+    }
+
+    function handleExternalThumbDrop(event) {
+      if (!hasPageTransferData(event)) return;
+      event.preventDefault();
+      event.stopPropagation();
+      clearDropIndicators();
+
+      const raw = readPageTransferData(event.dataTransfer);
+      if (!raw) return;
+
+      try {
+        const payload = JSON.parse(raw);
+        if (payload.sourceInstanceId === windowInstanceId) {
+          movePagesToIndex(
+            (payload.pages ?? []).map((page) => page.pageNumber),
+            getDropInsertionIndex(event));
+          return;
+        }
+
+        window.chrome?.webview?.postMessage({
+          type: 'insertExternalPages',
+          sourcePath: payload.sourcePath,
+          pages: payload.pages ?? [],
+          insertionIndex: getDropInsertionIndex(event)
+        });
+      } catch (error) {
+        setStatus(error?.message ?? '드롭한 페이지 정보를 읽지 못했습니다.');
+      }
+    }
+
+    async function deleteSelectedPages() {
+      if (!pdfDocument || selectedPages.size === 0) return;
+      if (selectedPages.size >= pageOrder.length) {
+        setStatus('모든 페이지는 삭제할 수 없습니다.');
+        return;
+      }
+
+      pushHistory();
+      pageOrder = pageOrder.filter((page) => !selectedPages.has(page));
+      selectedPages.clear();
+      activePage = pageOrder[0] ?? 1;
+      lastSelectedPage = null;
+      markDirty();
+      await renderDocument(true);
+    }
+
+    async function rotateSelectedPages(delta) {
+      if (!pdfDocument || selectedPages.size === 0) return;
+      pushHistory();
+      selectedPages.forEach((page) => {
+        const next = ((pageRotations[page] ?? 0) + delta) % 360;
+        pageRotations[page] = next < 0 ? next + 360 : next;
+        if (pageRotations[page] === 0) {
+          delete pageRotations[page];
+        }
+      });
+      markDirty();
+      await renderDocument(true);
+    }
+
+    async function reversePageOrder() {
+      if (!pdfDocument || pageOrder.length < 2) return;
+      pushHistory();
+      pageOrder = [...pageOrder].reverse();
+      selectedPages.clear();
+      activePage = pageOrder[0];
+      markDirty();
+      await renderDocument(true);
+    }
+
+    function undoEdit() {
+      if (undoStack.length === 0) return;
+      redoStack.push(createSnapshot());
+      const snapshot = undoStack.pop();
+      restoreSnapshot(snapshot, undoStack.length > 0 || redoStack.length > 0);
+    }
+
+    function redoEdit() {
+      if (redoStack.length === 0) return;
+      undoStack.push(createSnapshot());
+      const snapshot = redoStack.pop();
+      restoreSnapshot(snapshot, true);
+    }
+
+    function zoomMain(delta) {
+      fitPageMode = false;
+      mainScale = clamp(mainScale + delta, 0.25, 4);
+      renderDocument(true);
+    }
+
+    function resetMainZoom() {
+      fitPageMode = false;
+      mainScale = 1.25;
+      renderDocument(true);
+    }
+
+    function fitPage() {
+      fitPageMode = true;
+      renderDocument(true);
+    }
+
+    function zoomThumb(delta) {
+      thumbScale = clamp(thumbScale + delta, 0.06, 0.5);
+      renderDocument(true);
+    }
+
+    function resetThumbZoom() {
+      thumbScale = 0.22;
+      renderDocument(true);
+    }
+
+    function handleCommand(command, options = {}) {
+      switch (command) {
+        case 'mainZoomIn': zoomMain(0.15); break;
+        case 'mainZoomOut': zoomMain(-0.15); break;
+        case 'mainZoomReset': resetMainZoom(); break;
+        case 'fitPage': fitPage(); break;
+        case 'thumbZoomIn': zoomThumb(0.035); break;
+        case 'thumbZoomOut': zoomThumb(-0.035); break;
+        case 'thumbZoomReset': resetThumbZoom(); break;
+        case 'nextPage': goRelative(1); break;
+        case 'prevPage': goRelative(-1); break;
+        case 'firstPage': if (pageOrder.length > 0) goToPage(pageOrder[0]); break;
+        case 'lastPage': if (pageOrder.length > 0) goToPage(pageOrder[pageOrder.length - 1]); break;
+        case 'deleteSelectedPages': deleteSelectedPages(); break;
+        case 'rotateSelectedClockwise': rotateSelectedPages(90); break;
+        case 'rotateSelectedCounterClockwise': rotateSelectedPages(-90); break;
+        case 'rotateSelected180': rotateSelectedPages(180); break;
+        case 'reversePageOrder': reversePageOrder(); break;
+        case 'undo': undoEdit(); break;
+        case 'redo': redoEdit(); break;
+        case 'markClean': isDirty = false; postPageOrder(); break;
+        case 'exportA4PageImages': exportA4PageImages(options); break;
+        case 'preparePrint':
+          preparePrint()
+            .then((ready) => {
+              window.chrome?.webview?.postMessage({ type: 'printReady', ready });
+            })
+            .catch((error) => {
+              window.chrome?.webview?.postMessage({
+                type: 'printReady',
+                ready: false,
+                message: error?.message ?? '인쇄 준비 실패'
+              });
+            });
+          break;
+      }
+    }
+
+    pages.addEventListener('scroll', () => {
+      if (!pdfDocument) return;
+      let closest = activePage;
+      let distance = Number.POSITIVE_INFINITY;
+      document.querySelectorAll('.page-wrap').forEach((node) => {
+        const rect = node.getBoundingClientRect();
+        const diff = Math.abs(rect.top - pages.getBoundingClientRect().top - 12);
+        if (diff < distance) {
+          distance = diff;
+          closest = Number(node.id.replace('page-', ''));
+        }
+      });
+      setActive(closest);
+    }, { passive: true });
+
+    window.addEventListener('wheel', (event) => {
+      if (!pdfDocument || !event.ctrlKey) return;
+      event.preventDefault();
+      event.stopPropagation();
+      zoomMain(event.deltaY < 0 ? 0.12 : -0.12);
+    }, { passive: false, capture: true });
+
+    window.addEventListener('keydown', (event) => {
+      if (!pdfDocument) return;
+      if (event.ctrlKey && event.shiftKey && event.key.toLowerCase() === 'n') {
+        event.preventDefault();
+        window.chrome?.webview?.postMessage({ type: 'addBlankA4Page' });
+      } else if (event.ctrlKey && event.shiftKey && event.key.toLowerCase() === 'a') {
+        event.preventDefault();
+        window.chrome?.webview?.postMessage({ type: 'fitAllPagesToA4' });
+      } else if (event.ctrlKey && event.shiftKey && event.key.toLowerCase() === 'o') {
+        event.preventDefault();
+        window.chrome?.webview?.postMessage({ type: 'optimizeA4FileSize' });
+      } else if (event.ctrlKey && !event.shiftKey && event.key.toLowerCase() === 'v') {
+        event.preventDefault();
+        window.chrome?.webview?.postMessage({ type: 'pasteTransferredPages' });
+      } else if (event.ctrlKey && !event.shiftKey && event.key.toLowerCase() === 'c') {
+        event.preventDefault();
+        window.chrome?.webview?.postMessage({ type: 'copySelectedPages' });
+      } else if (event.ctrlKey && !event.shiftKey && event.key.toLowerCase() === 'x') {
+        event.preventDefault();
+        window.chrome?.webview?.postMessage({ type: 'cutSelectedPages' });
+      } else if (event.ctrlKey && !event.shiftKey && (event.key === '+' || event.key === '=')) {
+        event.preventDefault();
+        zoomMain(0.15);
+      } else if (event.ctrlKey && !event.shiftKey && event.key === '-') {
+        event.preventDefault();
+        zoomMain(-0.15);
+      } else if (event.ctrlKey && !event.shiftKey && event.key === '0') {
+        event.preventDefault();
+        resetMainZoom();
+      } else if (event.ctrlKey && !event.shiftKey && event.key === '1') {
+        event.preventDefault();
+        fitPage();
+      } else if (event.ctrlKey && !event.shiftKey && event.key.toLowerCase() === 'a') {
+        event.preventDefault();
+        selectedPages = new Set(pageOrder);
+        updateThumbClasses();
+        postPageOrder();
+      } else if (event.ctrlKey && !event.shiftKey && event.key.toLowerCase() === 'z') {
+        event.preventDefault();
+        undoEdit();
+      } else if (event.ctrlKey && !event.shiftKey && event.key.toLowerCase() === 'y') {
+        event.preventDefault();
+        redoEdit();
+      } else if (event.ctrlKey && !event.shiftKey && event.key.toLowerCase() === 'r') {
+        event.preventDefault();
+        rotateSelectedPages(90);
+      } else if (event.key === 'Delete') {
+        event.preventDefault();
+        deleteSelectedPages();
+      } else if (event.ctrlKey && event.shiftKey && (event.key === '+' || event.key === '=')) {
+        event.preventDefault();
+        zoomThumb(0.04);
+      } else if (event.ctrlKey && event.shiftKey && event.key === '-') {
+        event.preventDefault();
+        zoomThumb(-0.04);
+      } else if (event.key === 'PageDown' || event.key === 'ArrowDown' || event.key === 'ArrowRight') {
+        event.preventDefault();
+        goRelative(1);
+      } else if (event.key === 'PageUp' || event.key === 'ArrowUp' || event.key === 'ArrowLeft') {
+        event.preventDefault();
+        goRelative(-1);
+      } else if (event.key === 'Home') {
+        event.preventDefault();
+        if (pageOrder.length > 0) goToPage(pageOrder[0]);
+      } else if (event.key === 'End') {
+        event.preventDefault();
+        if (pageOrder.length > 0) goToPage(pageOrder[pageOrder.length - 1]);
+      }
+    });
+
+    let draggingSplitter = false;
+    splitter.addEventListener('pointerdown', (event) => {
+      draggingSplitter = true;
+      splitter.classList.add('dragging');
+      splitter.setPointerCapture(event.pointerId);
+    });
+
+    splitter.addEventListener('pointermove', (event) => {
+      if (!draggingSplitter) return;
+      const rect = app.getBoundingClientRect();
+      const nextWidth = clamp(event.clientX - rect.left - 12, 86, 320);
+      app.style.setProperty('--thumb-width', `${nextWidth}px`);
+    });
+
+    splitter.addEventListener('pointerup', (event) => {
+      draggingSplitter = false;
+      splitter.classList.remove('dragging');
+      splitter.releasePointerCapture(event.pointerId);
+    });
+
+    window.addEventListener('resize', () => {
+      if (fitPageMode) {
+        renderDocument(true);
+      }
+    });
+
+    thumbs.addEventListener('dragover', handleExternalThumbDragOver);
+    thumbs.addEventListener('dragleave', (event) => {
+      if (!thumbs.contains(event.relatedTarget)) {
+        clearDropIndicators();
+      }
+    });
+    thumbs.addEventListener('drop', handleExternalThumbDrop);
+
+    if (window.chrome?.webview) {
+      window.chrome.webview.addEventListener('message', (event) => {
+        if (event.data?.type === 'loadPdf') {
+        loadPdf(event.data.base64, event.data.isDirty, event.data.sourcePath);
+        } else if (event.data?.type === 'command') {
+          handleCommand(event.data.command, event.data.options ?? {});
+        } else if (event.data?.type === 'nativePageTransferDragOver') {
+          updateNativeDropIndicator(event.data.clientX, event.data.clientY);
+        } else if (event.data?.type === 'nativePageTransferDragLeave') {
+          clearDropIndicators();
+        } else if (event.data?.type === 'nativePageTransferDrop') {
+          handleNativePageTransferDrop(event.data.payload, event.data.clientX, event.data.clientY);
+        }
+      });
+      window.chrome.webview.postMessage({ type: 'viewerReady' });
+    }
+
+    window.pdfMergeToolViewer = { loadPdf, handleCommand, preparePrint };
+  </script>
+</body>
+</html>

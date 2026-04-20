@@ -1,0 +1,804 @@
+<Window x:Class="PdfMergeTool.MainWindow"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:iconPacks="http://metro.mahapps.com/winfx/xaml/iconpacks"
+        xmlns:wv2="clr-namespace:Microsoft.Web.WebView2.Wpf;assembly=Microsoft.Web.WebView2.Wpf"
+        Title="PDF 뷰어"
+        Width="1180"
+        Height="760"
+        MinWidth="960"
+        MinHeight="620"
+        Background="#F5F7FA"
+        FontFamily="Segoe UI Variable, Segoe UI"
+        AllowDrop="True"
+        KeyDown="OnWindowKeyDown">
+    <Window.Resources>
+        <SolidColorBrush x:Key="InkBrush" Color="#1F2937" />
+        <SolidColorBrush x:Key="MutedBrush" Color="#6B7280" />
+        <SolidColorBrush x:Key="LineBrush" Color="#D9E1EC" />
+        <SolidColorBrush x:Key="PanelBrush" Color="#FFFFFF" />
+        <SolidColorBrush x:Key="AccentBrush" Color="#2563EB" />
+        <SolidColorBrush x:Key="FileIconBrush" Color="#2563EB" />
+        <SolidColorBrush x:Key="EditIconBrush" Color="#0F766E" />
+        <SolidColorBrush x:Key="PageIconBrush" Color="#B45309" />
+        <SolidColorBrush x:Key="ViewIconBrush" Color="#475569" />
+        <SolidColorBrush x:Key="NavIconBrush" Color="#7C3AED" />
+        <Style x:Key="ToolbarButtonStyle" TargetType="{x:Type Button}">
+            <Setter Property="Width" Value="28" />
+            <Setter Property="Height" Value="25" />
+            <Setter Property="Margin" Value="0" />
+            <Setter Property="Padding" Value="0" />
+            <Setter Property="Background" Value="Transparent" />
+            <Setter Property="BorderBrush" Value="Transparent" />
+            <Setter Property="Foreground" Value="{StaticResource InkBrush}" />
+            <Setter Property="Focusable" Value="False" />
+            <Setter Property="HorizontalContentAlignment" Value="Center" />
+            <Setter Property="VerticalContentAlignment" Value="Center" />
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="{x:Type Button}">
+                        <Border x:Name="ButtonChrome"
+                                Background="{TemplateBinding Background}"
+                                BorderBrush="{TemplateBinding BorderBrush}"
+                                BorderThickness="{TemplateBinding BorderThickness}"
+                                CornerRadius="8"
+                                SnapsToDevicePixels="True">
+                            <ContentPresenter HorizontalAlignment="{TemplateBinding HorizontalContentAlignment}"
+                                              VerticalAlignment="{TemplateBinding VerticalContentAlignment}" />
+                        </Border>
+                        <ControlTemplate.Triggers>
+                            <Trigger Property="IsMouseOver" Value="True">
+                                <Setter TargetName="ButtonChrome" Property="Background" Value="#EAF1FF" />
+                                <Setter TargetName="ButtonChrome" Property="BorderBrush" Value="#C9D8FF" />
+                            </Trigger>
+                            <Trigger Property="IsPressed" Value="True">
+                                <Setter TargetName="ButtonChrome" Property="Background" Value="#DDE8FF" />
+                            </Trigger>
+                            <Trigger Property="IsEnabled" Value="False">
+                                <Setter Property="Opacity" Value="0.45" />
+                            </Trigger>
+                        </ControlTemplate.Triggers>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
+        <Style x:Key="ToolbarTextButtonStyle" TargetType="{x:Type Button}">
+            <Setter Property="Height" Value="32" />
+            <Setter Property="Margin" Value="2,0" />
+            <Setter Property="Padding" Value="9,0" />
+            <Setter Property="Background" Value="#F8FAFC" />
+            <Setter Property="BorderBrush" Value="#D9E1EC" />
+            <Setter Property="Foreground" Value="{StaticResource InkBrush}" />
+            <Setter Property="Focusable" Value="False" />
+            <Setter Property="HorizontalContentAlignment" Value="Center" />
+            <Setter Property="VerticalContentAlignment" Value="Center" />
+            <Setter Property="FontWeight" Value="SemiBold" />
+            <Setter Property="FontSize" Value="12" />
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="{x:Type Button}">
+                        <Border x:Name="ButtonChrome"
+                                Background="{TemplateBinding Background}"
+                                BorderBrush="{TemplateBinding BorderBrush}"
+                                BorderThickness="{TemplateBinding BorderThickness}"
+                                CornerRadius="8"
+                                Padding="{TemplateBinding Padding}"
+                                SnapsToDevicePixels="True">
+                            <ContentPresenter HorizontalAlignment="{TemplateBinding HorizontalContentAlignment}"
+                                              VerticalAlignment="{TemplateBinding VerticalContentAlignment}" />
+                        </Border>
+                        <ControlTemplate.Triggers>
+                            <Trigger Property="IsMouseOver" Value="True">
+                                <Setter TargetName="ButtonChrome" Property="Background" Value="#EAF1FF" />
+                                <Setter TargetName="ButtonChrome" Property="BorderBrush" Value="#C9D8FF" />
+                            </Trigger>
+                            <Trigger Property="IsPressed" Value="True">
+                                <Setter TargetName="ButtonChrome" Property="Background" Value="#DDE8FF" />
+                            </Trigger>
+                            <Trigger Property="IsEnabled" Value="False">
+                                <Setter Property="Opacity" Value="0.45" />
+                            </Trigger>
+                        </ControlTemplate.Triggers>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
+        <Style x:Key="ToolbarIconStyle" TargetType="{x:Type iconPacks:PackIconMaterial}">
+            <Setter Property="Width" Value="15" />
+            <Setter Property="Height" Value="15" />
+            <Setter Property="Foreground" Value="{StaticResource InkBrush}" />
+        </Style>
+        <Style x:Key="ToolbarTextIconStyle" TargetType="{x:Type iconPacks:PackIconMaterial}"
+               BasedOn="{StaticResource ToolbarIconStyle}">
+            <Setter Property="Margin" Value="0,0,6,0" />
+        </Style>
+        <Style x:Key="FileIconStyle" TargetType="{x:Type iconPacks:PackIconMaterial}"
+               BasedOn="{StaticResource ToolbarIconStyle}">
+            <Setter Property="Foreground" Value="{StaticResource FileIconBrush}" />
+        </Style>
+        <Style x:Key="EditIconStyle" TargetType="{x:Type iconPacks:PackIconMaterial}"
+               BasedOn="{StaticResource ToolbarIconStyle}">
+            <Setter Property="Foreground" Value="{StaticResource EditIconBrush}" />
+        </Style>
+        <Style x:Key="PageIconStyle" TargetType="{x:Type iconPacks:PackIconMaterial}"
+               BasedOn="{StaticResource ToolbarIconStyle}">
+            <Setter Property="Foreground" Value="{StaticResource PageIconBrush}" />
+        </Style>
+        <Style x:Key="ViewIconStyle" TargetType="{x:Type iconPacks:PackIconMaterial}"
+               BasedOn="{StaticResource ToolbarIconStyle}">
+            <Setter Property="Foreground" Value="{StaticResource ViewIconBrush}" />
+        </Style>
+        <Style x:Key="NavIconStyle" TargetType="{x:Type iconPacks:PackIconMaterial}"
+               BasedOn="{StaticResource ToolbarIconStyle}">
+            <Setter Property="Foreground" Value="{StaticResource NavIconBrush}" />
+        </Style>
+        <Style x:Key="ToolbarGroupStyle" TargetType="{x:Type Border}">
+            <Setter Property="Margin" Value="0,0,5,0" />
+            <Setter Property="Padding" Value="3" />
+            <Setter Property="Background" Value="#FFFFFF" />
+            <Setter Property="BorderBrush" Value="{StaticResource LineBrush}" />
+            <Setter Property="BorderThickness" Value="1" />
+            <Setter Property="CornerRadius" Value="8" />
+        </Style>
+    </Window.Resources>
+
+    <Grid>
+        <Grid.RowDefinitions>
+            <RowDefinition Height="Auto" />
+            <RowDefinition Height="Auto" />
+            <RowDefinition Height="Auto" />
+            <RowDefinition Height="*" />
+            <RowDefinition Height="Auto" />
+        </Grid.RowDefinitions>
+
+        <Menu Grid.Row="0"
+              Background="#FFFFFF"
+              BorderBrush="{StaticResource LineBrush}"
+              BorderThickness="0,0,0,1">
+            <MenuItem Header="_파일">
+                <MenuItem Header="PDF 열기"
+                          InputGestureText="Ctrl+O"
+                          Click="OnOpenPdfClick" />
+                <MenuItem Header="파일 합치기"
+                          InputGestureText="Ctrl+M"
+                          Click="OnOpenMergeClick" />
+                <MenuItem x:Name="RecentFilesMenuItem"
+                          Header="최근 파일" />
+                <Separator />
+                <MenuItem Header="새로고침"
+                          InputGestureText="F5"
+                          Click="OnRefreshViewerClick" />
+                <MenuItem Header="현재 페이지 순서 저장"
+                          InputGestureText="Ctrl+S"
+                          Click="OnSavePageOrderClick" />
+                <MenuItem Header="인쇄"
+                          InputGestureText="Ctrl+P"
+                          Click="OnPrintClick" />
+                <Separator />
+                <MenuItem Header="종료"
+                          InputGestureText="Alt+F4"
+                          Click="OnExitClick" />
+            </MenuItem>
+            <MenuItem Header="_보기">
+                <MenuItem Header="본문 확대"
+                          InputGestureText="Ctrl++"
+                          Click="OnMainZoomInClick" />
+                <MenuItem Header="본문 축소"
+                          InputGestureText="Ctrl+-"
+                          Click="OnMainZoomOutClick" />
+                <MenuItem Header="본문 실제 크기"
+                          InputGestureText="Ctrl+0"
+                          Click="OnMainZoomResetClick" />
+                <MenuItem Header="한 페이지 맞춤"
+                          InputGestureText="Ctrl+1"
+                          Click="OnFitPageClick" />
+                <Separator />
+                <MenuItem Header="썸네일 크게"
+                          InputGestureText="Ctrl+Shift++"
+                          Click="OnThumbZoomInClick" />
+                <MenuItem Header="썸네일 작게"
+                          InputGestureText="Ctrl+Shift+-"
+                          Click="OnThumbZoomOutClick" />
+                <MenuItem Header="썸네일 기본 크기"
+                          InputGestureText="Ctrl+Shift+0"
+                          Click="OnThumbZoomResetClick" />
+            </MenuItem>
+            <MenuItem Header="_페이지">
+                <MenuItem Header="실행 취소"
+                          InputGestureText="Ctrl+Z"
+                          Click="OnUndoClick" />
+                <MenuItem Header="다시 실행"
+                          InputGestureText="Ctrl+Y"
+                          Click="OnRedoClick" />
+                <Separator />
+                <MenuItem Header="선택 페이지 복사"
+                          InputGestureText="Ctrl+C"
+                          Click="OnCopySelectedPagesClick" />
+                <MenuItem Header="선택 페이지 잘라내기"
+                          InputGestureText="Ctrl+X"
+                          Click="OnCutSelectedPagesClick" />
+                <MenuItem Header="페이지 붙여넣기"
+                          InputGestureText="Ctrl+V"
+                          Click="OnPastePagesClick" />
+                <Separator />
+                <MenuItem Header="A4 빈 페이지 추가"
+                          InputGestureText="Ctrl+Shift+N"
+                          Click="OnAddBlankA4PageClick" />
+                <MenuItem Header="클립보드 이미지 붙여넣기"
+                          Click="OnPasteClipboardImageClick" />
+                <MenuItem Header="모든 페이지 A4로 맞춤"
+                          InputGestureText="Ctrl+Shift+A"
+                          Click="OnFitAllPagesToA4Click" />
+                <MenuItem Header="A4 기준 용량 최적화"
+                          InputGestureText="Ctrl+Shift+O"
+                          Click="OnOptimizeA4FileSizeClick" />
+                <Separator />
+                <MenuItem Header="선택 페이지 삭제"
+                          InputGestureText="Delete"
+                          Click="OnDeleteSelectedPagesClick" />
+                <MenuItem Header="선택 페이지 오른쪽 회전"
+                          InputGestureText="Ctrl+R"
+                          Click="OnRotateClockwiseClick" />
+                <MenuItem Header="선택 페이지 왼쪽 회전"
+                          Click="OnRotateCounterClockwiseClick" />
+                <MenuItem Header="페이지 순서 뒤집기"
+                          Click="OnReversePageOrderClick" />
+                <Separator />
+                <MenuItem Header="선택 페이지 추출"
+                          Click="OnExtractSelectedPagesClick" />
+                <MenuItem Header="페이지별 분할"
+                          Click="OnSplitPagesClick" />
+            </MenuItem>
+            <MenuItem Header="_이동">
+                <MenuItem Header="이전 페이지"
+                          InputGestureText="PageUp / ←"
+                          Click="OnPrevPageClick" />
+                <MenuItem Header="다음 페이지"
+                          InputGestureText="PageDown / →"
+                          Click="OnNextPageClick" />
+                <Separator />
+                <MenuItem Header="첫 페이지"
+                          InputGestureText="Home"
+                          Click="OnFirstPageClick" />
+                <MenuItem Header="마지막 페이지"
+                          InputGestureText="End"
+                          Click="OnLastPageClick" />
+            </MenuItem>
+            <MenuItem Header="_옵션">
+                <MenuItem Header="설정"
+                          Click="OnOpenSettingsClick" />
+                <Separator />
+                <MenuItem x:Name="PdfContextMenuToggleItem"
+                          Header="PDF 우클릭 통합 메뉴 사용"
+                          IsCheckable="True"
+                          Click="OnTogglePdfContextMenuClick" />
+            </MenuItem>
+        </Menu>
+
+        <Border Grid.Row="1"
+                Visibility="Collapsed"
+                Background="#FFFFFF"
+                BorderBrush="{StaticResource LineBrush}"
+                BorderThickness="0,0,0,1"
+                Padding="10,5">
+            <DockPanel LastChildFill="False">
+                <StackPanel Orientation="Horizontal"
+                            DockPanel.Dock="Left">
+                    <Button Style="{StaticResource ToolbarButtonStyle}"
+                            ToolTip="PDF 열기 (Ctrl+O)"
+                            Click="OnOpenPdfClick">
+                        <iconPacks:PackIconMaterial Kind="FolderOpen"
+                                                    Style="{StaticResource ToolbarIconStyle}" />
+                    </Button>
+                    <Button Style="{StaticResource ToolbarButtonStyle}"
+                            ToolTip="파일 합치기 (Ctrl+M)"
+                            Click="OnOpenMergeClick">
+                        <iconPacks:PackIconMaterial Kind="FileDocumentMultiple"
+                                                    Style="{StaticResource ToolbarIconStyle}" />
+                    </Button>
+                    <Button Style="{StaticResource ToolbarButtonStyle}"
+                            ToolTip="새로고침 (F5)"
+                            Click="OnRefreshViewerClick">
+                        <iconPacks:PackIconMaterial Kind="Refresh"
+                                                    Style="{StaticResource ToolbarIconStyle}" />
+                    </Button>
+                    <Button Style="{StaticResource ToolbarButtonStyle}"
+                            ToolTip="현재 페이지 순서 저장 (Ctrl+S)"
+                            Click="OnSavePageOrderClick">
+                        <iconPacks:PackIconMaterial Kind="ContentSave"
+                                                    Style="{StaticResource ToolbarIconStyle}" />
+                    </Button>
+                    <Button Style="{StaticResource ToolbarButtonStyle}"
+                            ToolTip="인쇄 (Ctrl+P)"
+                            Click="OnPrintClick">
+                        <iconPacks:PackIconMaterial Kind="Printer"
+                                                    Style="{StaticResource ToolbarIconStyle}" />
+                    </Button>
+
+                    <Separator Width="14" Margin="6,0" />
+
+                    <Button Style="{StaticResource ToolbarButtonStyle}"
+                            ToolTip="본문 확대 (Ctrl++)"
+                            Click="OnMainZoomInClick">
+                        <iconPacks:PackIconMaterial Kind="MagnifyPlus"
+                                                    Style="{StaticResource ToolbarIconStyle}" />
+                    </Button>
+                    <Button Style="{StaticResource ToolbarButtonStyle}"
+                            ToolTip="본문 축소 (Ctrl+-)"
+                            Click="OnMainZoomOutClick">
+                        <iconPacks:PackIconMaterial Kind="MagnifyMinus"
+                                                    Style="{StaticResource ToolbarIconStyle}" />
+                    </Button>
+                    <Button Style="{StaticResource ToolbarButtonStyle}"
+                            ToolTip="본문 실제 크기 (Ctrl+0)"
+                            Click="OnMainZoomResetClick">
+                        <iconPacks:PackIconMaterial Kind="Magnify"
+                                                    Style="{StaticResource ToolbarIconStyle}" />
+                    </Button>
+                    <Button Style="{StaticResource ToolbarButtonStyle}"
+                            ToolTip="한 페이지 맞춤 (Ctrl+1)"
+                            Click="OnFitPageClick">
+                        <iconPacks:PackIconMaterial Kind="FitToPage"
+                                                    Style="{StaticResource ToolbarIconStyle}" />
+                    </Button>
+
+                    <Separator Width="14" Margin="6,0" />
+
+                    <Button Style="{StaticResource ToolbarButtonStyle}"
+                            ToolTip="썸네일 크게 (Ctrl+Shift++)"
+                            Click="OnThumbZoomInClick">
+                        <iconPacks:PackIconMaterial Kind="ImageSizeSelectLarge"
+                                                    Style="{StaticResource ToolbarIconStyle}" />
+                    </Button>
+                    <Button Style="{StaticResource ToolbarButtonStyle}"
+                            ToolTip="썸네일 작게 (Ctrl+Shift+-)"
+                            Click="OnThumbZoomOutClick">
+                        <iconPacks:PackIconMaterial Kind="ImageSizeSelectSmall"
+                                                    Style="{StaticResource ToolbarIconStyle}" />
+                    </Button>
+                    <Button Style="{StaticResource ToolbarButtonStyle}"
+                            ToolTip="썸네일 기본 크기 (Ctrl+Shift+0)"
+                            Click="OnThumbZoomResetClick">
+                        <iconPacks:PackIconMaterial Kind="ViewModule"
+                                                    Style="{StaticResource ToolbarIconStyle}" />
+                    </Button>
+
+                    <Separator Width="14" Margin="6,0" />
+
+                    <Button Style="{StaticResource ToolbarButtonStyle}"
+                            ToolTip="실행 취소 (Ctrl+Z)"
+                            Click="OnUndoClick">
+                        <iconPacks:PackIconMaterial Kind="Undo"
+                                                    Style="{StaticResource ToolbarIconStyle}" />
+                    </Button>
+                    <Button Style="{StaticResource ToolbarButtonStyle}"
+                            ToolTip="다시 실행 (Ctrl+Y)"
+                            Click="OnRedoClick">
+                        <iconPacks:PackIconMaterial Kind="Redo"
+                                                    Style="{StaticResource ToolbarIconStyle}" />
+                    </Button>
+                    <Button Style="{StaticResource ToolbarButtonStyle}"
+                            ToolTip="선택 페이지 복사 (Ctrl+C)"
+                            Click="OnCopySelectedPagesClick">
+                        <iconPacks:PackIconMaterial Kind="ContentCopy"
+                                                    Style="{StaticResource ToolbarIconStyle}" />
+                    </Button>
+                    <Button Style="{StaticResource ToolbarButtonStyle}"
+                            ToolTip="선택 페이지 잘라내기 (Ctrl+X)"
+                            Click="OnCutSelectedPagesClick">
+                        <iconPacks:PackIconMaterial Kind="ContentCut"
+                                                    Style="{StaticResource ToolbarIconStyle}" />
+                    </Button>
+                    <Button Style="{StaticResource ToolbarButtonStyle}"
+                            ToolTip="페이지 붙여넣기 (Ctrl+V)"
+                            Click="OnPastePagesClick">
+                        <iconPacks:PackIconMaterial Kind="ContentPaste"
+                                                    Style="{StaticResource ToolbarIconStyle}" />
+                    </Button>
+                    <Button Style="{StaticResource ToolbarButtonStyle}"
+                            ToolTip="A4 빈 페이지 추가 (Ctrl+Shift+N)"
+                            Click="OnAddBlankA4PageClick">
+                        <iconPacks:PackIconMaterial Kind="FileDocumentPlus"
+                                                    Style="{StaticResource ToolbarIconStyle}" />
+                    </Button>
+                    <Button Style="{StaticResource ToolbarButtonStyle}"
+                            ToolTip="클립보드 이미지 붙여넣기 (Ctrl+V)"
+                            Click="OnPasteClipboardImageClick">
+                        <iconPacks:PackIconMaterial Kind="ClipboardArrowDown"
+                                                    Style="{StaticResource ToolbarIconStyle}" />
+                    </Button>
+                    <Button Style="{StaticResource ToolbarButtonStyle}"
+                            ToolTip="모든 페이지 A4로 맞춤 (Ctrl+Shift+A)"
+                            Click="OnFitAllPagesToA4Click">
+                        <iconPacks:PackIconMaterial Kind="FitToPage"
+                                                    Style="{StaticResource ToolbarIconStyle}" />
+                    </Button>
+                    <Button Style="{StaticResource ToolbarButtonStyle}"
+                            ToolTip="A4 기준 용량 최적화 (Ctrl+Shift+O)"
+                            Click="OnOptimizeA4FileSizeClick">
+                        <iconPacks:PackIconMaterial Kind="FileExport"
+                                                    Style="{StaticResource ToolbarIconStyle}" />
+                    </Button>
+                    <Button Style="{StaticResource ToolbarButtonStyle}"
+                            ToolTip="선택 페이지 삭제 (Delete)"
+                            Click="OnDeleteSelectedPagesClick">
+                        <iconPacks:PackIconMaterial Kind="TrashCanOutline"
+                                                    Style="{StaticResource ToolbarIconStyle}" />
+                    </Button>
+                    <Button Style="{StaticResource ToolbarButtonStyle}"
+                            ToolTip="선택 페이지 오른쪽 회전 (Ctrl+R)"
+                            Click="OnRotateClockwiseClick">
+                        <iconPacks:PackIconMaterial Kind="RotateRight"
+                                                    Style="{StaticResource ToolbarIconStyle}" />
+                    </Button>
+                    <Button Style="{StaticResource ToolbarButtonStyle}"
+                            ToolTip="선택 페이지 왼쪽 회전"
+                            Click="OnRotateCounterClockwiseClick">
+                        <iconPacks:PackIconMaterial Kind="RotateLeft"
+                                                    Style="{StaticResource ToolbarIconStyle}" />
+                    </Button>
+                    <Button Style="{StaticResource ToolbarButtonStyle}"
+                            ToolTip="선택 페이지 추출"
+                            Click="OnExtractSelectedPagesClick">
+                        <iconPacks:PackIconMaterial Kind="FileExport"
+                                                    Style="{StaticResource ToolbarIconStyle}" />
+                    </Button>
+                    <Button Style="{StaticResource ToolbarButtonStyle}"
+                            ToolTip="페이지별 분할"
+                            Click="OnSplitPagesClick">
+                        <iconPacks:PackIconMaterial Kind="FormatPageSplit"
+                                                    Style="{StaticResource ToolbarIconStyle}" />
+                    </Button>
+                    <Button Style="{StaticResource ToolbarButtonStyle}"
+                            ToolTip="페이지 순서 뒤집기"
+                            Click="OnReversePageOrderClick">
+                        <iconPacks:PackIconMaterial Kind="SortReverseVariant"
+                                                    Style="{StaticResource ToolbarIconStyle}" />
+                    </Button>
+
+                    <Separator Width="14" Margin="6,0" />
+
+                    <Button Style="{StaticResource ToolbarButtonStyle}"
+                            ToolTip="첫 페이지 (Home)"
+                            Click="OnFirstPageClick">
+                        <iconPacks:PackIconMaterial Kind="PageFirst"
+                                                    Style="{StaticResource ToolbarIconStyle}" />
+                    </Button>
+                    <Button Style="{StaticResource ToolbarButtonStyle}"
+                            ToolTip="이전 페이지 (PageUp / ←)"
+                            Click="OnPrevPageClick">
+                        <iconPacks:PackIconMaterial Kind="ChevronLeft"
+                                                    Style="{StaticResource ToolbarIconStyle}" />
+                    </Button>
+                    <Button Style="{StaticResource ToolbarButtonStyle}"
+                            ToolTip="다음 페이지 (PageDown / →)"
+                            Click="OnNextPageClick">
+                        <iconPacks:PackIconMaterial Kind="ChevronRight"
+                                                    Style="{StaticResource ToolbarIconStyle}" />
+                    </Button>
+                    <Button Style="{StaticResource ToolbarButtonStyle}"
+                            ToolTip="마지막 페이지 (End)"
+                            Click="OnLastPageClick">
+                        <iconPacks:PackIconMaterial Kind="PageLast"
+                                                    Style="{StaticResource ToolbarIconStyle}" />
+                    </Button>
+                </StackPanel>
+
+                <Button Style="{StaticResource ToolbarButtonStyle}"
+                        DockPanel.Dock="Right"
+                        ToolTip="종료 (Alt+F4)"
+                        Click="OnExitClick">
+                    <iconPacks:PackIconMaterial Kind="ExitToApp"
+                                                Style="{StaticResource ToolbarIconStyle}" />
+                </Button>
+            </DockPanel>
+        </Border>
+
+        <Border Grid.Row="1"
+                Background="#EEF3F8"
+                BorderBrush="{StaticResource LineBrush}"
+                BorderThickness="0,0,0,1"
+                Padding="8,4">
+            <DockPanel LastChildFill="True">
+                <Button Style="{StaticResource ToolbarButtonStyle}"
+                        DockPanel.Dock="Right"
+                        Margin="5,0,0,0"
+                        ToolTip="종료 (Alt+F4)"
+                        Click="OnExitClick">
+                    <iconPacks:PackIconMaterial Kind="ExitToApp"
+                                                Style="{StaticResource NavIconStyle}" />
+                </Button>
+                <ScrollViewer HorizontalScrollBarVisibility="Auto"
+                              VerticalScrollBarVisibility="Disabled">
+                    <WrapPanel Orientation="Horizontal">
+                        <Border Style="{StaticResource ToolbarGroupStyle}">
+                            <StackPanel Orientation="Horizontal">
+                                <Button Style="{StaticResource ToolbarButtonStyle}"
+                                        ToolTip="파일 합치기 (Ctrl+M)"
+                                        Click="OnOpenMergeClick">
+                                    <iconPacks:PackIconMaterial Kind="FileDocumentMultiple"
+                                                                Style="{StaticResource FileIconStyle}" />
+                                </Button>
+                            </StackPanel>
+                        </Border>
+
+                        <Border Style="{StaticResource ToolbarGroupStyle}">
+                            <StackPanel Orientation="Horizontal">
+                                <Button Style="{StaticResource ToolbarButtonStyle}"
+                                        ToolTip="실행 취소 (Ctrl+Z)"
+                                        Click="OnUndoClick">
+                                    <iconPacks:PackIconMaterial Kind="Undo"
+                                                                Style="{StaticResource EditIconStyle}" />
+                                </Button>
+                                <Button Style="{StaticResource ToolbarButtonStyle}"
+                                        ToolTip="다시 실행 (Ctrl+Y)"
+                                        Click="OnRedoClick">
+                                    <iconPacks:PackIconMaterial Kind="Redo"
+                                                                Style="{StaticResource EditIconStyle}" />
+                                </Button>
+                                <Button Style="{StaticResource ToolbarButtonStyle}"
+                                        ToolTip="선택 페이지 복사 (Ctrl+C)"
+                                        Click="OnCopySelectedPagesClick">
+                                    <iconPacks:PackIconMaterial Kind="ContentCopy"
+                                                                Style="{StaticResource EditIconStyle}" />
+                                </Button>
+                                <Button Style="{StaticResource ToolbarButtonStyle}"
+                                        ToolTip="선택 페이지 잘라내기 (Ctrl+X)"
+                                        Click="OnCutSelectedPagesClick">
+                                    <iconPacks:PackIconMaterial Kind="ContentCut"
+                                                                Style="{StaticResource EditIconStyle}" />
+                                </Button>
+                                <Button Style="{StaticResource ToolbarButtonStyle}"
+                                        ToolTip="페이지 붙여넣기 (Ctrl+V)"
+                                        Click="OnPastePagesClick">
+                                    <iconPacks:PackIconMaterial Kind="ContentPaste"
+                                                                Style="{StaticResource EditIconStyle}" />
+                                </Button>
+                                <Button Style="{StaticResource ToolbarButtonStyle}"
+                                        ToolTip="선택 페이지 삭제 (Delete)"
+                                        Click="OnDeleteSelectedPagesClick">
+                                    <iconPacks:PackIconMaterial Kind="TrashCanOutline"
+                                                                Style="{StaticResource EditIconStyle}" />
+                                </Button>
+                            </StackPanel>
+                        </Border>
+
+                        <Border Style="{StaticResource ToolbarGroupStyle}">
+                            <StackPanel Orientation="Horizontal">
+                                <Button Style="{StaticResource ToolbarButtonStyle}"
+                                        ToolTip="선택 페이지 오른쪽 회전 (Ctrl+R)"
+                                        Click="OnRotateClockwiseClick">
+                                    <iconPacks:PackIconMaterial Kind="RotateRight"
+                                                                Style="{StaticResource PageIconStyle}" />
+                                </Button>
+                                <Button Style="{StaticResource ToolbarButtonStyle}"
+                                        ToolTip="선택 페이지 왼쪽 회전"
+                                        Click="OnRotateCounterClockwiseClick">
+                                    <iconPacks:PackIconMaterial Kind="RotateLeft"
+                                                                Style="{StaticResource PageIconStyle}" />
+                                </Button>
+                                <Button Style="{StaticResource ToolbarButtonStyle}"
+                                        ToolTip="A4 빈 페이지 추가 (Ctrl+Shift+N)"
+                                        Click="OnAddBlankA4PageClick">
+                                    <iconPacks:PackIconMaterial Kind="FileDocumentPlus"
+                                                                Style="{StaticResource PageIconStyle}" />
+                                </Button>
+                                <Button Style="{StaticResource ToolbarButtonStyle}"
+                                        ToolTip="클립보드 이미지 붙여넣기"
+                                        Click="OnPasteClipboardImageClick">
+                                    <iconPacks:PackIconMaterial Kind="ClipboardArrowDown"
+                                                                Style="{StaticResource PageIconStyle}" />
+                                </Button>
+                                <Button Style="{StaticResource ToolbarButtonStyle}"
+                                        ToolTip="모든 페이지 A4로 맞춤 (Ctrl+Shift+A)"
+                                        Click="OnFitAllPagesToA4Click">
+                                    <iconPacks:PackIconMaterial Kind="FitToPage"
+                                                                Style="{StaticResource PageIconStyle}" />
+                                </Button>
+                                <Button Style="{StaticResource ToolbarButtonStyle}"
+                                        ToolTip="A4 기준 용량 최적화 (Ctrl+Shift+O)"
+                                        Click="OnOptimizeA4FileSizeClick">
+                                    <iconPacks:PackIconMaterial Kind="FileExport"
+                                                                Style="{StaticResource PageIconStyle}" />
+                                </Button>
+                            </StackPanel>
+                        </Border>
+
+                        <Border Style="{StaticResource ToolbarGroupStyle}">
+                            <StackPanel Orientation="Horizontal">
+                                <Button Style="{StaticResource ToolbarButtonStyle}"
+                                        ToolTip="본문 확대 (Ctrl++ / Ctrl+휠)"
+                                        Click="OnMainZoomInClick">
+                                    <iconPacks:PackIconMaterial Kind="MagnifyPlus"
+                                                                Style="{StaticResource ViewIconStyle}" />
+                                </Button>
+                                <Button Style="{StaticResource ToolbarButtonStyle}"
+                                        ToolTip="본문 축소 (Ctrl+- / Ctrl+휠)"
+                                        Click="OnMainZoomOutClick">
+                                    <iconPacks:PackIconMaterial Kind="MagnifyMinus"
+                                                                Style="{StaticResource ViewIconStyle}" />
+                                </Button>
+                                <Button Style="{StaticResource ToolbarButtonStyle}"
+                                        ToolTip="한 페이지 맞춤 (Ctrl+1)"
+                                        Click="OnFitPageClick">
+                                    <iconPacks:PackIconMaterial Kind="FitToPage"
+                                                                Style="{StaticResource ViewIconStyle}" />
+                                </Button>
+                                <Button Style="{StaticResource ToolbarButtonStyle}"
+                                        ToolTip="썸네일 작게 (Ctrl+Shift+-)"
+                                        Click="OnThumbZoomOutClick">
+                                    <iconPacks:PackIconMaterial Kind="ImageSizeSelectSmall"
+                                                                Style="{StaticResource ViewIconStyle}" />
+                                </Button>
+                                <Button Style="{StaticResource ToolbarButtonStyle}"
+                                        ToolTip="썸네일 크게 (Ctrl+Shift++)"
+                                        Click="OnThumbZoomInClick">
+                                    <iconPacks:PackIconMaterial Kind="ImageSizeSelectLarge"
+                                                                Style="{StaticResource ViewIconStyle}" />
+                                </Button>
+                            </StackPanel>
+                        </Border>
+
+                        <Border Style="{StaticResource ToolbarGroupStyle}">
+                            <StackPanel Orientation="Horizontal">
+                                <Button Style="{StaticResource ToolbarButtonStyle}"
+                                        ToolTip="첫 페이지 (Home)"
+                                        Click="OnFirstPageClick">
+                                    <iconPacks:PackIconMaterial Kind="PageFirst"
+                                                                Style="{StaticResource NavIconStyle}" />
+                                </Button>
+                                <Button Style="{StaticResource ToolbarButtonStyle}"
+                                        ToolTip="이전 페이지 (PageUp / ←)"
+                                        Click="OnPrevPageClick">
+                                    <iconPacks:PackIconMaterial Kind="ChevronLeft"
+                                                                Style="{StaticResource NavIconStyle}" />
+                                </Button>
+                                <Button Style="{StaticResource ToolbarButtonStyle}"
+                                        ToolTip="다음 페이지 (PageDown / →)"
+                                        Click="OnNextPageClick">
+                                    <iconPacks:PackIconMaterial Kind="ChevronRight"
+                                                                Style="{StaticResource NavIconStyle}" />
+                                </Button>
+                                <Button Style="{StaticResource ToolbarButtonStyle}"
+                                        ToolTip="마지막 페이지 (End)"
+                                        Click="OnLastPageClick">
+                                    <iconPacks:PackIconMaterial Kind="PageLast"
+                                                                Style="{StaticResource NavIconStyle}" />
+                                </Button>
+                            </StackPanel>
+                        </Border>
+                    </WrapPanel>
+                </ScrollViewer>
+            </DockPanel>
+        </Border>
+
+        <Grid Grid.Row="2" Margin="18,14,18,12">
+            <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="*" />
+                <ColumnDefinition Width="Auto" />
+            </Grid.ColumnDefinitions>
+            <StackPanel>
+                <StackPanel Orientation="Horizontal">
+                    <TextBlock Text="PDF 뷰어"
+                               FontSize="24"
+                               FontWeight="Bold"
+                               VerticalAlignment="Center"
+                               Foreground="{StaticResource InkBrush}" />
+                    <StackPanel Orientation="Horizontal"
+                                VerticalAlignment="Center"
+                                Margin="10,0,0,0">
+                        <Button Style="{StaticResource ToolbarButtonStyle}"
+                                ToolTip="PDF 열기 (Ctrl+O)"
+                                Click="OnOpenPdfClick">
+                            <iconPacks:PackIconMaterial Kind="FolderOpen"
+                                                        Style="{StaticResource FileIconStyle}" />
+                        </Button>
+                        <Button Style="{StaticResource ToolbarButtonStyle}"
+                                ToolTip="현재 페이지 순서 저장 (Ctrl+S)"
+                                Click="OnSavePageOrderClick">
+                            <iconPacks:PackIconMaterial Kind="ContentSave"
+                                                        Style="{StaticResource FileIconStyle}" />
+                        </Button>
+                        <Button Style="{StaticResource ToolbarButtonStyle}"
+                                ToolTip="인쇄 (Ctrl+P)"
+                                Click="OnPrintClick">
+                            <iconPacks:PackIconMaterial Kind="Printer"
+                                                        Style="{StaticResource FileIconStyle}" />
+                        </Button>
+                    </StackPanel>
+                </StackPanel>
+                <TextBlock x:Name="CurrentFileText"
+                           Text="PDF를 열거나 이 창에 끌어다 놓으세요."
+                           Margin="0,6,0,0"
+                           FontSize="14"
+                           Foreground="{StaticResource MutedBrush}"
+                           TextTrimming="CharacterEllipsis" />
+            </StackPanel>
+            <Border Grid.Column="1"
+                    Padding="10,6"
+                    VerticalAlignment="Center"
+                    Background="#EAF1FF"
+                    BorderBrush="#C9D8FF"
+                    BorderThickness="1"
+                    CornerRadius="8">
+                <TextBlock Text="PDF 파일은 창 어디든 드롭"
+                           FontSize="12"
+                           FontWeight="SemiBold"
+                           Foreground="#1D4ED8" />
+            </Border>
+        </Grid>
+
+        <Border Grid.Row="3"
+                Margin="18,0,18,18"
+                Background="{StaticResource PanelBrush}"
+                BorderBrush="{StaticResource LineBrush}"
+                BorderThickness="1"
+                CornerRadius="8"
+                Padding="10"
+                AllowDrop="True">
+            <Grid>
+                <wv2:WebView2 x:Name="PdfViewer"
+                              AllowDrop="True"
+                              AllowExternalDrop="False" />
+                <Border x:Name="ViewerLoading"
+                        Background="#F8FAFC"
+                        CornerRadius="8"
+                        AllowDrop="True">
+                    <StackPanel HorizontalAlignment="Center"
+                                VerticalAlignment="Center"
+                                Width="420">
+                        <Border Width="58"
+                                Height="58"
+                                CornerRadius="8"
+                                Background="#EAF1FF"
+                                HorizontalAlignment="Center"
+                                Margin="0,0,0,14">
+                            <TextBlock Text="PDF"
+                                       HorizontalAlignment="Center"
+                                       VerticalAlignment="Center"
+                                       FontWeight="Bold"
+                                       Foreground="#1D4ED8" />
+                        </Border>
+                        <TextBlock Text="PDF를 여기에 놓으세요."
+                                   TextAlignment="Center"
+                                   FontSize="22"
+                                   FontWeight="Bold"
+                                   Foreground="{StaticResource InkBrush}" />
+                        <TextBlock Text="창의 빈 영역, 헤더, 본문 어디에 놓아도 PDF가 열립니다."
+                                   TextAlignment="Center"
+                                   TextWrapping="Wrap"
+                                   Margin="0,8,0,0"
+                                   Foreground="{StaticResource MutedBrush}" />
+                        <Button Style="{StaticResource ToolbarButtonStyle}"
+                                HorizontalAlignment="Center"
+                                Margin="0,18,0,0"
+                                ToolTip="PDF 열기 (Ctrl+O)"
+                                Click="OnOpenPdfClick">
+                            <iconPacks:PackIconMaterial Kind="FolderOpen"
+                                                        Style="{StaticResource FileIconStyle}" />
+                        </Button>
+                    </StackPanel>
+                </Border>
+            </Grid>
+        </Border>
+
+        <Border Grid.Row="4"
+                Background="#FFFFFF"
+                BorderBrush="{StaticResource LineBrush}"
+                BorderThickness="0,1,0,0"
+                Padding="14,6">
+            <DockPanel LastChildFill="False">
+                <TextBlock Text="Ctrl+휠: 본문 확대/축소 · Ctrl/Shift 클릭: 여러 페이지 선택 · 다른 창 썸네일로 드롭: 페이지 복사"
+                           DockPanel.Dock="Left"
+                           Foreground="{StaticResource MutedBrush}"
+                           FontSize="12"
+                           FontWeight="SemiBold" />
+                <TextBlock Text="준비됨"
+                           DockPanel.Dock="Right"
+                           Foreground="{StaticResource MutedBrush}"
+                           FontSize="12"
+                           FontWeight="SemiBold" />
+            </DockPanel>
+        </Border>
+    </Grid>
+</Window>
