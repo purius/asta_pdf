@@ -1,4 +1,5 @@
 using System.Diagnostics;
+using System.Drawing;
 using System.IO.Compression;
 using System.Reflection;
 using System.Runtime.InteropServices;
@@ -77,20 +78,46 @@ internal static class Program
             }
         }
 
-        StopInstalledApp();
-        ResetInstallDirectory();
-        Directory.CreateDirectory(InstallDirectory);
-        ExtractPayload(InstallDirectory);
-        CopyInstallerToInstallDirectory();
+        using var progress = quiet ? null : new InstallerProgressForm($"{AppName} 설치");
+        progress?.Show();
+        progress?.SetStep("설치 준비 중...", 0);
+
+        try
+        {
+            progress?.SetStep("실행 중인 프로그램을 종료하는 중...", 5);
+            StopInstalledApp();
+
+            progress?.SetStep("기존 설치 파일을 정리하는 중...", 12);
+            ResetInstallDirectory(progress);
+
+            progress?.SetStep("설치 폴더를 준비하는 중...", 18);
+            Directory.CreateDirectory(InstallDirectory);
+
+            ExtractPayload(InstallDirectory, progress, 20, 58);
+            CopyInstallerToInstallDirectory(progress);
+        }
+        catch (Exception ex)
+        {
+            progress?.Fail(ex.Message);
+            throw;
+        }
 
         var appExe = Path.Combine(InstallDirectory, AppExeName);
         var setupExe = Path.Combine(InstallDirectory, SetupExeName);
 
+        progress?.SetStep("우클릭 메뉴를 등록하는 중...", 82);
         RegisterPdfContextMenu(appExe);
+        progress?.SetStep("PDF 기본 프로그램 정보를 등록하는 중...", 87);
         RegisterPdfFileAssociation(appExe);
+        progress?.SetStep("제거 정보를 등록하는 중...", 92);
         RegisterUninstaller(appExe, setupExe);
+        progress?.SetStep("바로가기를 만드는 중...", 95);
         CreateShortcuts(appExe, setupExe);
+        progress?.SetStep("Windows 파일 연결을 새로고침하는 중...", 98);
         RefreshShellAssociations();
+        progress?.SetStep("설치가 완료되었습니다.", 100);
+        progress?.Detail($"설치 위치: {InstallDirectory}");
+        progress?.Close();
 
         if (!quiet)
         {
@@ -141,13 +168,16 @@ internal static class Program
         return 0;
     }
 
-    private static void ExtractPayload(string destination)
+    private static void ExtractPayload(string destination, InstallerProgressForm? progress, int basePercent, int spanPercent)
     {
         using var stream = Assembly.GetExecutingAssembly().GetManifestResourceStream(PayloadResourceName)
             ?? throw new InvalidOperationException("설치 파일에 앱 payload가 포함되어 있지 않습니다.");
         using var archive = new ZipArchive(stream, ZipArchiveMode.Read);
 
         var destinationFullPath = Path.GetFullPath(destination);
+        var fileCount = archive.Entries.Count(entry => !string.IsNullOrEmpty(entry.Name));
+        var copied = 0;
+        progress?.SetStep("프로그램 파일을 복사하는 중...", basePercent);
         foreach (var entry in archive.Entries)
         {
             var targetPath = Path.GetFullPath(Path.Combine(destinationFullPath, entry.FullName));
@@ -164,22 +194,28 @@ internal static class Program
 
             Directory.CreateDirectory(Path.GetDirectoryName(targetPath)!);
             entry.ExtractToFile(targetPath, overwrite: true);
+            copied++;
+            var percent = basePercent + (int)Math.Round(spanPercent * (double)copied / Math.Max(1, fileCount));
+            progress?.SetStep($"프로그램 파일 복사 중... ({copied}/{fileCount})", percent);
+            progress?.Detail(entry.FullName);
         }
     }
 
-    private static void CopyInstallerToInstallDirectory()
+    private static void CopyInstallerToInstallDirectory(InstallerProgressForm? progress)
     {
+        progress?.SetStep("설치 프로그램을 복사하는 중...", 80);
         var currentExe = Environment.ProcessPath
             ?? throw new InvalidOperationException("현재 설치 프로그램 경로를 확인할 수 없습니다.");
         var target = Path.Combine(InstallDirectory, SetupExeName);
 
         if (!string.Equals(Path.GetFullPath(currentExe), Path.GetFullPath(target), StringComparison.OrdinalIgnoreCase))
         {
+            progress?.Detail(Path.GetFileName(target));
             File.Copy(currentExe, target, overwrite: true);
         }
     }
 
-    private static void ResetInstallDirectory()
+    private static void ResetInstallDirectory(InstallerProgressForm? progress = null)
     {
         if (!Directory.Exists(InstallDirectory))
         {
@@ -197,6 +233,7 @@ internal static class Program
             throw new InvalidOperationException("설치 폴더 경로가 안전하지 않아 초기화하지 않았습니다.");
         }
 
+        progress?.Detail(fullInstallDirectory);
         DeleteDirectoryWithRetry(fullInstallDirectory);
     }
 
@@ -483,6 +520,92 @@ internal static class Program
     private static void RefreshShellAssociations()
     {
         SHChangeNotify(ShcneAssocChanged, ShcnfIdList, IntPtr.Zero, IntPtr.Zero);
+    }
+
+    private sealed class InstallerProgressForm : System.Windows.Forms.Form
+    {
+        private readonly System.Windows.Forms.Label _stepLabel = new();
+        private readonly System.Windows.Forms.ProgressBar _progressBar = new();
+        private readonly System.Windows.Forms.TextBox _detailsBox = new();
+
+        public InstallerProgressForm(string title)
+        {
+            Text = title;
+            StartPosition = System.Windows.Forms.FormStartPosition.CenterScreen;
+            FormBorderStyle = System.Windows.Forms.FormBorderStyle.FixedDialog;
+            MaximizeBox = false;
+            MinimizeBox = false;
+            ClientSize = new Size(560, 330);
+            TopMost = true;
+
+            var headerLabel = new System.Windows.Forms.Label
+            {
+                Text = "설치를 진행하고 있습니다.",
+                Font = new Font(Font.FontFamily, 12, FontStyle.Bold),
+                AutoSize = false,
+                Location = new Point(18, 16),
+                Size = new Size(524, 26)
+            };
+
+            _stepLabel.AutoSize = false;
+            _stepLabel.Location = new Point(18, 52);
+            _stepLabel.Size = new Size(524, 24);
+            _stepLabel.Text = "준비 중...";
+
+            _progressBar.Location = new Point(18, 84);
+            _progressBar.Size = new Size(524, 22);
+            _progressBar.Minimum = 0;
+            _progressBar.Maximum = 100;
+
+            _detailsBox.Location = new Point(18, 120);
+            _detailsBox.Size = new Size(524, 178);
+            _detailsBox.Multiline = true;
+            _detailsBox.ReadOnly = true;
+            _detailsBox.ScrollBars = System.Windows.Forms.ScrollBars.Vertical;
+            _detailsBox.BackColor = Color.White;
+
+            Controls.Add(headerLabel);
+            Controls.Add(_stepLabel);
+            Controls.Add(_progressBar);
+            Controls.Add(_detailsBox);
+        }
+
+        public void SetStep(string message, int percent)
+        {
+            if (IsDisposed)
+            {
+                return;
+            }
+
+            _stepLabel.Text = message;
+            _progressBar.Value = Math.Clamp(percent, _progressBar.Minimum, _progressBar.Maximum);
+            Detail(message);
+        }
+
+        public void Detail(string message)
+        {
+            if (IsDisposed || string.IsNullOrWhiteSpace(message))
+            {
+                return;
+            }
+
+            _detailsBox.AppendText($"[{DateTime.Now:HH:mm:ss}] {message}{Environment.NewLine}");
+            _detailsBox.SelectionStart = _detailsBox.TextLength;
+            _detailsBox.ScrollToCaret();
+            Application.DoEvents();
+        }
+
+        public void Fail(string message)
+        {
+            if (IsDisposed)
+            {
+                return;
+            }
+
+            _stepLabel.Text = "설치 중 오류가 발생했습니다.";
+            Detail($"오류: {message}");
+            Application.DoEvents();
+        }
     }
 
     [DllImport("shell32.dll")]
