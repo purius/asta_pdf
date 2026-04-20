@@ -665,6 +665,58 @@ public partial class MainWindow : Window
         UpdateRecentFilesMenu();
     }
 
+    private async void OnCheckForUpdatesClick(object sender, RoutedEventArgs e)
+    {
+        if (sender is MenuItem menuItem)
+        {
+            menuItem.IsEnabled = false;
+        }
+
+        try
+        {
+            var update = await UpdateService.CheckForUpdatesAsync();
+            if (update.IsUpdateAvailable)
+            {
+                var result = MessageBox.Show(
+                    this,
+                    $"새 버전 {update.LatestVersionText}이 있습니다.\n현재 버전: {update.CurrentVersionText}\n\n다운로드 페이지를 열까요?",
+                    "업데이트 확인",
+                    MessageBoxButton.YesNo,
+                    MessageBoxImage.Information);
+
+                if (result == MessageBoxResult.Yes)
+                {
+                    UpdateService.OpenUpdatePage(update);
+                }
+
+                return;
+            }
+
+            MessageBox.Show(
+                this,
+                $"현재 최신 버전을 사용 중입니다.\n현재 버전: {update.CurrentVersionText}",
+                "업데이트 확인",
+                MessageBoxButton.OK,
+                MessageBoxImage.Information);
+        }
+        catch (Exception ex)
+        {
+            MessageBox.Show(
+                this,
+                $"업데이트 정보를 확인하지 못했습니다.\n인터넷 연결을 확인한 뒤 다시 시도해주세요.\n\n{ex.Message}",
+                "업데이트 확인 실패",
+                MessageBoxButton.OK,
+                MessageBoxImage.Error);
+        }
+        finally
+        {
+            if (sender is MenuItem clickedMenuItem)
+            {
+                clickedMenuItem.IsEnabled = true;
+            }
+        }
+    }
+
     private void OnOpenSettingsClick(object sender, RoutedEventArgs e)
     {
         var settingsWindow = new SettingsWindow(_settings)

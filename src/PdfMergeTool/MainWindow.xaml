@@ -267,6 +267,8 @@
             <MenuItem Header="_옵션">
                 <MenuItem Header="설정"
                           Click="OnOpenSettingsClick" />
+                <MenuItem Header="업데이트 확인"
+                          Click="OnCheckForUpdatesClick" />
                 <Separator />
                 <MenuItem x:Name="PdfContextMenuToggleItem"
                           Header="PDF 우클릭 통합 메뉴 사용"
