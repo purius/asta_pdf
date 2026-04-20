@@ -1,45 +1,64 @@
 $ErrorActionPreference = 'Stop'
 
 $root = Resolve-Path (Join-Path $PSScriptRoot '..')
-$dotnet = Join-Path $root '.tools\dotnet\dotnet.exe'
 $dist = Join-Path $root 'dist'
-$zip = Join-Path $dist 'PdfMergeTool-win-x64.zip'
-$installerProject = Join-Path $root 'src\PdfMergeTool.Installer\PdfMergeTool.Installer.csproj'
-$installerProjectDir = Split-Path -Parent $installerProject
-$payloadDir = Join-Path $root 'src\PdfMergeTool.Installer\Payload'
-$payload = Join-Path $payloadDir 'PdfMergeTool-win-x64.zip'
-$publishDir = Join-Path $dist 'PdfMergeToolSetup-publish'
-$setupExe = Join-Path $publishDir 'PdfMergeToolSetup.exe'
-$asciiTarget = Join-Path $dist 'PdfMergeToolSetup.exe'
+$project = Join-Path $root 'src\PdfMergeTool\PdfMergeTool.csproj'
+$iss = Join-Path $root 'installer\PdfMergeTool.iss'
+$setupExe = Join-Path $dist 'PdfMergeToolSetup.exe'
 
-& (Join-Path $PSScriptRoot 'package.ps1')
+function Get-InnoCompiler {
+    $candidates = @(
+        (Join-Path $env:LOCALAPPDATA 'Programs\Inno Setup 6\ISCC.exe'),
+        'C:\Program Files (x86)\Inno Setup 6\ISCC.exe',
+        'C:\Program Files\Inno Setup 6\ISCC.exe'
+    )
 
-New-Item -ItemType Directory -Path $payloadDir -Force | Out-Null
-Copy-Item -LiteralPath $zip -Destination $payload -Force
+    $command = Get-Command ISCC.exe -ErrorAction SilentlyContinue
+    if ($command) {
+        return $command.Source
+    }
 
-Remove-Item -LiteralPath (Join-Path $installerProjectDir 'bin') -Recurse -Force -ErrorAction SilentlyContinue
-Remove-Item -LiteralPath (Join-Path $installerProjectDir 'obj') -Recurse -Force -ErrorAction SilentlyContinue
+    foreach ($candidate in $candidates) {
+        if (Test-Path $candidate) {
+            return $candidate
+        }
+    }
 
-if (Test-Path $publishDir) {
-    Remove-Item -LiteralPath $publishDir -Recurse -Force
+    $winget = Get-Command winget.exe -ErrorAction SilentlyContinue
+    if ($winget) {
+        Write-Host 'Inno Setup compiler not found. Installing Inno Setup with winget...'
+        & $winget.Source install --id JRSoftware.InnoSetup --exact --silent --accept-package-agreements --accept-source-agreements
+        foreach ($candidate in $candidates) {
+            if (Test-Path $candidate) {
+                return $candidate
+            }
+        }
+    }
+
+    throw 'Inno Setup compiler ISCC.exe was not found. Install Inno Setup 6 and run this script again.'
 }
 
-& $dotnet publish $installerProject `
-    --configuration Release `
-    --runtime win-x64 `
-    --self-contained true `
-    -p:PublishSingleFile=true `
-    -p:IncludeNativeLibrariesForSelfExtract=true `
-    -p:EnableCompressionInSingleFile=true `
-    -p:PublishTrimmed=false `
-    -p:SatelliteResourceLanguages=ko `
-    --output $publishDir
+$version = ([xml](Get-Content $project)).Project.PropertyGroup.Version
+if ([string]::IsNullOrWhiteSpace($version)) {
+    throw "Missing Version in $project"
+}
+
+& (Join-Path $PSScriptRoot 'publish.ps1')
+
+if (Test-Path $setupExe) {
+    Remove-Item -LiteralPath $setupExe -Force
+}
+
+$iscc = Get-InnoCompiler
+& $iscc `
+    "/DRootDir=$root" `
+    "/DSourceDir=$(Join-Path $dist 'PdfMergeTool')" `
+    "/DOutputDir=$dist" `
+    "/DAppVersion=$version" `
+    $iss
 
 if (-not (Test-Path $setupExe)) {
-    throw "Installer publish failed. Missing $setupExe"
+    throw "Installer build failed. Missing $setupExe"
 }
 
-Copy-Item -LiteralPath $setupExe -Destination $asciiTarget -Force
-Remove-Item -LiteralPath $payload -Force
-
-Write-Host "Installer: $asciiTarget"
+Write-Host "Installer: $setupExe"
