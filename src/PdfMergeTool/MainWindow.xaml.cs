@@ -768,16 +768,7 @@ public partial class MainWindow : Window
         }
 
         var referencePath = _referencePdfPath ?? _currentPdfPath;
-        var folder = Path.GetDirectoryName(referencePath) ?? Environment.GetFolderPath(Environment.SpecialFolder.MyDocuments);
-        var defaultPath = Path.Combine(folder, $"{Path.GetFileNameWithoutExtension(referencePath)}{_settings.ReorderedSuffix}.pdf");
-        var dialog = SavePathPromptService.CreateSaveDialog(defaultPath, "현재 페이지 순서 저장");
-
-        if (dialog.ShowDialog(this) != true)
-        {
-            return;
-        }
-
-        var outputPath = SavePathPromptService.ResolveOutputPath(this, dialog.FileName, "PDF 저장");
+        var outputPath = SavePathPromptService.ResolveOutputPath(this, referencePath, "PDF 저장");
         if (outputPath is null)
         {
             return;
