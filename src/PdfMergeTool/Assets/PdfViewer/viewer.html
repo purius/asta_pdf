@@ -301,23 +301,23 @@
 <body>
   <div id="empty">
     <div>
-      <strong>PDF瑜??ш린???볦쑝?몄슂.</strong>
-      <div>鍮??곸뿭, ?몃꽕???곸뿭, 蹂몃Ц ?대뵒???볦븘??PDF媛 ?대┰?덈떎.</div>
+      <strong>PDF를 여기에 놓으세요.</strong>
+      <div>빈 영역, 썸네일 영역, 본문 어디에 놓아도 PDF가 열립니다.</div>
     </div>
   </div>
   <main id="app">
-    <aside id="thumbPanel" aria-label="?섏씠吏 ?몃꽕??>
+    <aside id="thumbPanel" aria-label="페이지 썸네일">
       <div id="thumbHeader">
-        <div id="pageCount">0 ?섏씠吏</div>
-        <div id="selectionHint">Ctrl/Shift ?대┃?쇰줈 ?щ윭 ?섏씠吏 ?좏깮</div>
+        <div id="pageCount">0 페이지</div>
+        <div id="selectionHint">Ctrl/Shift 클릭으로 여러 페이지 선택</div>
       </div>
       <div id="thumbs"></div>
     </aside>
-    <div id="splitter" title="?몃꽕???곸뿭 ?덈퉬 議곗젅"></div>
-    <section id="pages" aria-label="PDF ?섏씠吏"></section>
+    <div id="splitter" title="썸네일 영역 너비 조절"></div>
+    <section id="pages" aria-label="PDF 페이지"></section>
   </main>
   <div id="printPages" aria-hidden="true"></div>
-  <div id="status">以鍮꾨맖</div>
+  <div id="status">준비됨</div>
 
   <script type="module">
     import * as pdfjsLib from './pdf.min.mjs';
@@ -465,7 +465,7 @@
     async function preparePrint() {
       if (!pdfDocument || pageOrder.length === 0) return false;
 
-      setStatus('?몄뇙 以鍮?以?..');
+      setStatus('인쇄 준비 중...');
       printPages.replaceChildren();
 
       const printScale = 2;
@@ -481,7 +481,7 @@
         await page.render({ canvasContext: context, viewport }).promise;
 
         const image = document.createElement('img');
-        image.alt = `${index + 1} ?섏씠吏`;
+        image.alt = `${index + 1} 페이지`;
         image.src = canvas.toDataURL('image/png');
 
         const wrapper = document.createElement('div');
@@ -490,7 +490,7 @@
         printPages.appendChild(wrapper);
       }
 
-      setStatus('?몄뇙 以鍮??꾨즺');
+      setStatus('인쇄 준비 완료');
       return true;
     }
 
@@ -499,14 +499,14 @@
         window.chrome?.webview?.postMessage({
           type: 'a4ExportComplete',
           success: false,
-          message: 'PDF媛 ?대젮 ?덉? ?딆뒿?덈떎.'
+          message: 'PDF가 열려 있지 않습니다.'
         });
         return;
       }
 
       let passwordCancelled = false;
       try {
-        const statusText = options.statusText ?? 'A4 留욎땄 ?대?吏 ?앹꽦 以?..';
+        const statusText = options.statusText ?? 'A4 맞춤 이미지 생성 중...';
         setStatus(statusText);
         const maxExportWidth = options.maxWidth ?? 2480;
         const maxExportHeight = options.maxHeight ?? 3508;
@@ -550,7 +550,7 @@
         window.chrome?.webview?.postMessage({
           type: 'a4ExportComplete',
           success: false,
-          message: error?.message ?? 'A4 留욎땄 ?대?吏 ?앹꽦 ?ㅽ뙣'
+          message: error?.message ?? 'A4 맞춤 이미지 생성 실패'
         });
       }
     }
@@ -562,13 +562,13 @@
       activePage = clamp(pageNumber, 1, totalPages);
       updateThumbClasses();
       if (fallbackDocument) {
-        setStatus(`${activePage} / ${totalPages} ?섏씠吏 쨌 蹂몃Ц ${Math.round(mainScale * 100)}% 쨌 ?몃꽕??${Math.round(thumbScale * 100)}% 쨌 PDFium`);
+        setStatus(`${activePage} / ${totalPages} 페이지 · 본문 ${Math.round(mainScale * 100)}% · 썸네일 ${Math.round(thumbScale * 100)}% · PDFium`);
         if (previousPage !== activePage) {
           postPageOrder();
         }
         return;
       }
-      setStatus(`${activePage} / ${pdfDocument.numPages} ?섏씠吏 쨌 蹂몃Ц ${Math.round(mainScale * 100)}% 쨌 ?몃꽕??${Math.round(thumbScale * 100)}%`);
+      setStatus(`${activePage} / ${pdfDocument.numPages} 페이지 · 본문 ${Math.round(mainScale * 100)}% · 썸네일 ${Math.round(thumbScale * 100)}%`);
       if (previousPage !== activePage) {
         postPageOrder();
       }
@@ -582,8 +582,8 @@
       });
       const selectedCount = selectedPages.size;
       selectionHint.textContent = selectedCount > 0
-        ? `${selectedCount}媛??좏깮??쨌 ?쒕옒洹몃줈 臾띠쓬 ?대룞`
-        : 'Ctrl/Shift ?대┃?쇰줈 ?щ윭 ?섏씠吏 ?좏깮';
+        ? `${selectedCount}개 선택됨 · 드래그로 묶음 이동`
+        : 'Ctrl/Shift 클릭으로 여러 페이지 선택';
     }
 
     function clearDropIndicators() {
@@ -700,7 +700,7 @@
           insertionIndex
         });
       } catch (error) {
-        setStatus(error?.message ?? '?쒕∼???섏씠吏 ?뺣낫瑜??쎌? 紐삵뻽?듬땲??');
+        setStatus(error?.message ?? '드롭한 페이지 정보를 읽지 못했습니다.');
       }
     }
 
@@ -966,7 +966,7 @@
 
       const pageImage = document.createElement('img');
       pageImage.className = 'fallback-page-image';
-      pageImage.alt = `${displayIndex + 1} ?섏씠吏`;
+      pageImage.alt = `${displayIndex + 1} 페이지`;
       pageImage.width = pageWidth;
       pageImage.height = pageHeight;
       pageImage.style.width = `${pageWidth}px`;
@@ -975,7 +975,7 @@
 
       const label = document.createElement('div');
       label.className = 'page-label';
-      label.textContent = `${displayIndex + 1} ?섏씠吏`;
+      label.textContent = `${displayIndex + 1} 페이지`;
       pageWrap.appendChild(label);
       pages.appendChild(pageWrap);
 
@@ -987,7 +987,7 @@
 
       const thumbImage = document.createElement('img');
       thumbImage.className = 'fallback-thumb-image';
-      thumbImage.alt = `${displayIndex + 1} ?섏씠吏`;
+      thumbImage.alt = `${displayIndex + 1} 페이지`;
       thumb.appendChild(thumbImage);
 
       const thumbLabel = document.createElement('span');
@@ -1034,7 +1034,7 @@
 
       const label = document.createElement('div');
       label.className = 'page-label';
-      label.textContent = `${displayIndex + 1} ?섏씠吏`;
+      label.textContent = `${displayIndex + 1} 페이지`;
       pageWrap.appendChild(label);
       pages.appendChild(pageWrap);
 
@@ -1086,18 +1086,18 @@
       if (!hasDocument()) return;
       const targetPage = targetPageOverride ?? (keepPage ? activePage : pageOrder[0] ?? 1);
       const token = ++renderToken;
-      setStatus('?뚮뜑留?以?..');
+      setStatus('렌더링 중...');
       clearRenderedPages();
       updateThumbGridSize();
       const windowRange = getRenderWindow(targetPage);
       renderedStartIndex = windowRange.start;
       renderedEndIndex = windowRange.end;
       if (fallbackDocument) {
-        pageCount.textContent = `珥?${getDocumentPageCount()} ?섏씠吏`;
+        pageCount.textContent = `총 ${getDocumentPageCount()} 페이지`;
       } else
       pageCount.textContent = pageOrder.length === pdfDocument.numPages
-        ? `珥?${pdfDocument.numPages} ?섏씠吏`
-        : `珥?${pageOrder.length} / ?먮낯 ${pdfDocument.numPages} ?섏씠吏`;
+        ? `총 ${pdfDocument.numPages} 페이지`
+        : `총 ${pageOrder.length} / 원본 ${pdfDocument.numPages} 페이지`;
 
       if (pageOrder.length > renderWindowPageCount) {
         setStatus(`${renderedStartIndex + 1}-${renderedEndIndex} / ${pageOrder.length} 페이지 표시 중`);
@@ -1126,8 +1126,9 @@
       clearRenderedPages();
       empty.style.display = 'none';
       app.style.display = 'grid';
-      setStatus('PDF ?щ뒗 以?..');
+      setStatus('PDF 여는 중...');
 
+      let passwordCancelled = false;
       try {
         const loadingSource = source?.url
           ? { ...pdfDocumentOptions, url: source.url }
@@ -1136,8 +1137,8 @@
         loadingTask.onPassword = (updatePassword, reason) => {
           postDiagnostic('info', 'PDF password requested', { reason });
           const promptText = reason === 2
-            ? 'PDF ?뷀샇媛 ?щ컮瑜댁? ?딆뒿?덈떎. ?ㅼ떆 ?낅젰?섏꽭??'
-            : 'PDF ?뷀샇瑜??낅젰?섏꽭??';
+            ? 'PDF 암호가 올바르지 않습니다. 다시 입력하세요.'
+            : 'PDF 암호를 입력하세요.';
           const password = window.prompt(promptText, '');
           if (password === null) {
             passwordCancelled = true;
@@ -1160,7 +1161,7 @@
         undoStack = [];
         redoStack = [];
         isDirty = Boolean(dirtyAfterLoad);
-        pageCount.textContent = `珥?${pdfDocument.numPages} ?섏씠吏`;
+        pageCount.textContent = `총 ${pdfDocument.numPages} 페이지`;
         postPageOrder();
         fitPageMode = true;
         await renderDocument(false);
@@ -1169,11 +1170,11 @@
         pageOrder = [];
         pageRotations = {};
         selectedPages.clear();
-        pageCount.textContent = '珥?0 ?섏씠吏';
-        setStatus('PDF瑜??댁? 紐삵뻽?듬땲??');
+        pageCount.textContent = '총 0 페이지';
+        setStatus('PDF를 열지 못했습니다.');
         window.chrome?.webview?.postMessage({
           type: 'viewerLoadFailed',
-          message: passwordCancelled ? '?뷀샇 ?낅젰??痍⑥냼?섏뿀?듬땲??' : error?.message ?? String(error),
+          message: passwordCancelled ? '암호 입력을 취소했습니다.' : error?.message ?? String(error),
           name: error?.name ?? ''
         });
       }
@@ -1200,7 +1201,7 @@
       undoStack = [];
       redoStack = [];
       isDirty = Boolean(source.isDirty);
-      pageCount.textContent = `珥?${fallbackDocument.pageCount} ?섏씠吏`;
+      pageCount.textContent = `총 ${fallbackDocument.pageCount} 페이지`;
       postDiagnostic('info', 'PDFium fallback document loaded', {
         pages: fallbackDocument.pageCount,
         largeDocumentMode: fallbackDocument.largeDocumentMode
@@ -1321,14 +1322,14 @@
           insertionIndex: getDropInsertionIndex(event)
         });
       } catch (error) {
-        setStatus(error?.message ?? '?쒕∼???섏씠吏 ?뺣낫瑜??쎌? 紐삵뻽?듬땲??');
+        setStatus(error?.message ?? '드롭한 페이지 정보를 읽지 못했습니다.');
       }
     }
 
     async function deleteSelectedPages() {
       if (!hasDocument() || selectedPages.size === 0) return;
       if (selectedPages.size >= pageOrder.length) {
-        setStatus('紐⑤뱺 ?섏씠吏????젣?????놁뒿?덈떎.');
+        setStatus('모든 페이지는 삭제할 수 없습니다.');
         return;
       }
 
@@ -1437,7 +1438,7 @@
               window.chrome?.webview?.postMessage({
                 type: 'printReady',
                 ready: false,
-                message: error?.message ?? '?몄뇙 以鍮??ㅽ뙣'
+                message: error?.message ?? '인쇄 준비 실패'
               });
             });
           break;

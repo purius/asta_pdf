@@ -1,4 +1,4 @@
-#define AppName "PDF 뷰어"
+﻿#define AppName "PDF 뷰어"
 #define AppPublisher "PdfMergeTool"
 #define AppExeName "PdfMergeTool.exe"
 #define ProductId "PdfMergeTool"
