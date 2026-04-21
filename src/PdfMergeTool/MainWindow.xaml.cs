@@ -17,6 +17,7 @@ namespace PdfMergeTool;
 public partial class MainWindow : Window
 {
     private const string ViewerHost = "pdfviewer.local";
+    private const string ViewerCacheHost = "pdfcache.local";
     private const int A4ImageMaxWidthPixels = 2480;
     private const int A4ImageMaxHeightPixels = 3508;
     private const int A4OptimizedMaxWidthPixels = 2200;
@@ -30,6 +31,7 @@ public partial class MainWindow : Window
 
     private readonly AppSettings _settings = AppSettings.Load();
     private readonly PdfMergeService _pdfService = new();
+    private readonly PdfFallbackRenderService _fallbackRenderService = new();
     private bool _viewerReady;
     private string? _currentPdfPath;
     private string? _referencePdfPath;
@@ -49,6 +51,10 @@ public partial class MainWindow : Window
     private readonly List<NativeFileDropTarget> _viewerDropTargets = [];
     private int? _lastLoggedPageCount;
     private string? _servedPdfLinkPath;
+    private string? _recoveredPdfPath;
+    private bool _viewerLoadRecoveryAttempted;
+    private bool _fallbackModeActive;
+    private string? _fallbackSessionId;
 
     public MainWindow(IEnumerable<string> initialFiles, bool openMergeWindow)
     {
@@ -222,17 +228,24 @@ public partial class MainWindow : Window
                 return;
             }
 
+            if (type == "viewerDiagnostic")
+            {
+                LogViewerDiagnostic(document.RootElement);
+                return;
+            }
+
+            if (type == "fallbackRenderRequest")
+            {
+                await HandleFallbackRenderRequestAsync(document.RootElement);
+                return;
+            }
+
             if (type == "viewerLoadFailed")
             {
                 var message = document.RootElement.TryGetProperty("message", out var messageElement)
                     ? messageElement.GetString()
                     : "알 수 없는 오류";
-                MessageBox.Show(
-                    this,
-                    $"PDF를 열지 못했습니다.\n\n{message}",
-                    "PDF 열기 실패",
-                    MessageBoxButton.OK,
-                    MessageBoxImage.Error);
+                await HandleViewerLoadFailedAsync(message);
                 return;
             }
 
@@ -271,11 +284,16 @@ public partial class MainWindow : Window
             ViewerHost,
             viewerFolder,
             CoreWebView2HostResourceAccessKind.Allow);
+        PdfViewer.CoreWebView2.SetVirtualHostNameToFolderMapping(
+            ViewerCacheHost,
+            AppPaths.ViewerRuntimeDirectory,
+            CoreWebView2HostResourceAccessKind.Allow);
         PdfViewer.CoreWebView2.Navigate($"https://{ViewerHost}/viewer.html");
     }
 
     private async void LoadPdf(string path, string? referencePath = null, bool dirtyAfterLoad = false)
     {
+        CleanupCompatibilityState();
         _currentPdfPath = path;
         _referencePdfPath = referencePath ?? path;
         _pageOrder = [];
@@ -345,15 +363,223 @@ public partial class MainWindow : Window
         var servedPath = PrepareServedPdfPath(path);
         var servedFileName = Path.GetFileName(servedPath);
         var pdfUrl = $"https://{ViewerHost}/ServedPdf/{Uri.EscapeDataString(servedFileName)}?v={Guid.NewGuid():N}";
+        var fileLength = new FileInfo(path).Length;
         var message = JsonSerializer.Serialize(new
         {
             type = "loadPdf",
             url = pdfUrl,
             isDirty = dirtyAfterLoad,
-            sourcePath = path
+            sourcePath = _referencePdfPath ?? path,
+            largeDocumentHint = fileLength >= 80L * 1024 * 1024,
+            fileLength
         });
         PdfViewer.CoreWebView2.PostWebMessageAsJson(message);
+        AppLogger.Info($"PDF 뷰어 로드 요청: {path}, {fileLength:N0} bytes");
         return Task.CompletedTask;
+    }
+
+    private async Task HandleViewerLoadFailedAsync(string? message)
+    {
+        var failureMessage = string.IsNullOrWhiteSpace(message) ? "알 수 없는 오류" : message;
+        AppLogger.Info($"PDF 뷰어 로드 실패: {_currentPdfPath}, {failureMessage}");
+
+        if (!_viewerLoadRecoveryAttempted &&
+            !string.IsNullOrWhiteSpace(_currentPdfPath) &&
+            File.Exists(_currentPdfPath))
+        {
+            _viewerLoadRecoveryAttempted = true;
+            var recoveredPath = Path.Combine(
+                AppPaths.RecoveredPdfDirectory,
+                $"recovered-{Guid.NewGuid():N}.pdf");
+
+            try
+            {
+                await _pdfService.NormalizeForViewingAsync(_currentPdfPath, recoveredPath, CancellationToken.None);
+                if (File.Exists(recoveredPath) && new FileInfo(recoveredPath).Length > 0)
+                {
+                    CleanupRecoveredPdf();
+                    _recoveredPdfPath = recoveredPath;
+                    _currentPdfPath = recoveredPath;
+                    AppLogger.Info($"PDF 자동 복구 후 재로드: {_referencePdfPath} -> {recoveredPath}");
+                    await SendPdfToViewerAsync(recoveredPath, _isDirty);
+                    return;
+                }
+            }
+            catch (Exception ex)
+            {
+                TryDeleteFile(recoveredPath);
+                AppLogger.Error(ex, $"PDF 자동 복구 실패: {_currentPdfPath}");
+            }
+        }
+
+        if (await TryOpenFallbackViewerAsync(failureMessage))
+        {
+            return;
+        }
+
+        MessageBox.Show(
+            this,
+            $"PDF를 열지 못했습니다.\n\n{failureMessage}",
+            "PDF 열기 실패",
+            MessageBoxButton.OK,
+            MessageBoxImage.Error);
+    }
+
+    private async Task<bool> TryOpenFallbackViewerAsync(string failureMessage)
+    {
+        if (string.IsNullOrWhiteSpace(_currentPdfPath) || !File.Exists(_currentPdfPath))
+        {
+            return false;
+        }
+
+        try
+        {
+            CloseFallbackSession();
+            var session = _fallbackRenderService.OpenDocument(_currentPdfPath);
+            _fallbackSessionId = session.SessionId;
+            _fallbackModeActive = true;
+            AppLogger.Info($"PDFium fallback 뷰어 사용: {_referencePdfPath ?? _currentPdfPath}, {session.Pages.Count} pages, reason={failureMessage}");
+
+            var message = JsonSerializer.Serialize(new
+            {
+                type = "loadFallbackDocument",
+                sessionId = session.SessionId,
+                isDirty = _isDirty,
+                sourcePath = _referencePdfPath ?? _currentPdfPath,
+                largeDocumentMode = session.LargeDocumentMode,
+                pages = session.Pages.Select(page => new
+                {
+                    page.Number,
+                    page.Width,
+                    page.Height
+                })
+            });
+            PdfViewer.CoreWebView2.PostWebMessageAsJson(message);
+            await Task.CompletedTask;
+            return true;
+        }
+        catch (Exception ex)
+        {
+            AppLogger.Error(ex, $"PDFium fallback 뷰어 열기 실패: {_currentPdfPath}");
+            CloseFallbackSession();
+            return false;
+        }
+    }
+
+    private async Task HandleFallbackRenderRequestAsync(JsonElement root)
+    {
+        if (!root.TryGetProperty("requestId", out var requestIdElement) ||
+            !root.TryGetProperty("sessionId", out var sessionIdElement) ||
+            !root.TryGetProperty("pageNumber", out var pageNumberElement))
+        {
+            return;
+        }
+
+        var requestId = requestIdElement.GetString() ?? string.Empty;
+        var sessionId = sessionIdElement.GetString() ?? string.Empty;
+        var role = root.TryGetProperty("role", out var roleElement)
+            ? roleElement.GetString()
+            : "main";
+        var thumbnail = string.Equals(role, "thumb", StringComparison.OrdinalIgnoreCase);
+        var targetWidth = root.TryGetProperty("targetWidth", out var targetWidthElement)
+            ? targetWidthElement.GetInt32()
+            : thumbnail ? 96 : 900;
+        var rotation = root.TryGetProperty("rotation", out var rotationElement)
+            ? rotationElement.GetInt32()
+            : 0;
+
+        try
+        {
+            var rendered = await _fallbackRenderService.RenderPageAsync(
+                sessionId,
+                pageNumberElement.GetInt32(),
+                targetWidth,
+                rotation,
+                thumbnail,
+                CancellationToken.None);
+            var message = JsonSerializer.Serialize(new
+            {
+                type = "fallbackPageRendered",
+                requestId,
+                success = true,
+                pageNumber = rendered.PageNumber,
+                role = thumbnail ? "thumb" : "main",
+                url = ToCacheUrl(rendered.ImagePath),
+                rendered.SourceWidth,
+                rendered.SourceHeight
+            });
+            PdfViewer.CoreWebView2.PostWebMessageAsJson(message);
+        }
+        catch (Exception ex)
+        {
+            AppLogger.Error(ex, $"PDFium fallback 페이지 렌더링 실패: session={sessionId}, page={pageNumberElement.GetInt32()}");
+            var message = JsonSerializer.Serialize(new
+            {
+                type = "fallbackPageRendered",
+                requestId,
+                success = false,
+                error = ex.Message
+            });
+            PdfViewer.CoreWebView2.PostWebMessageAsJson(message);
+        }
+    }
+
+    private static string ToCacheUrl(string path)
+    {
+        var relative = Path.GetRelativePath(AppPaths.ViewerRuntimeDirectory, path)
+            .Split(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar)
+            .Where(part => !string.IsNullOrWhiteSpace(part))
+            .Select(Uri.EscapeDataString);
+        return $"https://{ViewerCacheHost}/{string.Join("/", relative)}?v={Guid.NewGuid():N}";
+    }
+
+    private void LogViewerDiagnostic(JsonElement root)
+    {
+        var level = root.TryGetProperty("level", out var levelElement)
+            ? levelElement.GetString()
+            : "info";
+        var message = root.TryGetProperty("message", out var messageElement)
+            ? messageElement.GetString()
+            : null;
+        var details = root.TryGetProperty("details", out var detailsElement)
+            ? detailsElement.ToString()
+            : string.Empty;
+        AppLogger.Info($"PDF 뷰어 진단[{level}]: {message} {details}");
+    }
+
+    private void CleanupCompatibilityState()
+    {
+        _viewerLoadRecoveryAttempted = false;
+        _fallbackModeActive = false;
+        CloseFallbackSession();
+        CleanupRecoveredPdf();
+    }
+
+    private void CloseFallbackSession()
+    {
+        _fallbackRenderService.CloseSession(_fallbackSessionId);
+        _fallbackSessionId = null;
+    }
+
+    private void CleanupRecoveredPdf()
+    {
+        TryDeleteFile(_recoveredPdfPath);
+        _recoveredPdfPath = null;
+    }
+
+    private static void TryDeleteFile(string? path)
+    {
+        try
+        {
+            if (!string.IsNullOrWhiteSpace(path) && File.Exists(path))
+            {
+                File.Delete(path);
+            }
+        }
+        catch
+        {
+            // Temporary compatibility files are best-effort cleanup.
+        }
     }
 
     private string PrepareServedPdfPath(string sourcePath)
@@ -479,6 +705,8 @@ public partial class MainWindow : Window
         SaveWindowSettings();
         DisposeNativeViewerDropTargets();
         CleanupServedPdfLink();
+        CleanupCompatibilityState();
+        _fallbackRenderService.Dispose();
     }
 
     private void ApplyWindowSettings()
@@ -708,6 +936,19 @@ public partial class MainWindow : Window
 
     private async Task<IReadOnlyList<PdfImagePage>> ExportCurrentPagesAsA4ImagesAsync(bool optimizeSize = false)
     {
+        if (_fallbackModeActive && !string.IsNullOrWhiteSpace(_fallbackSessionId))
+        {
+            AppLogger.Info($"PDFium fallback A4 이미지 내보내기: {_referencePdfPath ?? _currentPdfPath}");
+            return await _fallbackRenderService.ExportPagesAsImagesAsync(
+                _fallbackSessionId,
+                _pageOrder,
+                _pageRotations,
+                optimizeSize ? A4OptimizedMaxWidthPixels : A4ImageMaxWidthPixels,
+                optimizeSize ? A4OptimizedMaxHeightPixels : A4ImageMaxHeightPixels,
+                optimizeSize ? 86 : 92,
+                CancellationToken.None);
+        }
+
         _a4ExportedPages.Clear();
         _a4ExportExpectedPages = 0;
         _a4ExportCompletion = new TaskCompletionSource<IReadOnlyList<PdfImagePage>>(TaskCreationOptions.RunContinuationsAsynchronously);
@@ -1593,17 +1834,9 @@ public partial class MainWindow : Window
             return;
         }
 
+        string? printPdfPath = null;
         try
         {
-            _printReadyCompletion = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
-            SendViewerCommand("preparePrint");
-            var completed = await Task.WhenAny(_printReadyCompletion.Task, Task.Delay(TimeSpan.FromSeconds(30)));
-            if (completed != _printReadyCompletion.Task || !await _printReadyCompletion.Task)
-            {
-                MessageBox.Show(this, "인쇄할 페이지를 준비하지 못했습니다.", "PDF 인쇄 실패", MessageBoxButton.OK, MessageBoxImage.Error);
-                return;
-            }
-
             var printDialog = new System.Windows.Controls.PrintDialog
             {
                 UserPageRangeEnabled = true
@@ -1614,8 +1847,91 @@ public partial class MainWindow : Window
                 return;
             }
 
-            var printSettings = PdfViewer.CoreWebView2.Environment.CreatePrintSettings();
-            printSettings.PrinterName = printDialog.PrintQueue.FullName;
+            printPdfPath = await CreatePrintPdfAsync(CancellationToken.None);
+            var status = await PrintPdfWithNativeViewerAsync(printPdfPath, printDialog);
+            if (status != CoreWebView2PrintStatus.Succeeded)
+            {
+                MessageBox.Show(this, status.ToString(), "PDF 인쇄 실패", MessageBoxButton.OK, MessageBoxImage.Error);
+            }
+        }
+        catch (Exception ex)
+        {
+            AppLogger.Error(ex, "PDF 인쇄 실패");
+            MessageBox.Show(this, ex.Message, "PDF 인쇄 실패", MessageBoxButton.OK, MessageBoxImage.Error);
+        }
+        finally
+        {
+            _printReadyCompletion = null;
+            TryDeletePrintPdf(printPdfPath);
+        }
+    }
+
+    private async Task<string> CreatePrintPdfAsync(CancellationToken cancellationToken)
+    {
+        if (string.IsNullOrWhiteSpace(_currentPdfPath) || !File.Exists(_currentPdfPath))
+        {
+            throw new FileNotFoundException("인쇄할 PDF 파일을 찾을 수 없습니다.", _currentPdfPath);
+        }
+
+        if (_pageOrder.Count == 0)
+        {
+            throw new InvalidOperationException("인쇄할 페이지가 없습니다.");
+        }
+
+        var printPdfPath = Path.Combine(
+            Path.GetTempPath(),
+            $"PdfMergeTool-print-{Guid.NewGuid():N}.pdf");
+        var pages = _pageOrder
+            .Select(page => new PdfPageTransform(page, GetRotation(page)))
+            .ToList();
+
+        await _pdfService.SaveTransformedPagesAsync(_currentPdfPath, pages, printPdfPath, cancellationToken);
+        return printPdfPath;
+    }
+
+    private async Task<CoreWebView2PrintStatus> PrintPdfWithNativeViewerAsync(
+        string pdfPath,
+        System.Windows.Controls.PrintDialog printDialog)
+    {
+        var printQueue = printDialog.PrintQueue;
+        if (printQueue is null)
+        {
+            using var printServer = new LocalPrintServer();
+            printQueue = printServer.DefaultPrintQueue;
+        }
+
+        if (printQueue is null || string.IsNullOrWhiteSpace(printQueue.FullName))
+        {
+            throw new InvalidOperationException("선택된 프린터를 확인할 수 없습니다.");
+        }
+
+        var printWindow = new Window
+        {
+            Width = 1,
+            Height = 1,
+            Left = -32000,
+            Top = -32000,
+            WindowStyle = WindowStyle.None,
+            ResizeMode = ResizeMode.NoResize,
+            ShowInTaskbar = false,
+            ShowActivated = false,
+            Opacity = 0,
+            Content = new Microsoft.Web.WebView2.Wpf.WebView2()
+        };
+
+        var printViewer = (Microsoft.Web.WebView2.Wpf.WebView2)printWindow.Content;
+        printWindow.Show();
+
+        try
+        {
+            await printViewer.EnsureCoreWebView2Async(PdfViewer.CoreWebView2.Environment);
+            printViewer.CoreWebView2.Settings.AreDefaultContextMenusEnabled = false;
+            printViewer.CoreWebView2.Settings.AreBrowserAcceleratorKeysEnabled = false;
+
+            await NavigateForPrintAsync(printViewer, pdfPath);
+
+            var printSettings = printViewer.CoreWebView2.Environment.CreatePrintSettings();
+            printSettings.PrinterName = printQueue.FullName;
             printSettings.ShouldPrintHeaderAndFooter = false;
             printSettings.HeaderTitle = string.Empty;
             printSettings.FooterUri = string.Empty;
@@ -1625,18 +1941,19 @@ public partial class MainWindow : Window
             printSettings.MarginLeft = 0;
             printSettings.MarginRight = 0;
 
-            if (printDialog.PrintTicket.CopyCount is { } copyCount && copyCount > 0)
+            var printTicket = printDialog.PrintTicket;
+            if (printTicket?.CopyCount is { } copyCount && copyCount > 0)
             {
                 printSettings.Copies = copyCount;
             }
 
-            if (printDialog.PrintTicket.PageOrientation == PageOrientation.Landscape ||
-                printDialog.PrintTicket.PageOrientation == PageOrientation.ReverseLandscape)
+            if (printTicket?.PageOrientation == PageOrientation.Landscape ||
+                printTicket?.PageOrientation == PageOrientation.ReverseLandscape)
             {
                 printSettings.Orientation = CoreWebView2PrintOrientation.Landscape;
             }
-            else if (printDialog.PrintTicket.PageOrientation == PageOrientation.Portrait ||
-                     printDialog.PrintTicket.PageOrientation == PageOrientation.ReversePortrait)
+            else if (printTicket?.PageOrientation == PageOrientation.Portrait ||
+                     printTicket?.PageOrientation == PageOrientation.ReversePortrait)
             {
                 printSettings.Orientation = CoreWebView2PrintOrientation.Portrait;
             }
@@ -1646,19 +1963,53 @@ public partial class MainWindow : Window
                 printSettings.PageRanges = $"{printDialog.PageRange.PageFrom}-{printDialog.PageRange.PageTo}";
             }
 
-            var status = await PdfViewer.CoreWebView2.PrintAsync(printSettings);
-            if (status != CoreWebView2PrintStatus.Succeeded)
-            {
-                MessageBox.Show(this, status.ToString(), "PDF 인쇄 실패", MessageBoxButton.OK, MessageBoxImage.Error);
-            }
-        }
-        catch (Exception ex)
-        {
-            MessageBox.Show(this, ex.Message, "PDF 인쇄 실패", MessageBoxButton.OK, MessageBoxImage.Error);
+            return await printViewer.CoreWebView2.PrintAsync(printSettings);
         }
         finally
         {
-            _printReadyCompletion = null;
+            printWindow.Close();
+        }
+    }
+
+    private static async Task NavigateForPrintAsync(Microsoft.Web.WebView2.Wpf.WebView2 printViewer, string pdfPath)
+    {
+        var completion = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
+
+        void OnNavigationCompleted(object? sender, CoreWebView2NavigationCompletedEventArgs args)
+        {
+            completion.TrySetResult(args.IsSuccess);
+        }
+
+        printViewer.CoreWebView2.NavigationCompleted += OnNavigationCompleted;
+        try
+        {
+            printViewer.CoreWebView2.Navigate(new Uri(pdfPath).AbsoluteUri);
+            var completed = await Task.WhenAny(completion.Task, Task.Delay(TimeSpan.FromSeconds(30)));
+            if (completed != completion.Task || !await completion.Task)
+            {
+                throw new InvalidOperationException("인쇄용 PDF를 준비하지 못했습니다.");
+            }
+
+            await Task.Delay(700);
+        }
+        finally
+        {
+            printViewer.CoreWebView2.NavigationCompleted -= OnNavigationCompleted;
+        }
+    }
+
+    private static void TryDeletePrintPdf(string? path)
+    {
+        try
+        {
+            if (!string.IsNullOrWhiteSpace(path) && File.Exists(path))
+            {
+                File.Delete(path);
+            }
+        }
+        catch
+        {
+            // The temporary print file is best-effort cleanup.
         }
     }
 

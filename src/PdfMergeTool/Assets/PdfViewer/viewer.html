@@ -1,4 +1,4 @@
-<!doctype html>
+﻿<!doctype html>
 <html lang="ko">
 <head>
   <meta charset="utf-8" />
@@ -170,7 +170,8 @@
       border-color: #8fb0ff;
     }
 
-    .thumb canvas {
+    .thumb canvas,
+    .fallback-thumb-image {
       display: block;
       width: 100%;
       height: auto;
@@ -205,11 +206,16 @@
       margin: 0 auto 18px;
     }
 
-    .page-wrap canvas {
+    .page-wrap canvas,
+    .fallback-page-image {
       display: block;
       background: #fff;
       border-radius: 4px;
       box-shadow: 0 12px 32px rgba(31, 41, 55, 0.18);
+    }
+
+    .fallback-page-image {
+      max-width: none;
     }
 
     .page-label {
@@ -295,28 +301,34 @@
 <body>
   <div id="empty">
     <div>
-      <strong>PDF를 여기에 놓으세요.</strong>
-      <div>빈 영역, 썸네일 영역, 본문 어디에 놓아도 PDF가 열립니다.</div>
+      <strong>PDF瑜??ш린???볦쑝?몄슂.</strong>
+      <div>鍮??곸뿭, ?몃꽕???곸뿭, 蹂몃Ц ?대뵒???볦븘??PDF媛 ?대┰?덈떎.</div>
     </div>
   </div>
   <main id="app">
-    <aside id="thumbPanel" aria-label="페이지 썸네일">
+    <aside id="thumbPanel" aria-label="?섏씠吏 ?몃꽕??>
       <div id="thumbHeader">
-        <div id="pageCount">0 페이지</div>
-        <div id="selectionHint">Ctrl/Shift 클릭으로 여러 페이지 선택</div>
+        <div id="pageCount">0 ?섏씠吏</div>
+        <div id="selectionHint">Ctrl/Shift ?대┃?쇰줈 ?щ윭 ?섏씠吏 ?좏깮</div>
       </div>
       <div id="thumbs"></div>
     </aside>
-    <div id="splitter" title="썸네일 영역 너비 조절"></div>
-    <section id="pages" aria-label="PDF 페이지"></section>
+    <div id="splitter" title="?몃꽕???곸뿭 ?덈퉬 議곗젅"></div>
+    <section id="pages" aria-label="PDF ?섏씠吏"></section>
   </main>
   <div id="printPages" aria-hidden="true"></div>
-  <div id="status">준비됨</div>
+  <div id="status">以鍮꾨맖</div>
 
   <script type="module">
     import * as pdfjsLib from './pdf.min.mjs';
 
     pdfjsLib.GlobalWorkerOptions.workerSrc = './pdf.worker.min.mjs';
+    const pdfDocumentOptions = {
+      cMapUrl: './cmaps/',
+      cMapPacked: true,
+      standardFontDataUrl: './standard_fonts/',
+      useSystemFonts: true
+    };
     const pageTransferMime = 'application/x-pdfmergetool-pages';
     const pageTransferTextPrefix = 'PDFMERGETOOL_PAGES:';
     const empty = document.getElementById('empty');
@@ -328,9 +340,11 @@
     const pages = document.getElementById('pages');
     const printPages = document.getElementById('printPages');
     const status = document.getElementById('status');
-    const maxRenderedPages = 18;
+    let renderWindowPageCount = 18;
 
     let pdfDocument = null;
+    let fallbackDocument = null;
+    const fallbackRenderRequests = new Map();
     let activePage = 1;
     let mainScale = 1.25;
     let thumbScale = 0.22;
@@ -351,6 +365,27 @@
     const windowInstanceId = crypto.randomUUID?.() ?? `${Date.now()}-${Math.random()}`;
 
     const clamp = (value, min, max) => Math.max(min, Math.min(max, value));
+
+    function hasDocument() {
+      return Boolean(pdfDocument || fallbackDocument);
+    }
+
+    function getDocumentPageCount() {
+      return pdfDocument?.numPages ?? fallbackDocument?.pageCount ?? 0;
+    }
+
+    function getPageMetrics(pageNumber) {
+      return fallbackDocument?.pages?.[pageNumber - 1] ?? { width: 595, height: 842 };
+    }
+
+    function postDiagnostic(level, message, details = {}) {
+      window.chrome?.webview?.postMessage({
+        type: 'viewerDiagnostic',
+        level,
+        message,
+        details
+      });
+    }
 
     function setStatus(text) {
       status.textContent = text;
@@ -430,7 +465,7 @@
     async function preparePrint() {
       if (!pdfDocument || pageOrder.length === 0) return false;
 
-      setStatus('인쇄 준비 중...');
+      setStatus('?몄뇙 以鍮?以?..');
       printPages.replaceChildren();
 
       const printScale = 2;
@@ -446,7 +481,7 @@
         await page.render({ canvasContext: context, viewport }).promise;
 
         const image = document.createElement('img');
-        image.alt = `${index + 1} 페이지`;
+        image.alt = `${index + 1} ?섏씠吏`;
         image.src = canvas.toDataURL('image/png');
 
         const wrapper = document.createElement('div');
@@ -455,7 +490,7 @@
         printPages.appendChild(wrapper);
       }
 
-      setStatus('인쇄 준비 완료');
+      setStatus('?몄뇙 以鍮??꾨즺');
       return true;
     }
 
@@ -464,13 +499,14 @@
         window.chrome?.webview?.postMessage({
           type: 'a4ExportComplete',
           success: false,
-          message: 'PDF가 열려 있지 않습니다.'
+          message: 'PDF媛 ?대젮 ?덉? ?딆뒿?덈떎.'
         });
         return;
       }
 
+      let passwordCancelled = false;
       try {
-        const statusText = options.statusText ?? 'A4 맞춤 이미지 생성 중...';
+        const statusText = options.statusText ?? 'A4 留욎땄 ?대?吏 ?앹꽦 以?..';
         setStatus(statusText);
         const maxExportWidth = options.maxWidth ?? 2480;
         const maxExportHeight = options.maxHeight ?? 3508;
@@ -514,17 +550,25 @@
         window.chrome?.webview?.postMessage({
           type: 'a4ExportComplete',
           success: false,
-          message: error?.message ?? 'A4 맞춤 이미지 생성 실패'
+          message: error?.message ?? 'A4 留욎땄 ?대?吏 ?앹꽦 ?ㅽ뙣'
         });
       }
     }
 
     function setActive(pageNumber) {
-      if (!pdfDocument) return;
+      if (!hasDocument()) return;
       const previousPage = activePage;
-      activePage = clamp(pageNumber, 1, pdfDocument.numPages);
+      const totalPages = getDocumentPageCount();
+      activePage = clamp(pageNumber, 1, totalPages);
       updateThumbClasses();
-      setStatus(`${activePage} / ${pdfDocument.numPages} 페이지 · 본문 ${Math.round(mainScale * 100)}% · 썸네일 ${Math.round(thumbScale * 100)}%`);
+      if (fallbackDocument) {
+        setStatus(`${activePage} / ${totalPages} ?섏씠吏 쨌 蹂몃Ц ${Math.round(mainScale * 100)}% 쨌 ?몃꽕??${Math.round(thumbScale * 100)}% 쨌 PDFium`);
+        if (previousPage !== activePage) {
+          postPageOrder();
+        }
+        return;
+      }
+      setStatus(`${activePage} / ${pdfDocument.numPages} ?섏씠吏 쨌 蹂몃Ц ${Math.round(mainScale * 100)}% 쨌 ?몃꽕??${Math.round(thumbScale * 100)}%`);
       if (previousPage !== activePage) {
         postPageOrder();
       }
@@ -538,8 +582,8 @@
       });
       const selectedCount = selectedPages.size;
       selectionHint.textContent = selectedCount > 0
-        ? `${selectedCount}개 선택됨 · 드래그로 묶음 이동`
-        : 'Ctrl/Shift 클릭으로 여러 페이지 선택';
+        ? `${selectedCount}媛??좏깮??쨌 ?쒕옒洹몃줈 臾띠쓬 ?대룞`
+        : 'Ctrl/Shift ?대┃?쇰줈 ?щ윭 ?섏씠吏 ?좏깮';
     }
 
     function clearDropIndicators() {
@@ -656,7 +700,7 @@
           insertionIndex
         });
       } catch (error) {
-        setStatus(error?.message ?? '드롭한 페이지 정보를 읽지 못했습니다.');
+        setStatus(error?.message ?? '?쒕∼???섏씠吏 ?뺣낫瑜??쎌? 紐삵뻽?듬땲??');
       }
     }
 
@@ -838,25 +882,136 @@
       return clamp(Math.min(availableWidth / viewport.width, availableHeight / viewport.height), 0.2, 3);
     }
 
+    function calculateFallbackFitScale(pageNumber) {
+      const metrics = getPageMetrics(pageNumber);
+      const availableWidth = Math.max(240, pages.clientWidth - 52);
+      const availableHeight = Math.max(260, pages.clientHeight - 54);
+      return clamp(Math.min(availableWidth / metrics.width, availableHeight / metrics.height), 0.2, 3);
+    }
+
     function getPageOrderIndex(pageNumber) {
       const index = pageOrder.indexOf(pageNumber);
       return index >= 0 ? index : 0;
     }
 
     function getRenderWindow(targetPage) {
-      if (pageOrder.length <= maxRenderedPages) {
+      if (pageOrder.length <= renderWindowPageCount) {
         return { start: 0, end: pageOrder.length };
       }
 
       const targetIndex = getPageOrderIndex(targetPage);
-      const before = Math.floor(maxRenderedPages / 2);
-      let start = clamp(targetIndex - before, 0, Math.max(0, pageOrder.length - maxRenderedPages));
-      let end = Math.min(pageOrder.length, start + maxRenderedPages);
-      start = Math.max(0, end - maxRenderedPages);
+      const before = Math.floor(renderWindowPageCount / 2);
+      let start = clamp(targetIndex - before, 0, Math.max(0, pageOrder.length - renderWindowPageCount));
+      let end = Math.min(pageOrder.length, start + renderWindowPageCount);
+      start = Math.max(0, end - renderWindowPageCount);
       return { start, end };
     }
 
+    function attachThumbEvents(thumb, pageNumber) {
+      thumb.addEventListener('dragstart', (event) => {
+        const payload = buildPageTransferPayload(pageNumber);
+        if (!payload.sourcePath || payload.pages.length === 0) {
+          event.preventDefault();
+          return;
+        }
+
+        event.dataTransfer.effectAllowed = 'copy';
+        const payloadJson = JSON.stringify(payload);
+        event.dataTransfer.setData(pageTransferMime, payloadJson);
+        event.dataTransfer.setData('text/plain', `${pageTransferTextPrefix}${payloadJson}`);
+        markDraggingPages(payload.pages.map((page) => page.pageNumber));
+      });
+      thumb.addEventListener('dragend', () => {
+        clearDropIndicators();
+        updateThumbClasses();
+      });
+      thumb.addEventListener('pointerdown', (event) => {
+        beginThumbPointerDrag(event, pageNumber, thumb);
+      });
+    }
+
+    function requestFallbackRender(pageNumber, role, targetWidth, rotation) {
+      const requestId = `${Date.now()}-${Math.random()}`;
+      return new Promise((resolve, reject) => {
+        fallbackRenderRequests.set(requestId, { resolve, reject });
+        window.chrome?.webview?.postMessage({
+          type: 'fallbackRenderRequest',
+          requestId,
+          sessionId: fallbackDocument.sessionId,
+          pageNumber,
+          role,
+          targetWidth,
+          rotation
+        });
+      });
+    }
+
+    async function renderFallbackPage(pageNumber, displayIndex, token) {
+      if (!fallbackDocument) return;
+      if (fitPageMode && displayIndex === renderedStartIndex) {
+        mainScale = calculateFallbackFitScale(pageNumber);
+      }
+
+      const metrics = getPageMetrics(pageNumber);
+      const rotation = ((pageRotations[pageNumber] ?? 0) % 360 + 360) % 360;
+      const sourceWidth = rotation === 90 || rotation === 270 ? metrics.height : metrics.width;
+      const sourceHeight = rotation === 90 || rotation === 270 ? metrics.width : metrics.height;
+      const pageWidth = Math.max(1, Math.floor(sourceWidth * mainScale));
+      const pageHeight = Math.max(1, Math.floor(sourceHeight * mainScale));
+
+      const pageWrap = document.createElement('div');
+      pageWrap.id = `page-${pageNumber}`;
+      pageWrap.className = 'page-wrap';
+      pageWrap.dataset.page = String(pageNumber);
+
+      const pageImage = document.createElement('img');
+      pageImage.className = 'fallback-page-image';
+      pageImage.alt = `${displayIndex + 1} ?섏씠吏`;
+      pageImage.width = pageWidth;
+      pageImage.height = pageHeight;
+      pageImage.style.width = `${pageWidth}px`;
+      pageImage.style.height = `${pageHeight}px`;
+      pageWrap.appendChild(pageImage);
+
+      const label = document.createElement('div');
+      label.className = 'page-label';
+      label.textContent = `${displayIndex + 1} ?섏씠吏`;
+      pageWrap.appendChild(label);
+      pages.appendChild(pageWrap);
+
+      const thumb = document.createElement('button');
+      thumb.className = 'thumb';
+      thumb.dataset.page = String(pageNumber);
+      thumb.type = 'button';
+      thumb.draggable = true;
+
+      const thumbImage = document.createElement('img');
+      thumbImage.className = 'fallback-thumb-image';
+      thumbImage.alt = `${displayIndex + 1} ?섏씠吏`;
+      thumb.appendChild(thumbImage);
+
+      const thumbLabel = document.createElement('span');
+      thumbLabel.textContent = String(displayIndex + 1);
+      thumb.appendChild(thumbLabel);
+      attachThumbEvents(thumb, pageNumber);
+      thumbs.appendChild(thumb);
+
+      const thumbTargetWidth = clamp(Math.round(340 * thumbScale), 42, 190);
+      const [mainResult, thumbResult] = await Promise.all([
+        requestFallbackRender(pageNumber, 'main', pageWidth, rotation),
+        requestFallbackRender(pageNumber, 'thumb', thumbTargetWidth, rotation)
+      ]);
+      if (token !== renderToken) return;
+      pageImage.src = mainResult.url;
+      thumbImage.src = thumbResult.url;
+    }
+
     async function renderPage(pageNumber, displayIndex, token) {
+      if (fallbackDocument) {
+        await renderFallbackPage(pageNumber, displayIndex, token);
+        return;
+      }
+
       const page = await pdfDocument.getPage(pageNumber);
       if (token !== renderToken) return;
 
@@ -879,7 +1034,7 @@
 
       const label = document.createElement('div');
       label.className = 'page-label';
-      label.textContent = `${displayIndex + 1} 페이지`;
+      label.textContent = `${displayIndex + 1} ?섏씠吏`;
       pageWrap.appendChild(label);
       pages.appendChild(pageWrap);
 
@@ -928,20 +1083,23 @@
     }
 
     async function renderDocument(keepPage = true, targetPageOverride = null) {
-      if (!pdfDocument) return;
+      if (!hasDocument()) return;
       const targetPage = targetPageOverride ?? (keepPage ? activePage : pageOrder[0] ?? 1);
       const token = ++renderToken;
-      setStatus('렌더링 중...');
+      setStatus('?뚮뜑留?以?..');
       clearRenderedPages();
       updateThumbGridSize();
       const windowRange = getRenderWindow(targetPage);
       renderedStartIndex = windowRange.start;
       renderedEndIndex = windowRange.end;
+      if (fallbackDocument) {
+        pageCount.textContent = `珥?${getDocumentPageCount()} ?섏씠吏`;
+      } else
       pageCount.textContent = pageOrder.length === pdfDocument.numPages
-        ? `총 ${pdfDocument.numPages} 페이지`
-        : `총 ${pageOrder.length} / 원본 ${pdfDocument.numPages} 페이지`;
+        ? `珥?${pdfDocument.numPages} ?섏씠吏`
+        : `珥?${pageOrder.length} / ?먮낯 ${pdfDocument.numPages} ?섏씠吏`;
 
-      if (pageOrder.length > maxRenderedPages) {
+      if (pageOrder.length > renderWindowPageCount) {
         setStatus(`${renderedStartIndex + 1}-${renderedEndIndex} / ${pageOrder.length} 페이지 표시 중`);
       }
 
@@ -957,26 +1115,52 @@
       });
     }
 
-    async function loadPdf(source, dirtyAfterLoad = false, sourcePath = '') {
+    async function loadPdf(source, dirtyAfterLoad = false, sourcePath = '', options = {}) {
+      fallbackDocument = null;
+      pdfDocument = null;
+      fallbackRenderRequests.clear();
+      renderWindowPageCount = options.largeDocumentHint ? 8 : 18;
       selectedPages.clear();
       lastSelectedPage = null;
       documentSourcePath = sourcePath ?? '';
       clearRenderedPages();
       empty.style.display = 'none';
       app.style.display = 'grid';
-      setStatus('PDF 여는 중...');
+      setStatus('PDF ?щ뒗 以?..');
 
       try {
         const loadingSource = source?.url
-          ? { url: source.url }
-          : { data: bytesFromBase64(source) };
-        pdfDocument = await pdfjsLib.getDocument(loadingSource).promise;
+          ? { ...pdfDocumentOptions, url: source.url }
+          : { ...pdfDocumentOptions, data: bytesFromBase64(source) };
+        const loadingTask = pdfjsLib.getDocument(loadingSource);
+        loadingTask.onPassword = (updatePassword, reason) => {
+          postDiagnostic('info', 'PDF password requested', { reason });
+          const promptText = reason === 2
+            ? 'PDF ?뷀샇媛 ?щ컮瑜댁? ?딆뒿?덈떎. ?ㅼ떆 ?낅젰?섏꽭??'
+            : 'PDF ?뷀샇瑜??낅젰?섏꽭??';
+          const password = window.prompt(promptText, '');
+          if (password === null) {
+            passwordCancelled = true;
+            loadingTask.destroy();
+            return;
+          }
+
+          updatePassword(password);
+        };
+        pdfDocument = await loadingTask.promise;
+        if (options.largeDocumentHint || pdfDocument.numPages >= 180) {
+          renderWindowPageCount = 8;
+          postDiagnostic('info', 'Large document mode enabled', {
+            pages: pdfDocument.numPages,
+            fileLength: options.fileLength ?? 0
+          });
+        }
         pageOrder = Array.from({ length: pdfDocument.numPages }, (_, index) => index + 1);
         pageRotations = {};
         undoStack = [];
         redoStack = [];
         isDirty = Boolean(dirtyAfterLoad);
-        pageCount.textContent = `총 ${pdfDocument.numPages} 페이지`;
+        pageCount.textContent = `珥?${pdfDocument.numPages} ?섏씠吏`;
         postPageOrder();
         fitPageMode = true;
         await renderDocument(false);
@@ -985,18 +1169,50 @@
         pageOrder = [];
         pageRotations = {};
         selectedPages.clear();
-        pageCount.textContent = '총 0 페이지';
-        setStatus('PDF를 열지 못했습니다.');
+        pageCount.textContent = '珥?0 ?섏씠吏';
+        setStatus('PDF瑜??댁? 紐삵뻽?듬땲??');
         window.chrome?.webview?.postMessage({
           type: 'viewerLoadFailed',
-          message: error?.message ?? String(error)
+          message: passwordCancelled ? '?뷀샇 ?낅젰??痍⑥냼?섏뿀?듬땲??' : error?.message ?? String(error),
+          name: error?.name ?? ''
         });
       }
     }
 
+    async function loadFallbackDocument(source) {
+      pdfDocument = null;
+      fallbackRenderRequests.clear();
+      fallbackDocument = {
+        sessionId: source.sessionId,
+        pageCount: source.pages?.length ?? 0,
+        pages: source.pages ?? [],
+        largeDocumentMode: Boolean(source.largeDocumentMode)
+      };
+      renderWindowPageCount = fallbackDocument.largeDocumentMode ? 8 : 18;
+      selectedPages.clear();
+      lastSelectedPage = null;
+      documentSourcePath = source.sourcePath ?? '';
+      clearRenderedPages();
+      empty.style.display = 'none';
+      app.style.display = 'grid';
+      pageOrder = Array.from({ length: fallbackDocument.pageCount }, (_, index) => index + 1);
+      pageRotations = {};
+      undoStack = [];
+      redoStack = [];
+      isDirty = Boolean(source.isDirty);
+      pageCount.textContent = `珥?${fallbackDocument.pageCount} ?섏씠吏`;
+      postDiagnostic('info', 'PDFium fallback document loaded', {
+        pages: fallbackDocument.pageCount,
+        largeDocumentMode: fallbackDocument.largeDocumentMode
+      });
+      postPageOrder();
+      fitPageMode = true;
+      await renderDocument(false);
+    }
+
     async function goToPage(pageNumber, smooth = true) {
-      if (!pdfDocument) return;
-      const page = clamp(pageNumber, 1, pdfDocument.numPages);
+      if (!hasDocument()) return;
+      const page = clamp(pageNumber, 1, getDocumentPageCount());
       if (!document.getElementById(`page-${page}`)) {
         await renderDocument(true, page);
       }
@@ -1009,14 +1225,14 @@
     }
 
     function goRelative(offset) {
-      if (!pdfDocument || pageOrder.length === 0) return;
+      if (!hasDocument() || pageOrder.length === 0) return;
       const currentIndex = Math.max(0, pageOrder.indexOf(activePage));
       const nextIndex = clamp(currentIndex + offset, 0, pageOrder.length - 1);
       goToPage(pageOrder[nextIndex]);
     }
 
     async function movePages(pagesToMove, targetPage, placement) {
-      if (!pdfDocument || pagesToMove.length === 0 || pagesToMove.includes(targetPage)) return;
+      if (!hasDocument() || pagesToMove.length === 0 || pagesToMove.includes(targetPage)) return;
       pushHistory();
       const moving = pageOrder.filter((page) => pagesToMove.includes(page));
       const remaining = pageOrder.filter((page) => !pagesToMove.includes(page));
@@ -1037,7 +1253,7 @@
     }
 
     async function movePagesToEnd(pagesToMove) {
-      if (!pdfDocument || pagesToMove.length === 0) return;
+      if (!hasDocument() || pagesToMove.length === 0) return;
       pushHistory();
       const moving = pageOrder.filter((page) => pagesToMove.includes(page));
       const remaining = pageOrder.filter((page) => !pagesToMove.includes(page));
@@ -1050,7 +1266,7 @@
     }
 
     async function movePagesToIndex(pagesToMove, insertionIndex) {
-      if (!pdfDocument || pagesToMove.length === 0) return;
+      if (!hasDocument() || pagesToMove.length === 0) return;
       const moving = pageOrder.filter((page) => pagesToMove.includes(page));
       if (moving.length === 0) return;
 
@@ -1105,14 +1321,14 @@
           insertionIndex: getDropInsertionIndex(event)
         });
       } catch (error) {
-        setStatus(error?.message ?? '드롭한 페이지 정보를 읽지 못했습니다.');
+        setStatus(error?.message ?? '?쒕∼???섏씠吏 ?뺣낫瑜??쎌? 紐삵뻽?듬땲??');
       }
     }
 
     async function deleteSelectedPages() {
-      if (!pdfDocument || selectedPages.size === 0) return;
+      if (!hasDocument() || selectedPages.size === 0) return;
       if (selectedPages.size >= pageOrder.length) {
-        setStatus('모든 페이지는 삭제할 수 없습니다.');
+        setStatus('紐⑤뱺 ?섏씠吏????젣?????놁뒿?덈떎.');
         return;
       }
 
@@ -1126,7 +1342,7 @@
     }
 
     async function rotateSelectedPages(delta) {
-      if (!pdfDocument || selectedPages.size === 0) return;
+      if (!hasDocument() || selectedPages.size === 0) return;
       pushHistory();
       selectedPages.forEach((page) => {
         const next = ((pageRotations[page] ?? 0) + delta) % 360;
@@ -1140,7 +1356,7 @@
     }
 
     async function reversePageOrder() {
-      if (!pdfDocument || pageOrder.length < 2) return;
+      if (!hasDocument() || pageOrder.length < 2) return;
       pushHistory();
       pageOrder = [...pageOrder].reverse();
       selectedPages.clear();
@@ -1221,7 +1437,7 @@
               window.chrome?.webview?.postMessage({
                 type: 'printReady',
                 ready: false,
-                message: error?.message ?? '인쇄 준비 실패'
+                message: error?.message ?? '?몄뇙 以鍮??ㅽ뙣'
               });
             });
           break;
@@ -1229,7 +1445,7 @@
     }
 
     pages.addEventListener('scroll', () => {
-      if (!pdfDocument) return;
+      if (!hasDocument()) return;
       let closest = activePage;
       let distance = Number.POSITIVE_INFINITY;
       document.querySelectorAll('.page-wrap').forEach((node) => {
@@ -1242,7 +1458,7 @@
       });
       setActive(closest);
 
-      if (pageOrder.length > maxRenderedPages && !scrollWindowSwitching) {
+      if (pageOrder.length > renderWindowPageCount && !scrollWindowSwitching) {
         const nearBottom = pages.scrollTop + pages.clientHeight >= pages.scrollHeight - 48;
         const nearTop = pages.scrollTop <= 24;
         let targetPage = null;
@@ -1264,14 +1480,14 @@
     }, { passive: true });
 
     window.addEventListener('wheel', (event) => {
-      if (!pdfDocument || !event.ctrlKey) return;
+      if (!hasDocument() || !event.ctrlKey) return;
       event.preventDefault();
       event.stopPropagation();
       zoomMain(event.deltaY < 0 ? 0.12 : -0.12);
     }, { passive: false, capture: true });
 
     window.addEventListener('keydown', (event) => {
-      if (!pdfDocument) return;
+      if (!hasDocument()) return;
       if (event.ctrlKey && event.shiftKey && event.key.toLowerCase() === 'n') {
         event.preventDefault();
         window.chrome?.webview?.postMessage({ type: 'addBlankA4Page' });
@@ -1378,7 +1594,22 @@
       window.chrome.webview.addEventListener('message', (event) => {
         if (event.data?.type === 'loadPdf') {
           const source = event.data.url ? { url: event.data.url } : event.data.base64;
-          loadPdf(source, event.data.isDirty, event.data.sourcePath);
+          loadPdf(source, event.data.isDirty, event.data.sourcePath, {
+            largeDocumentHint: Boolean(event.data.largeDocumentHint),
+            fileLength: event.data.fileLength ?? 0
+          });
+        } else if (event.data?.type === 'loadFallbackDocument') {
+          loadFallbackDocument(event.data);
+        } else if (event.data?.type === 'fallbackPageRendered') {
+          const pending = fallbackRenderRequests.get(event.data.requestId);
+          if (pending) {
+            fallbackRenderRequests.delete(event.data.requestId);
+            if (event.data.success) {
+              pending.resolve(event.data);
+            } else {
+              pending.reject(new Error(event.data.error ?? 'fallback render failed'));
+            }
+          }
         } else if (event.data?.type === 'command') {
           handleCommand(event.data.command, event.data.options ?? {});
         } else if (event.data?.type === 'nativePageTransferDragOver') {

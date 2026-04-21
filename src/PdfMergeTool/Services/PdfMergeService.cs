@@ -226,6 +226,23 @@ public sealed class PdfMergeService
             cancellationToken);
     }
 
+    public async Task<PdfMergeResult> NormalizeForViewingAsync(
+        string inputPath,
+        string outputPath,
+        CancellationToken cancellationToken)
+    {
+        if (!File.Exists(inputPath))
+        {
+            throw new FileNotFoundException("복구할 PDF 파일을 찾을 수 없습니다.", inputPath);
+        }
+
+        return await RunQpdfAsync(
+            ["--warning-exit-0", inputPath, outputPath],
+            "PDF 자동 복구 실패",
+            outputPath,
+            cancellationToken);
+    }
+
     public void CreateBlankA4Pdf(string outputPath)
     {
         WriteSingleA4PagePdf(outputPath, null);
