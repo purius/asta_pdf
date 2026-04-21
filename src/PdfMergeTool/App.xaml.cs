@@ -25,10 +25,6 @@ public partial class App : Application
         };
 
         var settings = AppSettings.Load();
-        if (settings.AutoCleanTempFiles)
-        {
-            WindowsIntegrationService.CleanTempFiles();
-        }
 
         var args = e.Args.ToList();
         var shouldOpenMergeWindow = args.Any(arg => string.Equals(arg, "--merge", StringComparison.OrdinalIgnoreCase));
@@ -70,6 +66,7 @@ public partial class App : Application
             });
             window = new MergeWindow(paths.Concat(pendingMergePaths));
             window.Show();
+            StartDeferredStartupWork(settings);
             return;
         }
 
@@ -77,6 +74,7 @@ public partial class App : Application
         {
             var window = new MainWindow([], false);
             window.Show();
+            StartDeferredStartupWork(settings);
             return;
         }
 
@@ -85,6 +83,8 @@ public partial class App : Application
             var window = new MainWindow([path], false);
             window.Show();
         }
+
+        StartDeferredStartupWork(settings);
     }
 
     protected override void OnExit(ExitEventArgs e)
@@ -122,5 +122,23 @@ public partial class App : Application
         Environment.Exit(0);
         System.Diagnostics.Process.GetCurrentProcess().Kill();
         return true;
+    }
+
+    private static void StartDeferredStartupWork(AppSettings settings)
+    {
+        _ = Task.Run(() =>
+        {
+            try
+            {
+                if (settings.AutoCleanTempFiles)
+                {
+                    WindowsIntegrationService.CleanTempFiles();
+                }
+            }
+            catch (Exception ex)
+            {
+                AppLogger.Error(ex, "Deferred startup work failed.");
+            }
+        });
     }
 }

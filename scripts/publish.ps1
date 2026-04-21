@@ -18,7 +18,7 @@ if (Test-Path $publishDir) {
     --runtime win-x64 `
     --self-contained true `
     -p:PublishSingleFile=false `
-    -p:PublishReadyToRun=false `
+    -p:PublishReadyToRun=true `
     -p:SatelliteResourceLanguages=ko `
     --output $publishDir
 

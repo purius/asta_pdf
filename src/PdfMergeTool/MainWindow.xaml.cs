@@ -8,6 +8,7 @@ using System.Windows.Controls;
 using System.Windows.Input;
 using System.Windows.Media;
 using System.Windows.Media.Imaging;
+using System.Windows.Threading;
 using Microsoft.Web.WebView2.Core;
 using Microsoft.Win32;
 using PdfMergeTool.Services;
@@ -111,16 +112,32 @@ public partial class MainWindow : Window
         }
     }
 
-    private async void OnLoaded(object sender, RoutedEventArgs e)
+    private void OnLoaded(object sender, RoutedEventArgs e)
     {
-        UpdatePdfContextMenuOption();
-        UpdateRecentFilesMenu();
-        await InitializeViewerAsync();
+        _ = Dispatcher.BeginInvoke(
+            new Action(async () => await InitializeStartupUiAsync()),
+            DispatcherPriority.ApplicationIdle);
+    }
+
+    private async Task InitializeStartupUiAsync()
+    {
+        try
+        {
+            UpdatePdfContextMenuOption();
+            UpdateRecentFilesMenu();
+            await InitializeViewerAsync();
+        }
+        catch (Exception ex)
+        {
+            AppLogger.Error(ex, "Viewer startup initialization failed.");
+            MessageBox.Show(this, ex.Message, "PDF 뷰어 초기화 실패", MessageBoxButton.OK, MessageBoxImage.Error);
+        }
     }
 
     private async Task InitializeViewerAsync()
     {
         await PdfViewer.EnsureCoreWebView2Async();
+        PdfViewer.DefaultBackgroundColor = System.Drawing.Color.White;
         PdfViewer.AllowExternalDrop = false;
         PdfViewer.CoreWebView2.Settings.AreDefaultContextMenusEnabled = false;
         PdfViewer.CoreWebView2.Settings.IsZoomControlEnabled = false;
@@ -249,6 +266,12 @@ public partial class MainWindow : Window
                 return;
             }
 
+            if (type == "viewerFirstPageRendered")
+            {
+                ViewerLoading.Visibility = Visibility.Collapsed;
+                return;
+            }
+
             if (type == "pageOrderChanged" &&
                 document.RootElement.TryGetProperty("pageOrder", out var pageOrderElement))
             {
@@ -305,7 +328,7 @@ public partial class MainWindow : Window
         CurrentFileText.Text = IsSamePath(path, _referencePdfPath)
             ? path
             : $"{_referencePdfPath} (편집 중)";
-        ViewerLoading.Visibility = Visibility.Collapsed;
+        ViewerLoading.Visibility = Visibility.Visible;
         UpdateWindowTitle();
         if (!dirtyAfterLoad)
         {

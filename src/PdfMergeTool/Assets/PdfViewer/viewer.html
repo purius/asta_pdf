@@ -192,6 +192,7 @@
     }
 
     #pages {
+      position: relative;
       overflow-y: auto;
       overflow-x: auto;
       padding: 18px;
@@ -199,6 +200,35 @@
       border-radius: 8px;
       background: #e9eef5;
       box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.74);
+    }
+
+    #pages.loading {
+      background: #f8fafc;
+    }
+
+    #pages.loading::after {
+      content: "";
+      position: absolute;
+      inset: 0;
+      z-index: 10;
+      background: #f8fafc;
+    }
+
+    #pages.loading::before {
+      content: "PDF 여는 중...";
+      position: absolute;
+      left: 50%;
+      top: 50%;
+      transform: translate(-50%, -50%);
+      z-index: 11;
+      padding: 10px 14px;
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      background: #fff;
+      color: var(--muted);
+      font-size: 13px;
+      font-weight: 800;
+      box-shadow: 0 10px 24px rgba(31, 41, 55, 0.08);
     }
 
     .page-wrap {
@@ -340,7 +370,7 @@
     const pages = document.getElementById('pages');
     const printPages = document.getElementById('printPages');
     const status = document.getElementById('status');
-    let renderWindowPageCount = 18;
+    let renderWindowPageCount = 6;
 
     let pdfDocument = null;
     let fallbackDocument = null;
@@ -391,9 +421,36 @@
       status.textContent = text;
     }
 
+    function setLoadingState(isLoading) {
+      pages.classList.toggle('loading', isLoading);
+    }
+
+    function postViewerFirstPageRendered(pageNumber) {
+      window.chrome?.webview?.postMessage({
+        type: 'viewerFirstPageRendered',
+        pageNumber
+      });
+    }
+
     function updateThumbGridSize() {
       const cardWidth = clamp(Math.round(340 * thumbScale), 42, 190);
       app.style.setProperty('--thumb-card-width', `${cardWidth}px`);
+    }
+
+    function deferThumbnailRender(callback) {
+      const run = () => {
+        Promise.resolve()
+          .then(callback)
+          .catch((error) => postDiagnostic('warning', 'thumbnail render failed', {
+            message: error?.message ?? String(error)
+          }));
+      };
+
+      if ('requestIdleCallback' in window) {
+        window.requestIdleCallback(run, { timeout: 700 });
+      } else {
+        window.setTimeout(run, 80);
+      }
     }
 
     function postPageOrder() {
@@ -996,14 +1053,17 @@
       attachThumbEvents(thumb, pageNumber);
       thumbs.appendChild(thumb);
 
-      const thumbTargetWidth = clamp(Math.round(340 * thumbScale), 42, 190);
-      const [mainResult, thumbResult] = await Promise.all([
-        requestFallbackRender(pageNumber, 'main', pageWidth, rotation),
-        requestFallbackRender(pageNumber, 'thumb', thumbTargetWidth, rotation)
-      ]);
+      const mainResult = await requestFallbackRender(pageNumber, 'main', pageWidth, rotation);
       if (token !== renderToken) return;
       pageImage.src = mainResult.url;
-      thumbImage.src = thumbResult.url;
+
+      const thumbTargetWidth = clamp(Math.round(340 * thumbScale), 42, 190);
+      deferThumbnailRender(async () => {
+        if (token !== renderToken || !thumbImage.isConnected) return;
+        const thumbResult = await requestFallbackRender(pageNumber, 'thumb', thumbTargetWidth, rotation);
+        if (token !== renderToken || !thumbImage.isConnected) return;
+        thumbImage.src = thumbResult.url;
+      });
     }
 
     async function renderPage(pageNumber, displayIndex, token) {
@@ -1025,6 +1085,8 @@
       const pageContext = pageCanvas.getContext('2d', { alpha: false });
       pageCanvas.width = Math.floor(pageViewport.width);
       pageCanvas.height = Math.floor(pageViewport.height);
+      pageContext.fillStyle = '#ffffff';
+      pageContext.fillRect(0, 0, pageCanvas.width, pageCanvas.height);
 
       const pageWrap = document.createElement('div');
       pageWrap.id = `page-${pageNumber}`;
@@ -1043,6 +1105,8 @@
       const thumbContext = thumbCanvas.getContext('2d', { alpha: false });
       thumbCanvas.width = Math.floor(thumbViewport.width);
       thumbCanvas.height = Math.floor(thumbViewport.height);
+      thumbContext.fillStyle = '#ffffff';
+      thumbContext.fillRect(0, 0, thumbCanvas.width, thumbCanvas.height);
 
       const thumb = document.createElement('button');
       thumb.className = 'thumb';
@@ -1054,32 +1118,16 @@
       const thumbLabel = document.createElement('span');
       thumbLabel.textContent = String(displayIndex + 1);
       thumb.appendChild(thumbLabel);
-      thumb.addEventListener('dragstart', (event) => {
-        const payload = buildPageTransferPayload(pageNumber);
-        if (!payload.sourcePath || payload.pages.length === 0) {
-          event.preventDefault();
-          return;
-        }
-
-        event.dataTransfer.effectAllowed = 'copy';
-        const payloadJson = JSON.stringify(payload);
-        event.dataTransfer.setData(pageTransferMime, payloadJson);
-        event.dataTransfer.setData('text/plain', `${pageTransferTextPrefix}${payloadJson}`);
-        markDraggingPages(payload.pages.map((page) => page.pageNumber));
-      });
-      thumb.addEventListener('dragend', () => {
-        clearDropIndicators();
-        updateThumbClasses();
-      });
-      thumb.addEventListener('pointerdown', (event) => {
-        beginThumbPointerDrag(event, pageNumber, thumb);
-      });
+      attachThumbEvents(thumb, pageNumber);
       thumbs.appendChild(thumb);
 
-      await Promise.all([
-        page.render({ canvasContext: pageContext, viewport: pageViewport }).promise,
-        page.render({ canvasContext: thumbContext, viewport: thumbViewport }).promise
-      ]);
+      await page.render({ canvasContext: pageContext, viewport: pageViewport }).promise;
+      if (token !== renderToken) return;
+
+      deferThumbnailRender(async () => {
+        if (token !== renderToken || !thumbCanvas.isConnected) return;
+        await page.render({ canvasContext: thumbContext, viewport: thumbViewport }).promise;
+      });
     }
 
     async function renderDocument(keepPage = true, targetPageOverride = null) {
@@ -1106,7 +1154,12 @@
       for (let index = renderedStartIndex; index < renderedEndIndex; index += 1) {
         await renderPage(pageOrder[index], index, token);
         if (token !== renderToken) return;
+        if (index === renderedStartIndex) {
+          setLoadingState(false);
+          postViewerFirstPageRendered(pageOrder[index]);
+        }
       }
+      setLoadingState(false);
 
       setActive(targetPage);
       document.getElementById(`page-${targetPage}`)?.scrollIntoView({
@@ -1119,13 +1172,14 @@
       fallbackDocument = null;
       pdfDocument = null;
       fallbackRenderRequests.clear();
-      renderWindowPageCount = options.largeDocumentHint ? 8 : 18;
+      renderWindowPageCount = options.largeDocumentHint ? 4 : 6;
       selectedPages.clear();
       lastSelectedPage = null;
       documentSourcePath = sourcePath ?? '';
       clearRenderedPages();
       empty.style.display = 'none';
       app.style.display = 'grid';
+      setLoadingState(true);
       setStatus('PDF 여는 중...');
 
       let passwordCancelled = false;
@@ -1150,7 +1204,7 @@
         };
         pdfDocument = await loadingTask.promise;
         if (options.largeDocumentHint || pdfDocument.numPages >= 180) {
-          renderWindowPageCount = 8;
+          renderWindowPageCount = 4;
           postDiagnostic('info', 'Large document mode enabled', {
             pages: pdfDocument.numPages,
             fileLength: options.fileLength ?? 0
@@ -1170,6 +1224,7 @@
         pageOrder = [];
         pageRotations = {};
         selectedPages.clear();
+        setLoadingState(false);
         pageCount.textContent = '총 0 페이지';
         setStatus('PDF를 열지 못했습니다.');
         window.chrome?.webview?.postMessage({
@@ -1189,13 +1244,14 @@
         pages: source.pages ?? [],
         largeDocumentMode: Boolean(source.largeDocumentMode)
       };
-      renderWindowPageCount = fallbackDocument.largeDocumentMode ? 8 : 18;
+      renderWindowPageCount = fallbackDocument.largeDocumentMode ? 4 : 6;
       selectedPages.clear();
       lastSelectedPage = null;
       documentSourcePath = source.sourcePath ?? '';
       clearRenderedPages();
       empty.style.display = 'none';
       app.style.display = 'grid';
+      setLoadingState(true);
       pageOrder = Array.from({ length: fallbackDocument.pageCount }, (_, index) => index + 1);
       pageRotations = {};
       undoStack = [];
