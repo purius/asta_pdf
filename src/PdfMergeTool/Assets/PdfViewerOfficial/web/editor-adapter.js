@@ -173,6 +173,11 @@
         line-height: 1.25;
         background: #ffffff;
       }
+      .asta-editor-textHighlight {
+        background: #facc15;
+        opacity: 0.38;
+        mix-blend-mode: multiply;
+      }
       .asta-editor-rectangle {
         border: 2px solid #2563eb;
         background: rgba(37, 99, 235, 0.08);
@@ -305,6 +310,12 @@
     });
     if (mode === "replaceText") {
       setTimeout(() => addSelectedTextReplacementEdit(), 0);
+    } else if (mode === "highlight") {
+      setTimeout(() => {
+        if (addSelectedTextHighlightEdits()) {
+          setMode("select");
+        }
+      }, 0);
     }
   }
 
@@ -543,6 +554,66 @@
     return true;
   }
 
+  function addSelectedTextHighlightEdits() {
+    const targets = getSelectedTextHighlightTargets();
+    if (targets.length === 0) return false;
+
+    recordHistory();
+    for (const target of targets) {
+      addEdit({
+        type: "textHighlight",
+        page: getPageNumber(target.pageElement),
+        x: target.x,
+        y: target.y,
+        width: Math.max(target.width, 1),
+        height: Math.max(target.height, 1),
+        fillColor: "#facc15",
+        opacity: 0.38,
+        borderWidth: 0
+      });
+    }
+    window.getSelection()?.removeAllRanges();
+    return true;
+  }
+
+  function getSelectedTextHighlightTargets() {
+    const selection = window.getSelection?.();
+    if (!selection || selection.isCollapsed || selection.rangeCount === 0) return [];
+
+    const range = selection.getRangeAt(0);
+    const clientRects = [...range.getClientRects()]
+      .filter(rect => rect.width > 0 && rect.height > 0);
+    if (clientRects.length === 0) return [];
+
+    const pageElement = getPageElementForSelection(range, clientRects[0]);
+    if (!pageElement) return [];
+
+    const pageRect = pageElement.getBoundingClientRect();
+    const selectedRects = clientRects.filter(rect => {
+      const centerX = rect.left + rect.width / 2;
+      const centerY = rect.top + rect.height / 2;
+      const element = document.elementFromPoint(centerX, centerY);
+      return pageElement.contains(element);
+    });
+
+    if (selectedRects.length !== clientRects.length) {
+      postMessage({
+        type: "viewerDiagnostic",
+        level: "info",
+        message: "Selected text highlight is limited to one PDF page at a time."
+      });
+      return [];
+    }
+
+    return selectedRects.map(rect => ({
+      pageElement,
+      x: rect.left - pageRect.left,
+      y: rect.top - pageRect.top,
+      width: rect.width,
+      height: rect.height
+    }));
+  }
+
   function getSelectedTextReplacementTarget() {
     const selection = window.getSelection?.();
     if (!selection || selection.isCollapsed || selection.rangeCount === 0) return null;
@@ -694,6 +765,7 @@
     }
     element.classList.toggle("asta-editor-text-replace", edit.type === "textReplace");
     element.classList.toggle("asta-editor-highlight", edit.type === "ink" && edit.tool === "highlight");
+    element.classList.toggle("asta-editor-textHighlight", edit.type === "textHighlight");
     element.style.left = `${edit.x}px`;
     element.style.top = `${edit.y}px`;
     element.style.width = `${edit.width}px`;
@@ -718,6 +790,11 @@
       element.style.border = `${edit.borderWidth || 2}px solid ${edit.borderColor || state.color}`;
       element.style.borderRadius = "50%";
       element.style.background = edit.fillColor || "rgba(37, 99, 235, 0.08)";
+      ensureResizeHandle(element, edit.id);
+    } else if (edit.type === "textHighlight") {
+      element.style.border = "0";
+      element.style.background = edit.fillColor || "#facc15";
+      element.style.opacity = String(edit.opacity ?? 0.38);
       ensureResizeHandle(element, edit.id);
     } else if (edit.type === "line") {
       renderLineSvg(element, edit, false);
@@ -1044,7 +1121,7 @@
       edit.color = properties.color;
       edit.borderColor = properties.color;
       edit.borderWidth = properties.strokeWidth;
-    } else if (edit.type === "rectangle" || edit.type === "ellipse") {
+    } else if (edit.type === "rectangle" || edit.type === "ellipse" || edit.type === "textHighlight") {
       edit.borderColor = properties.color;
       edit.borderWidth = properties.strokeWidth;
       edit.fillColor = properties.fillColor;
@@ -1227,6 +1304,18 @@
           borderColor: toRgbArray(edit.borderColor || state.color),
           borderWidth: (edit.borderWidth || 2) * Math.max(scaleX, scaleY),
           opacity: edit.opacity ?? 1
+        };
+      }
+      if (edit.type === "textHighlight") {
+        return {
+          type: "textHighlight",
+          page: edit.page,
+          x: edit.x * scaleX,
+          y: edit.y * scaleY,
+          width: edit.width * scaleX,
+          height: edit.height * scaleY,
+          fillColor: toRgbArray(edit.fillColor || "#facc15"),
+          opacity: edit.opacity ?? 0.38
         };
       }
       if (edit.type === "image" || edit.type === "signature") {

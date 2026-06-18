@@ -141,6 +141,10 @@ if ($officialEditorAdapter -notmatch 'data-mode="pen"' -or $officialEditorAdapte
     throw 'editor adapter must expose freehand pen and highlight annotation tools.'
 }
 
+if ($officialEditorAdapter -notmatch 'function addSelectedTextHighlightEdits\(' -or $officialEditorAdapter -notmatch 'function getSelectedTextHighlightTargets\(' -or $officialEditorAdapter -notmatch 'type:\s*"textHighlight"') {
+    throw 'editor adapter must support highlighting selected PDF text ranges.'
+}
+
 if ($officialEditorAdapter -notmatch 'data-mode="replaceText"' -or $officialEditorAdapter -notmatch 'function findTextLayerElementAt\(') {
     throw 'editor adapter must expose a PDF text-layer replacement tool.'
 }
@@ -199,6 +203,10 @@ if ($officialPdfLibAdapter -notmatch 'function embedImage\(' -or $officialPdfLib
 
 if ($officialPdfLibAdapter -notmatch 'function drawInkPath\(' -or $officialPdfLibAdapter -notmatch 'edit\.type === "ink"') {
     throw 'pdf-lib adapter must persist freehand pen and highlight annotations.'
+}
+
+if ($officialPdfLibAdapter -notmatch 'edit\.type === "textHighlight"') {
+    throw 'pdf-lib adapter must persist selected text highlight annotations.'
 }
 
 if ($officialPdfLibAdapter -notmatch 'edit\.type === "stamp"') {
