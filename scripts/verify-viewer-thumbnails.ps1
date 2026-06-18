@@ -257,6 +257,10 @@ if ($officialPdfLibAdapter -notmatch 'edit\.type === "textHighlight"') {
     throw 'pdf-lib adapter must persist selected text highlight annotations.'
 }
 
+if ($officialPdfLibAdapter -notmatch 'edit\.type === "textHighlight"[\s\S]*?opacity:\s*editOpacity\(edit, 0\.38\)') {
+    throw 'pdf-lib adapter must normalize opacity for selected text highlight annotations.'
+}
+
 if ($officialPdfLibAdapter -notmatch 'edit\.type === "whiteout"') {
     throw 'pdf-lib adapter must persist visual whiteout edits.'
 }
