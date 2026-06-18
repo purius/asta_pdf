@@ -1838,7 +1838,7 @@
       subtree: true
     });
     window.addEventListener("keydown", event => {
-      if (isEditorTypingTarget(event.target)) return;
+      if (event.defaultPrevented || event.isComposing || isEditorTypingTarget(event.target)) return;
       if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === "c" && state.selectedId) {
         if (copySelected()) event.preventDefault();
         return;
