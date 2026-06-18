@@ -65,6 +65,30 @@ if ($viewer -notmatch 'if \(!shouldSyncActivePageFromScroll\(\)\) return;') {
     throw 'scroll events must not update the active page after programmatic page jumps.'
 }
 
+if ($viewer -notmatch 'let pageNavigationToken = 0') {
+    throw 'viewer.html must track the newest explicit page navigation request.'
+}
+
+if ($viewer -notmatch 'function beginPageNavigation\(pageNumber\)') {
+    throw 'viewer.html must assign a token to each explicit page navigation request.'
+}
+
+if ($viewer -notmatch 'function isCurrentPageNavigation\(token\)') {
+    throw 'viewer.html must ignore stale page navigation completions.'
+}
+
+if ($viewer -notmatch 'async function renderDocument\(keepPage = true, targetPageOverride = null, navigationToken = null\)') {
+    throw 'renderDocument must accept a navigation token so stale renders cannot scroll old pages.'
+}
+
+if ($viewer -notmatch 'if \(navigationToken !== null && !isCurrentPageNavigation\(navigationToken\)\) return;') {
+    throw 'renderDocument must stop before activating or scrolling a stale navigation target.'
+}
+
+if ($viewer -notmatch 'const navigationToken = beginPageNavigation\(page\)') {
+    throw 'goToPage must create a navigation token before async rendering.'
+}
+
 if ($viewer -notmatch 'async function goToPage\(pageNumber, smooth = false\)') {
     throw 'page navigation must default to immediate scrolling to avoid smooth-scroll feedback loops.'
 }

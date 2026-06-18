@@ -400,6 +400,7 @@
     let programmaticScrollTargetPage = null;
     let scrollHandlingSuppressedUntil = 0;
     let lastUserScrollAt = 0;
+    let pageNavigationToken = 0;
     let scrollWindowSwitching = false;
     const windowInstanceId = crypto.randomUUID?.() ?? `${Date.now()}-${Math.random()}`;
 
@@ -1019,6 +1020,17 @@
         performance.now() + durationMs);
     }
 
+    function beginPageNavigation(pageNumber) {
+      pageNavigationToken += 1;
+      programmaticScrollTargetPage = pageNumber;
+      suppressScrollHandling(420);
+      return pageNavigationToken;
+    }
+
+    function isCurrentPageNavigation(token) {
+      return token === pageNavigationToken;
+    }
+
     function beginProgrammaticScroll(pageNumber, durationMs = 220) {
       programmaticScrollTargetPage = pageNumber;
       suppressScrollHandling(durationMs);
@@ -1227,7 +1239,7 @@
       updateThumbClasses();
     }
 
-    async function renderDocument(keepPage = true, targetPageOverride = null) {
+    async function renderDocument(keepPage = true, targetPageOverride = null, navigationToken = null) {
       if (!hasDocument()) return;
       const targetPage = targetPageOverride ?? (keepPage ? activePage : pageOrder[0] ?? 1);
       const token = ++renderToken;
@@ -1263,6 +1275,7 @@
         }
         setLoadingState(false);
 
+        if (navigationToken !== null && !isCurrentPageNavigation(navigationToken)) return;
         setActive(targetPage);
         beginProgrammaticScroll(targetPage);
         document.getElementById(`page-${targetPage}`)?.scrollIntoView({
@@ -1389,11 +1402,13 @@
     async function goToPage(pageNumber, smooth = false) {
       if (!hasDocument()) return;
       const page = clamp(pageNumber, 1, getDocumentPageCount());
+      const navigationToken = beginPageNavigation(page);
       setActive(page);
-      if (!document.getElementById(`page-${page}`)) {
-        await renderDocument(true, page);
+      if (isRenderingDocument || !document.getElementById(`page-${page}`)) {
+        await renderDocument(true, page, navigationToken);
       }
 
+      if (!isCurrentPageNavigation(navigationToken)) return;
       beginProgrammaticScroll(page, 260);
       document.getElementById(`page-${page}`)?.scrollIntoView({
         behavior: 'auto',
