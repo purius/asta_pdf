@@ -9,6 +9,7 @@ $installerBuildPath = Join-Path $root 'scripts\build-installer.ps1'
 $buildScriptPath = Join-Path $root 'scripts\build.ps1'
 $publishScriptPath = Join-Path $root 'scripts\publish.ps1'
 $releaseWorkflowPath = Join-Path $root '.github\workflows\release.yml'
+$releaseVerificationPath = Join-Path $root 'scripts\verify-latest-release.ps1'
 $fallback = Get-Content -Raw $fallbackPath
 $update = Get-Content -Raw $updatePath
 $mainWindow = Get-Content -Raw $mainWindowPath
@@ -16,6 +17,7 @@ $installerBuild = Get-Content -Raw $installerBuildPath
 $buildScript = Get-Content -Raw $buildScriptPath
 $publishScript = Get-Content -Raw $publishScriptPath
 $releaseWorkflow = Get-Content -Raw $releaseWorkflowPath
+$releaseVerification = if (Test-Path $releaseVerificationPath) { Get-Content -Raw $releaseVerificationPath } else { '' }
 
 if ($fallback -notmatch 'private const int MaxRenderCacheEntries') {
     throw 'PdfFallbackRenderService must cap per-session render cache entries.'
@@ -113,6 +115,19 @@ if ($releaseWorkflow -notmatch 'node --check src/PdfMergeTool/Assets/PdfViewerOf
 
 if ($releaseWorkflow -match '(?s)name: Build installer.*?verify-viewer-thumbnails\.ps1') {
     throw 'Release workflow must run verification steps before building the installer.'
+}
+
+if (-not (Test-Path $releaseVerificationPath) -or
+    $releaseVerification -notmatch 'api\.github\.com/repos/purius/asta_pdf/releases/latest' -or
+    $releaseVerification -notmatch 'PdfMergeToolSetup\.exe' -or
+    $releaseVerification -notmatch 'src\\PdfMergeTool\\PdfMergeTool\.csproj' -or
+    $releaseVerification -notmatch 'Assert-HeadOk') {
+    throw 'Latest release verification must confirm the project version, GitHub latest release metadata, and installer download URL.'
+}
+
+if ($releaseWorkflow -notmatch 'Verify published latest release' -or
+    $releaseWorkflow -notmatch 'verify-latest-release\.ps1 -ExpectedVersion \$\{\{ github\.ref_name \}\}') {
+    throw 'Release workflow must verify the published latest release and installer URL after creating the GitHub release.'
 }
 
 Write-Output 'stability checks passed.'

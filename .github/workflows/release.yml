@@ -41,3 +41,7 @@ jobs:
         with:
           files: dist/PdfMergeToolSetup.exe
           generate_release_notes: true
+
+      - name: Verify published latest release
+        shell: pwsh
+        run: .\scripts\verify-latest-release.ps1 -ExpectedVersion ${{ github.ref_name }}
