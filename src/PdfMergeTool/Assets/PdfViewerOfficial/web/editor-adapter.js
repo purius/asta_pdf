@@ -122,6 +122,11 @@
       #astaEditorToolbar select { width: 160px; }
       #astaEditorToolbar input[type="number"] { width: 56px; padding: 0 4px; }
       #astaEditorToolbar input[type="color"] { width: 34px; padding: 1px; }
+      #astaEditorToolbar .asta-editor-toolbar-separator {
+        width: 1px;
+        height: 24px;
+        background: #cbd5e1;
+      }
       .asta-editor-layer {
         position: absolute;
         inset: 0;
@@ -244,6 +249,9 @@
       <select data-role="font" title="Font"></select>
       <input data-role="size" type="number" min="6" max="96" value="14" title="Text size" />
       <input data-role="color" type="color" value="#111827" title="Color" />
+      <span class="asta-editor-toolbar-separator"></span>
+      <input data-role="strokeWidth" type="number" min="1" max="24" value="2" title="Line or border width" />
+      <input data-role="fillColor" type="color" value="#ffffff" title="Fill color" />
       <button type="button" data-action="delete" title="Delete selected">Delete</button>
     `;
     document.body.appendChild(toolbar);
@@ -258,15 +266,21 @@
     });
     toolbar.querySelector("[data-role='font']").addEventListener("change", event => {
       state.fontName = event.target.value || state.fontName;
-      updateSelectedStyle();
+      applySelectedProperties();
     });
     toolbar.querySelector("[data-role='size']").addEventListener("change", event => {
       state.textSize = Number(event.target.value) || state.textSize;
-      updateSelectedStyle();
+      applySelectedProperties();
     });
     toolbar.querySelector("[data-role='color']").addEventListener("change", event => {
       state.color = event.target.value || state.color;
-      updateSelectedStyle();
+      applySelectedProperties();
+    });
+    toolbar.querySelector("[data-role='strokeWidth']").addEventListener("change", () => {
+      applySelectedProperties();
+    });
+    toolbar.querySelector("[data-role='fillColor']").addEventListener("change", () => {
+      applySelectedProperties();
     });
     setFonts([]);
     setMode("select");
@@ -416,6 +430,8 @@
         width: 180,
         height: 70,
         text,
+        fontName: state.fontName,
+        size: Math.max(state.textSize, 20),
         borderColor: "#dc2626",
         color: "#dc2626",
         borderWidth: 3
@@ -678,13 +694,13 @@
       ensureResizeHandle(element, edit.id);
     } else if (edit.type === "rectangle") {
       element.style.border = `${edit.borderWidth || 2}px solid ${edit.borderColor || state.color}`;
-      element.style.background = "rgba(37, 99, 235, 0.08)";
+      element.style.background = edit.fillColor || "rgba(37, 99, 235, 0.08)";
       element.style.borderColor = edit.borderColor || state.color;
       ensureResizeHandle(element, edit.id);
     } else if (edit.type === "ellipse") {
       element.style.border = `${edit.borderWidth || 2}px solid ${edit.borderColor || state.color}`;
       element.style.borderRadius = "50%";
-      element.style.background = "rgba(37, 99, 235, 0.08)";
+      element.style.background = edit.fillColor || "rgba(37, 99, 235, 0.08)";
       ensureResizeHandle(element, edit.id);
     } else if (edit.type === "line") {
       renderLineSvg(element, edit, false);
@@ -699,6 +715,8 @@
       setTextElementContent(element, edit.text ?? "STAMP");
       element.style.border = `${edit.borderWidth || 3}px solid ${edit.borderColor || "#dc2626"}`;
       element.style.color = edit.color || "#dc2626";
+      element.style.fontFamily = `"${edit.fontName || state.fontName}", sans-serif`;
+      element.style.fontSize = `${edit.size || Math.max(state.textSize, 20)}px`;
       ensureResizeHandle(element, edit.id);
     }
     element.classList.toggle("selected", state.selectedId === edit.id);
@@ -844,26 +862,67 @@
       element.classList.toggle("selected", element.dataset.editId === editId);
     });
     const edit = state.edits.find(item => item.id === editId);
-    if (edit?.type === "text" || edit?.type === "textReplace") {
-      toolbar.querySelector("[data-role='font']").value = edit.fontName || state.fontName;
-      toolbar.querySelector("[data-role='size']").value = edit.size || state.textSize;
-      toolbar.querySelector("[data-role='color']").value = edit.color || state.color;
-    }
+    syncToolbarFromEdit(edit);
   }
 
-  function updateSelectedStyle() {
+  function syncToolbarFromEdit(edit) {
+    if (!toolbar || !edit) return;
+    const fontInput = toolbar.querySelector("[data-role='font']");
+    const sizeInput = toolbar.querySelector("[data-role='size']");
+    const colorInput = toolbar.querySelector("[data-role='color']");
+    const strokeWidthInput = toolbar.querySelector("[data-role='strokeWidth']");
+    const fillColorInput = toolbar.querySelector("[data-role='fillColor']");
+
+    if (edit.type === "text" || edit.type === "textReplace" || edit.type === "stamp") {
+      fontInput.value = edit.fontName || state.fontName;
+      sizeInput.value = edit.size || state.textSize;
+      colorInput.value = edit.color || state.color;
+    } else {
+      colorInput.value = edit.borderColor || state.color;
+    }
+    strokeWidthInput.value = edit.borderWidth || (edit.type === "stamp" ? 3 : 2);
+    fillColorInput.value = edit.fillColor || "#ffffff";
+  }
+
+  function getToolbarProperties() {
+    return {
+      fontName: toolbar.querySelector("[data-role='font']").value || state.fontName,
+      size: Number(toolbar.querySelector("[data-role='size']").value) || state.textSize,
+      color: toolbar.querySelector("[data-role='color']").value || state.color,
+      strokeWidth: Math.max(Number(toolbar.querySelector("[data-role='strokeWidth']").value) || 2, 1),
+      fillColor: toolbar.querySelector("[data-role='fillColor']").value || "#ffffff"
+    };
+  }
+
+  function applySelectedProperties() {
+    const properties = getToolbarProperties();
+    state.fontName = properties.fontName;
+    state.textSize = properties.size;
+    state.color = properties.color;
+
     const edit = state.edits.find(item => item.id === state.selectedId);
     if (!edit) return;
     recordHistory();
     if (edit.type === "text" || edit.type === "textReplace") {
-      edit.fontName = state.fontName;
-      edit.size = state.textSize;
-      edit.color = state.color;
-    } else if (edit.type === "rectangle" || edit.type === "ellipse" || edit.type === "line" || edit.type === "arrow" || edit.type === "stamp") {
-      edit.borderColor = state.color;
-      if (edit.type === "stamp") {
-        edit.color = state.color;
+      edit.fontName = properties.fontName;
+      edit.size = properties.size;
+      edit.color = properties.color;
+      if (edit.type === "textReplace") {
+        edit.fillColor = properties.fillColor;
       }
+    } else if (edit.type === "stamp") {
+      edit.fontName = properties.fontName;
+      edit.size = properties.size;
+      edit.color = properties.color;
+      edit.borderColor = properties.color;
+      edit.borderWidth = properties.strokeWidth;
+    } else if (edit.type === "rectangle" || edit.type === "ellipse") {
+      edit.borderColor = properties.color;
+      edit.borderWidth = properties.strokeWidth;
+      edit.fillColor = properties.fillColor;
+    } else if (edit.type === "line" || edit.type === "arrow") {
+      edit.borderColor = properties.color;
+      edit.borderWidth = properties.strokeWidth;
     }
     state.dirty = true;
     renderEdit(edit);
@@ -1012,7 +1071,8 @@
           textInsetY: (edit.textInsetY || 0) * scaleY,
           whiteoutPadding: (edit.whiteoutPadding || 0) * Math.max(scaleX, scaleY),
           color: toRgbArray(edit.color),
-          fillColor: toRgbArray(edit.fillColor || "#ffffff")
+          fillColor: toRgbArray(edit.fillColor || "#ffffff"),
+          borderWidth: (edit.borderWidth || 0) * scaleX
         };
       }
       if (edit.type === "line" || edit.type === "arrow") {
@@ -1050,7 +1110,9 @@
           text: edit.text ?? "STAMP",
           color: toRgbArray(edit.color || "#dc2626"),
           borderColor: toRgbArray(edit.borderColor || "#dc2626"),
-          borderWidth: (edit.borderWidth || 3) * scaleX
+          borderWidth: (edit.borderWidth || 3) * scaleX,
+          fontName: edit.fontName || state.fontName,
+          size: (edit.size || state.textSize) * scaleY
         };
       }
       return {
@@ -1062,14 +1124,15 @@
         width: edit.width * scaleX,
         height: edit.height * scaleY,
         borderColor: toRgbArray(edit.borderColor),
-        borderWidth: (edit.borderWidth || 2) * scaleX
+        borderWidth: (edit.borderWidth || 2) * scaleX,
+        fillColor: edit.fillColor ? toRgbArray(edit.fillColor) : undefined
       };
     });
   }
 
   function getUsedFontNames() {
     return [...new Set(state.edits
-      .filter(edit => edit.type === "text" || edit.type === "textReplace")
+      .filter(edit => edit.type === "text" || edit.type === "textReplace" || edit.type === "stamp")
       .map(edit => edit.fontName || state.fontName)
       .filter(Boolean))];
   }

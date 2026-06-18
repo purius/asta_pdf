@@ -153,6 +153,10 @@ if ($officialEditorAdapter -notmatch 'contentEditable\s*=\s*"true"' -or $officia
     throw 'editor adapter must support direct inline editing for text, text replacement, and stamp overlays.'
 }
 
+if ($officialEditorAdapter -notmatch 'data-role="strokeWidth"' -or $officialEditorAdapter -notmatch 'data-role="fillColor"' -or $officialEditorAdapter -notmatch 'function applySelectedProperties\(' -or $officialEditorAdapter -notmatch 'function syncToolbarFromEdit\(') {
+    throw 'editor adapter must expose per-object font, size, stroke width, and fill controls.'
+}
+
 if ($officialEditorAdapter -notmatch 'asta-editor-resize-handle' -or $officialEditorAdapter -notmatch 'function startResize\(') {
     throw 'editor adapter must support resizing selected overlay objects.'
 }
@@ -191,6 +195,10 @@ if ($officialPdfLibAdapter -notmatch 'function embedImage\(' -or $officialPdfLib
 
 if ($officialPdfLibAdapter -notmatch 'edit\.type === "stamp"') {
     throw 'pdf-lib adapter must persist stamp overlay edits.'
+}
+
+if ($officialPdfLibAdapter -notmatch 'const font = await resolveFont\(pdfDoc, pdfLib, edit, fonts\)' -or $officialPdfLibAdapter -notmatch 'edit\.fontName') {
+    throw 'pdf-lib adapter must persist custom Windows fonts for stamp and overlay text edits.'
 }
 
 if ($officialPdfLibAdapter -notmatch 'edit\.type === "textReplace"' -or $officialPdfLibAdapter -notmatch 'drawTextReplacement') {

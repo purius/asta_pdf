@@ -217,8 +217,8 @@
         const borderWidth = Number(edit.borderWidth) || 3;
         const color = colorFromArray(pdfLib, edit.color, [0.86, 0.15, 0.15]);
         const borderColor = colorFromArray(pdfLib, edit.borderColor, [0.86, 0.15, 0.15]);
-        const font = await pdfDoc.embedFont(pdfLib.StandardFonts.HelveticaBold);
-        const size = Math.max(Math.min(height * 0.38, 24), 10);
+        const font = await resolveFont(pdfDoc, pdfLib, edit, fonts);
+        const size = Number(edit.size) || Math.max(Math.min(height * 0.38, 24), 10);
         const text = String(edit.text ?? "STAMP").toUpperCase();
         const textWidth = font.widthOfTextAtSize(text, size);
         page.drawRectangle({
