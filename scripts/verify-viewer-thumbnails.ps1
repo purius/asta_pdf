@@ -3,7 +3,59 @@ $ErrorActionPreference = 'Stop'
 
 $root = Split-Path -Parent $PSScriptRoot
 $viewerPath = Join-Path $root 'src\PdfMergeTool\Assets\PdfViewer\viewer.html'
+$officialViewerPath = Join-Path $root 'src\PdfMergeTool\Assets\PdfViewerOfficial\web\viewer.html'
+$officialAdapterPath = Join-Path $root 'src\PdfMergeTool\Assets\PdfViewerOfficial\web\app-adapter.js'
+$officialViewerScriptPath = Join-Path $root 'src\PdfMergeTool\Assets\PdfViewerOfficial\web\viewer.mjs'
+$officialBuildPath = Join-Path $root 'src\PdfMergeTool\Assets\PdfViewerOfficial\build\pdf.mjs'
+$mainWindowPath = Join-Path $root 'src\PdfMergeTool\MainWindow.xaml.cs'
+$projectPath = Join-Path $root 'src\PdfMergeTool\PdfMergeTool.csproj'
 $viewer = Get-Content -Raw $viewerPath
+$mainWindow = Get-Content -Raw $mainWindowPath
+$project = Get-Content -Raw $projectPath
+
+if (-not (Test-Path $officialViewerPath)) {
+    throw 'official PDF.js viewer.html must be packaged.'
+}
+
+if (-not (Test-Path $officialAdapterPath)) {
+    throw 'official viewer adapter must be packaged.'
+}
+
+if (-not (Test-Path $officialBuildPath)) {
+    throw 'official PDF.js build files must be packaged.'
+}
+
+$officialViewer = Get-Content -Raw $officialViewerPath
+$officialAdapter = Get-Content -Raw $officialAdapterPath
+$officialViewerScript = Get-Content -Raw $officialViewerScriptPath
+
+if ($officialViewer -notmatch 'app-adapter\.js') {
+    throw 'official viewer.html must load the app adapter.'
+}
+
+if ($officialAdapter -notmatch 'window\.PDFViewerApplication') {
+    throw 'official viewer adapter must use the PDF.js viewer application API.'
+}
+
+if ($officialViewerScript -notmatch 'defaultOptions\.defaultUrl\s*=\s*\{[\s\S]*?value:\s*""') {
+    throw 'official viewer must not auto-open the PDF.js sample document.'
+}
+
+if ($mainWindow -notmatch 'ViewerAssetFolderName\s*=\s*"PdfViewerOfficial"') {
+    throw 'MainWindow must route WebView2 to the official PDF.js viewer assets.'
+}
+
+if ($mainWindow -notmatch 'Navigate\(\$"https://\{ViewerHost\}/web/viewer\.html"\)') {
+    throw 'MainWindow must navigate to the official PDF.js viewer entry point.'
+}
+
+if ($mainWindow -notmatch '/web/ServedPdf/') {
+    throw 'Served PDFs must be exposed under the official viewer web root.'
+}
+
+if ($project -notmatch 'Assets\\PdfViewerOfficial\\\*\*\\\*') {
+    throw 'PdfViewerOfficial assets must be copied to build and publish output.'
+}
 
 if ($viewer -notmatch 'async function renderAllThumbnails\(token\)') {
     throw 'viewer.html must render thumbnails independently from the main page render window.'

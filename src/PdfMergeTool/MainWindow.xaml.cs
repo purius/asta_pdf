@@ -19,6 +19,7 @@ public partial class MainWindow : Window
 {
     private const string ViewerHost = "pdfviewer.local";
     private const string ViewerCacheHost = "pdfcache.local";
+    private const string ViewerAssetFolderName = "PdfViewerOfficial";
     private const int A4ImageMaxWidthPixels = 2480;
     private const int A4ImageMaxHeightPixels = 3508;
     private const int A4OptimizedMaxWidthPixels = 2200;
@@ -302,7 +303,7 @@ public partial class MainWindow : Window
             }
         };
 
-        var viewerFolder = Path.Combine(AppContext.BaseDirectory, "Assets", "PdfViewer");
+        var viewerFolder = Path.Combine(AppContext.BaseDirectory, "Assets", ViewerAssetFolderName);
         PdfViewer.CoreWebView2.SetVirtualHostNameToFolderMapping(
             ViewerHost,
             viewerFolder,
@@ -311,7 +312,7 @@ public partial class MainWindow : Window
             ViewerCacheHost,
             AppPaths.ViewerRuntimeDirectory,
             CoreWebView2HostResourceAccessKind.Allow);
-        PdfViewer.CoreWebView2.Navigate($"https://{ViewerHost}/viewer.html");
+        PdfViewer.CoreWebView2.Navigate($"https://{ViewerHost}/web/viewer.html");
     }
 
     private async void LoadPdf(string path, string? referencePath = null, bool dirtyAfterLoad = false)
@@ -385,7 +386,7 @@ public partial class MainWindow : Window
     {
         var servedPath = PrepareServedPdfPath(path);
         var servedFileName = Path.GetFileName(servedPath);
-        var pdfUrl = $"https://{ViewerHost}/ServedPdf/{Uri.EscapeDataString(servedFileName)}?v={Guid.NewGuid():N}";
+        var pdfUrl = $"https://{ViewerHost}/web/ServedPdf/{Uri.EscapeDataString(servedFileName)}?v={Guid.NewGuid():N}";
         var fileLength = new FileInfo(path).Length;
         var message = JsonSerializer.Serialize(new
         {
@@ -609,7 +610,7 @@ public partial class MainWindow : Window
     {
         CleanupServedPdfLink();
 
-        var viewerFolder = Path.Combine(AppContext.BaseDirectory, "Assets", "PdfViewer");
+        var viewerFolder = Path.Combine(AppContext.BaseDirectory, "Assets", ViewerAssetFolderName, "web");
         var servedFolder = Path.Combine(viewerFolder, "ServedPdf");
         Directory.CreateDirectory(servedFolder);
         CleanupServedPdfFolder(servedFolder);
