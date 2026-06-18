@@ -52,7 +52,7 @@
     const numeric = Number(edit?.rotate);
     if (!Number.isFinite(numeric)) return undefined;
     const degrees = Math.min(Math.max(numeric, -180), 180);
-    return degrees === 0 ? undefined : pdfLib.degrees(degrees);
+    return degrees === 0 ? undefined : pdfLib.degrees(-degrees);
   }
 
   function editRotationDegrees(edit) {
@@ -72,6 +72,37 @@
       x: center.x + dx * cos - dy * sin,
       y: center.y + dx * sin + dy * cos
     };
+  }
+
+  function getBox(edit, pageHeight, padding = 0) {
+    const x = (Number(edit.x) || 0) - padding;
+    const yFromTop = (Number(edit.y) || 0) - padding;
+    const width = (Number(edit.width) || 0) + padding * 2;
+    const height = (Number(edit.height) || 0) + padding * 2;
+    const y = pageHeight - yFromTop - height;
+    return {
+      x,
+      y,
+      width,
+      height,
+      center: {
+        x: x + width / 2,
+        y: y + height / 2
+      }
+    };
+  }
+
+  function getRotatedBoxPoint(edit, pageHeight, localX, localY, padding = 0) {
+    const box = getBox(edit, pageHeight, padding);
+    return rotatePointAroundCenter(
+      { x: box.x + localX, y: box.y + localY },
+      box.center,
+      editRotationDegrees(edit)
+    );
+  }
+
+  function getRotatedBoxOrigin(edit, pageHeight, padding = 0) {
+    return getRotatedBoxPoint(edit, pageHeight, 0, 0, padding);
   }
 
   function getLineEndpoints(edit, pageHeight) {
@@ -168,8 +199,6 @@
   }
 
   async function drawTextReplacement(pdfDoc, page, pdfLib, edit, pageHeight, fonts) {
-    const x = Number(edit.x) || 0;
-    const yFromTop = Number(edit.y) || 0;
     const width = Number(edit.width) || 0;
     const height = Number(edit.height) || 0;
     const size = Number(edit.size) || DEFAULT_TEXT_SIZE;
@@ -178,12 +207,14 @@
     const textInsetY = Number(edit.textInsetY) || 0;
     const whiteoutPadding = Number(edit.whiteoutPadding) || 0;
     const font = await resolveFont(pdfDoc, pdfLib, edit, fonts);
+    const whiteoutBox = getBox(edit, pageHeight, whiteoutPadding);
+    const whiteoutOrigin = getRotatedBoxOrigin(edit, pageHeight, whiteoutPadding);
 
     page.drawRectangle({
-      x: x - whiteoutPadding,
-      y: pageHeight - yFromTop - height - whiteoutPadding,
-      width: width + whiteoutPadding * 2,
-      height: height + whiteoutPadding * 2,
+      x: whiteoutOrigin.x,
+      y: whiteoutOrigin.y,
+      width: whiteoutBox.width,
+      height: whiteoutBox.height,
       color: colorFromArray(pdfLib, edit.fillColor, [1, 1, 1]),
       opacity: editOpacity(edit, 1),
       rotate: editRotation(pdfLib, edit)
@@ -192,9 +223,15 @@
     const color = colorFromArray(pdfLib, edit.color, [0, 0, 0]);
     const lines = String(edit.text ?? "").split(/\r\n|\r|\n/);
     lines.forEach((line, index) => {
+      const textOrigin = getRotatedBoxPoint(
+        edit,
+        pageHeight,
+        textInsetX,
+        height - textInsetY - size - index * lineHeight
+      );
       page.drawText(line, {
-        x: x + textInsetX,
-        y: pageHeight - yFromTop - textInsetY - size - index * lineHeight,
+        x: textOrigin.x,
+        y: textOrigin.y,
         size,
         font,
         color,
@@ -205,18 +242,18 @@
   }
 
   async function drawTextOverlay(pdfDoc, page, pdfLib, edit, pageHeight, fonts) {
-    const x = Number(edit.x) || 0;
-    const yFromTop = Number(edit.y) || 0;
     const size = Number(edit.size) || DEFAULT_TEXT_SIZE;
     const lineHeight = Number(edit.lineHeight) || size * 1.25;
+    const height = Number(edit.height) || lineHeight;
     const font = await resolveFont(pdfDoc, pdfLib, edit, fonts);
     const color = colorFromArray(pdfLib, edit.color, [0, 0, 0]);
     const lines = String(edit.text ?? "").split(/\r\n|\r|\n/);
 
     lines.forEach((line, index) => {
+      const textOrigin = getRotatedBoxPoint(edit, pageHeight, 0, height - size - index * lineHeight);
       page.drawText(line, {
-        x,
-        y: pageHeight - yFromTop - size - index * lineHeight,
+        x: textOrigin.x,
+        y: textOrigin.y,
         size,
         font,
         color,
@@ -253,9 +290,10 @@
       } else if (edit.type === "textHighlight") {
         const height = Number(edit.height) || 0;
         const width = Number(edit.width) || 0;
+        const origin = getRotatedBoxOrigin(edit, pageHeight);
         page.drawRectangle({
-          x,
-          y: pageHeight - yFromTop - height,
+          x: origin.x,
+          y: origin.y,
           width,
           height,
           color: colorFromArray(pdfLib, edit.fillColor, [0.98, 0.8, 0.08]),
@@ -266,9 +304,10 @@
         const height = Number(edit.height) || 0;
         const width = Number(edit.width) || 0;
         const isRedaction = edit.variant === "redact";
+        const origin = getRotatedBoxOrigin(edit, pageHeight);
         page.drawRectangle({
-          x,
-          y: pageHeight - yFromTop - height,
+          x: origin.x,
+          y: origin.y,
           width,
           height,
           color: colorFromArray(pdfLib, isRedaction ? [0, 0, 0] : edit.fillColor, isRedaction ? [0, 0, 0] : [1, 1, 1]),
@@ -278,9 +317,10 @@
       } else if (edit.type === "rectangle") {
         const height = Number(edit.height) || 0;
         const width = Number(edit.width) || 0;
+        const origin = getRotatedBoxOrigin(edit, pageHeight);
         const options = {
-          x,
-          y: pageHeight - yFromTop - height,
+          x: origin.x,
+          y: origin.y,
           width,
           height,
           borderColor: colorFromArray(pdfLib, edit.borderColor, [0, 0, 0]),
@@ -321,9 +361,10 @@
         const width = Number(edit.width) || 0;
         const height = Number(edit.height) || 0;
         const image = await embedImage(pdfDoc, edit.imageDataUrl, edit.imageMimeType);
+        const imageOrigin = getRotatedBoxOrigin(edit, pageHeight);
         page.drawImage(image, {
-          x,
-          y: pageHeight - yFromTop - height,
+          x: imageOrigin.x,
+          y: imageOrigin.y,
           width,
           height,
           opacity: editOpacity(edit, 1),
@@ -339,9 +380,10 @@
         const size = Number(edit.size) || Math.max(Math.min(height * 0.38, 24), 10);
         const text = String(edit.text ?? "STAMP").toUpperCase();
         const textWidth = font.widthOfTextAtSize(text, size);
+        const stampOrigin = getRotatedBoxOrigin(edit, pageHeight);
         page.drawRectangle({
-          x,
-          y: pageHeight - yFromTop - height,
+          x: stampOrigin.x,
+          y: stampOrigin.y,
           width,
           height,
           borderColor,
@@ -349,9 +391,15 @@
           opacity: editOpacity(edit, 1),
           rotate: editRotation(pdfLib, edit)
         });
+        const textOrigin = getRotatedBoxPoint(
+          edit,
+          pageHeight,
+          Math.max((width - textWidth) / 2, borderWidth + 2),
+          height / 2 - size / 3
+        );
         page.drawText(text, {
-          x: x + Math.max((width - textWidth) / 2, borderWidth + 2),
-          y: pageHeight - yFromTop - height / 2 - size / 3,
+          x: textOrigin.x,
+          y: textOrigin.y,
           size,
           font,
           color,

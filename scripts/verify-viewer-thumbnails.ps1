@@ -327,6 +327,18 @@ if ($officialPdfLibAdapter -notmatch 'function editRotation\(' -or $officialPdfL
     throw 'pdf-lib adapter must persist rotation for rotatable overlay edits.'
 }
 
+if ($officialPdfLibAdapter -notmatch 'pdfLib\.degrees\(-degrees\)') {
+    throw 'pdf-lib adapter must convert CSS clockwise rotation into PDF coordinates.'
+}
+
+if ($officialPdfLibAdapter -notmatch 'function getRotatedBoxOrigin\(' -or $officialPdfLibAdapter -notmatch 'function getRotatedBoxPoint\(') {
+    throw 'pdf-lib adapter must rotate box-based overlay edits around the same center as the editor UI.'
+}
+
+if ($officialPdfLibAdapter -notmatch 'page\.drawImage\(image,\s*\{[\s\S]*?x:\s*imageOrigin\.x,[\s\S]*?y:\s*imageOrigin\.y') {
+    throw 'pdf-lib adapter must persist image and signature rotation around the editor box center.'
+}
+
 if ($officialPdfLibAdapter -notmatch 'edit\.type === "textHighlight"') {
     throw 'pdf-lib adapter must persist selected text highlight annotations.'
 }
