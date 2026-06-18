@@ -14,7 +14,7 @@ $officialViewerPlanPath = Join-Path $root 'docs\superpowers\plans\2026-06-18-pdf
 $officialViewerSpecPath = Join-Path $root 'docs\superpowers\specs\2026-06-18-pdfjs-official-viewer-editor-design.md'
 $fallback = Get-Content -Raw $fallbackPath
 $update = Get-Content -Raw $updatePath
-$mainWindow = Get-Content -Raw $mainWindowPath
+$mainWindow = [System.IO.File]::ReadAllText($mainWindowPath, [System.Text.UTF8Encoding]::new($false, $true))
 $installerBuild = Get-Content -Raw $installerBuildPath
 $buildScript = Get-Content -Raw $buildScriptPath
 $publishScript = Get-Content -Raw $publishScriptPath
@@ -78,6 +78,10 @@ if ($mainWindow -notmatch 'RemapEditorStateToOutputPageOrder' -or
 if ($mainWindow -notmatch 'string\? transformedTempPath = null;' -or
     $mainWindow -notmatch 'finally[\s\S]*?TryDeleteTempFile\(transformedTempPath\)') {
     throw 'Overlay editor-source temporary PDFs must be cleaned up in a finally block after save attempts.'
+}
+
+if ([regex]::IsMatch($mainWindow, '\p{IsCJKUnifiedIdeographs}') -or $mainWindow.Contains([char]0xfffd)) {
+    throw 'MainWindow user-facing strings must not contain mojibake or replacement characters.'
 }
 
 if ($installerBuild -notmatch 'Invoke-InnoCompilerWithRetry' -or
