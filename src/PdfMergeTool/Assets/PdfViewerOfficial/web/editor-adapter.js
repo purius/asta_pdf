@@ -1767,7 +1767,7 @@
           whiteoutPadding: (edit.whiteoutPadding || 0) * Math.max(scaleX, scaleY),
           color: toRgbArray(edit.color),
           fillColor: toRgbArray(edit.fillColor || "#ffffff"),
-          borderWidth: (edit.borderWidth || 0) * scaleX,
+          borderWidth: (edit.borderWidth || 0) * Math.max(scaleX, scaleY),
           rotate: normalizeRotation(edit.rotate, 0)
         };
       }

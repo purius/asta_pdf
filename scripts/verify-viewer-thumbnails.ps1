@@ -579,6 +579,16 @@ if ($officialPdfLibAdapter -notmatch 'whiteoutPadding' -or $officialPdfLibAdapte
     throw 'pdf-lib adapter must apply text replacement metrics when saving visual text edits.'
 }
 
+$textExportBlock = [regex]::Match($officialEditorAdapter, 'if \(edit\.type === "text" \|\| edit\.type === "textReplace"\) \{[\s\S]*?(?=\n      if \(edit\.type === "line" \|\| edit\.type === "arrow"\))').Value
+
+if (-not $textExportBlock -or $textExportBlock -notmatch 'borderWidth:\s*\(edit\.borderWidth \|\| 0\) \* Math\.max\(scaleX, scaleY\)') {
+    throw 'editor adapter must export text and replacement text border widths using the strongest page scale.'
+}
+
+if ($textExportBlock -match 'borderWidth:\s*\(edit\.borderWidth \|\| 0\) \* scaleX') {
+    throw 'editor adapter must not export text and replacement text border widths using only scaleX.'
+}
+
 if ($officialViewerScript -notmatch 'defaultOptions\.defaultUrl\s*=\s*\{[\s\S]*?value:\s*""') {
     throw 'official viewer must not auto-open the PDF.js sample document.'
 }
