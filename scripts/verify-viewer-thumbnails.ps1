@@ -205,6 +205,16 @@ if ($officialEditorAdapter -notmatch 'data-role="opacity"' -or $officialEditorAd
     throw 'editor adapter must expose and persist per-object opacity controls.'
 }
 
+$lineArrowExportBlock = [regex]::Match($officialEditorAdapter, 'if \(edit\.type === "line" \|\| edit\.type === "arrow"\) \{[\s\S]*?(?=if \(edit\.type === "ink"\))').Value
+
+if (-not $lineArrowExportBlock -or $lineArrowExportBlock -notmatch 'borderWidth:\s*\(edit\.borderWidth \|\| 2\) \* Math\.max\(scaleX, scaleY\)') {
+    throw 'editor adapter must export line and arrow stroke widths using the strongest page scale.'
+}
+
+if ($lineArrowExportBlock -match 'borderWidth:\s*\(edit\.borderWidth \|\| 2\) \* scaleX') {
+    throw 'editor adapter must not export line and arrow stroke widths using only scaleX.'
+}
+
 if ($officialEditorAdapter -match [char]0xfffd) {
     throw 'editor adapter UI strings must not contain replacement characters from broken encoding.'
 }
