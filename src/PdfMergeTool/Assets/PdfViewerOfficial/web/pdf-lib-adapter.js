@@ -55,6 +55,18 @@
     return degrees === 0 ? undefined : pdfLib.degrees(degrees);
   }
 
+  function getLineEndpoints(edit, pageHeight) {
+    const x = Number(edit.x) || 0;
+    const yFromTop = Number(edit.y) || 0;
+    const width = Number(edit.width) || 0;
+    const height = Number(edit.height) || 0;
+    const centerY = pageHeight - yFromTop - height / 2;
+    return {
+      start: { x, y: centerY },
+      end: { x: x + width, y: centerY }
+    };
+  }
+
   async function resolveFont(pdfDoc, pdfLib, edit, fonts) {
     const fontName = edit.fontName || "default";
     const fontSource = fonts?.[fontName] ?? edit.fontBytes ?? edit.fontBase64;
@@ -85,15 +97,10 @@
   }
 
   function drawArrow(page, pdfLib, edit, pageHeight) {
-    const x = Number(edit.x) || 0;
-    const yFromTop = Number(edit.y) || 0;
-    const width = Number(edit.width) || 0;
-    const height = Number(edit.height) || 0;
     const thickness = Number(edit.borderWidth) || DEFAULT_STROKE_WIDTH;
     const color = colorFromArray(pdfLib, edit.borderColor, [0, 0, 0]);
     const opacity = editOpacity(edit, 1);
-    const start = { x, y: pageHeight - yFromTop };
-    const end = { x: x + width, y: pageHeight - yFromTop - height };
+    const { start, end } = getLineEndpoints(edit, pageHeight);
     const angle = Math.atan2(end.y - start.y, end.x - start.x);
     const headLength = Math.max(thickness * 6, 12);
     const wingAngle = Math.PI / 7;
@@ -277,12 +284,10 @@
           page.drawRectangle(options);
         }
       } else if (edit.type === "line") {
+        const { start, end } = getLineEndpoints(edit, pageHeight);
         page.drawLine({
-          start: { x, y: pageHeight - yFromTop },
-          end: {
-            x: x + (Number(edit.width) || 0),
-            y: pageHeight - yFromTop - (Number(edit.height) || 0)
-          },
+          start,
+          end,
           color: colorFromArray(pdfLib, edit.borderColor, [0, 0, 0]),
           thickness: Number(edit.borderWidth) || DEFAULT_STROKE_WIDTH,
           opacity: editOpacity(edit, 1)

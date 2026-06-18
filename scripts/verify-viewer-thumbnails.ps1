@@ -287,6 +287,10 @@ if ($officialPdfLibAdapter -notmatch 'function drawArrow\(') {
     throw 'pdf-lib adapter must persist arrow overlay edits.'
 }
 
+if ($officialPdfLibAdapter -notmatch 'function getLineEndpoints\(' -or $officialPdfLibAdapter -notmatch 'const centerY = pageHeight - yFromTop - height / 2' -or $officialPdfLibAdapter -notmatch 'const \{ start, end \} = getLineEndpoints\(edit, pageHeight\)') {
+    throw 'pdf-lib adapter must persist line and arrow overlays using the same centered horizontal geometry as the editor UI.'
+}
+
 if ($officialPdfLibAdapter -notmatch 'function drawArrow\([\s\S]*?const opacity = editOpacity\(edit, 1\)' -or $officialPdfLibAdapter -notmatch 'drawArrow\([\s\S]*?page\.drawLine\(\{[\s\S]*?opacity') {
     throw 'pdf-lib adapter must persist opacity for arrow overlay edits.'
 }
