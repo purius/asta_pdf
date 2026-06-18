@@ -6,10 +6,14 @@ $fallbackPath = Join-Path $root 'src\PdfMergeTool\Services\PdfFallbackRenderServ
 $updatePath = Join-Path $root 'src\PdfMergeTool\Services\UpdateService.cs'
 $mainWindowPath = Join-Path $root 'src\PdfMergeTool\MainWindow.xaml.cs'
 $installerBuildPath = Join-Path $root 'scripts\build-installer.ps1'
+$buildScriptPath = Join-Path $root 'scripts\build.ps1'
+$publishScriptPath = Join-Path $root 'scripts\publish.ps1'
 $fallback = Get-Content -Raw $fallbackPath
 $update = Get-Content -Raw $updatePath
 $mainWindow = Get-Content -Raw $mainWindowPath
 $installerBuild = Get-Content -Raw $installerBuildPath
+$buildScript = Get-Content -Raw $buildScriptPath
+$publishScript = Get-Content -Raw $publishScriptPath
 
 if ($fallback -notmatch 'private const int MaxRenderCacheEntries') {
     throw 'PdfFallbackRenderService must cap per-session render cache entries.'
@@ -83,6 +87,15 @@ if ($installerBuild -notmatch '2>&1' -or
 if ($installerBuild -notmatch 'previousErrorActionPreference' -or
     $installerBuild -notmatch "\`$ErrorActionPreference = 'Continue'") {
     throw 'Installer build must capture Inno Setup stderr without letting PowerShell native-command errors bypass retry handling.'
+}
+
+if ($buildScript -notmatch 'AstaPdf\.DotNetBuild' -or
+    $buildScript -notmatch '\.WaitOne\(' -or
+    $buildScript -notmatch 'finally[\s\S]*?ReleaseMutex\(\)' -or
+    $publishScript -notmatch 'AstaPdf\.DotNetBuild' -or
+    $publishScript -notmatch '\.WaitOne\(' -or
+    $publishScript -notmatch 'finally[\s\S]*?ReleaseMutex\(\)') {
+    throw 'Build and publish scripts must serialize dotnet restore/build/publish operations with the same mutex.'
 }
 
 Write-Output 'stability checks passed.'

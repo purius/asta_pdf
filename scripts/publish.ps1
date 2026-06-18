@@ -6,21 +6,37 @@ $project = Join-Path $root 'src\PdfMergeTool\PdfMergeTool.csproj'
 $publishDir = Join-Path $root 'dist\PdfMergeTool'
 $qpdfSource = Join-Path $root '.tools\qpdf\qpdf-12.3.2-msvc64\bin'
 $qpdfTarget = Join-Path $publishDir 'tools\qpdf'
+$mutex = [System.Threading.Mutex]::new($false, 'AstaPdf.DotNetBuild')
+$mutexAcquired = $false
 
-& (Join-Path $PSScriptRoot 'restore-tools.ps1')
+try {
+    $mutexAcquired = $mutex.WaitOne([TimeSpan]::FromMinutes(10))
+    if (-not $mutexAcquired) {
+        throw 'Timed out waiting for another dotnet build or publish operation to finish.'
+    }
 
-if (Test-Path $publishDir) {
-    Remove-Item -LiteralPath $publishDir -Recurse -Force
+    & (Join-Path $PSScriptRoot 'restore-tools.ps1')
+
+    if (Test-Path $publishDir) {
+        Remove-Item -LiteralPath $publishDir -Recurse -Force
+    }
+
+    & $dotnet publish $project `
+        --configuration Release `
+        --runtime win-x64 `
+        --self-contained true `
+        -p:PublishSingleFile=false `
+        -p:PublishReadyToRun=true `
+        -p:SatelliteResourceLanguages=ko `
+        --output $publishDir
 }
+finally {
+    if ($mutexAcquired) {
+        $mutex.ReleaseMutex()
+    }
 
-& $dotnet publish $project `
-    --configuration Release `
-    --runtime win-x64 `
-    --self-contained true `
-    -p:PublishSingleFile=false `
-    -p:PublishReadyToRun=true `
-    -p:SatelliteResourceLanguages=ko `
-    --output $publishDir
+    $mutex.Dispose()
+}
 
 $allowedCultureDirs = @('ko')
 Get-ChildItem -LiteralPath $publishDir -Directory | Where-Object {
