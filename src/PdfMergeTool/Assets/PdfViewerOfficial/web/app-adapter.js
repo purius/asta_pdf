@@ -193,6 +193,11 @@ const AppBridge = (() => {
   }
 
   function shouldAcceptPageChange(pageNumber) {
+    if (lastAcceptedExplicitNavigationPage && Date.now() > explicitNavigationSettledUntil) {
+      explicitNavigationSettledUntil = 0;
+      lastAcceptedExplicitNavigationPage = null;
+    }
+
     if (
       lastAcceptedExplicitNavigationPage &&
       Date.now() <= explicitNavigationSettledUntil &&

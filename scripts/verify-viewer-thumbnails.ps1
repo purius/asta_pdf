@@ -151,6 +151,14 @@ if ($officialAdapter -notmatch 'explicitNavigationSettledUntil' -or
     throw 'official viewer adapter must keep suppressing stale pagechanging events briefly after accepting an explicit navigation target.'
 }
 
+$shouldAcceptPageChangeBlock = [regex]::Match(
+    $officialAdapter,
+    'function shouldAcceptPageChange\(pageNumber\) \{[\s\S]*?\n  \}').Value
+if (-not $shouldAcceptPageChangeBlock -or
+    $shouldAcceptPageChangeBlock -notmatch 'if \(lastAcceptedExplicitNavigationPage && Date\.now\(\) > explicitNavigationSettledUntil\) \{[\s\S]*?explicitNavigationSettledUntil = 0;[\s\S]*?lastAcceptedExplicitNavigationPage = null;[\s\S]*?\}') {
+    throw 'official viewer adapter must clear accepted explicit navigation state after the settle window expires.'
+}
+
 if ($officialAdapter -notmatch 'function resetExplicitNavigationTracking\(\)' -or
     $officialAdapter -notmatch 'resetExplicitNavigationTracking\(\);[\s\S]*?window\.EditorAdapter\?\.clear\?\.\(\);' -or
     $officialAdapter -notmatch 'function rebuildPageOrder\([\s\S]*?resetExplicitNavigationTracking\(\);') {
