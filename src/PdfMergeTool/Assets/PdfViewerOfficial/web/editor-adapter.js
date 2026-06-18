@@ -1717,6 +1717,7 @@
       if (edit.type === "whiteout") {
         return {
           type: "whiteout",
+          variant: edit.variant,
           page: edit.page,
           zIndex,
           x: edit.x * scaleX,

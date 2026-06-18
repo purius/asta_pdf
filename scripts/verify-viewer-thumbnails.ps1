@@ -157,6 +157,10 @@ if ($officialEditorAdapter -notmatch 'data-mode="redact"' -or $officialEditorAda
     throw 'editor adapter must support black redaction over selected PDF text ranges.'
 }
 
+if ($officialEditorAdapter -notmatch 'type:\s*"whiteout"[\s\S]*?variant:\s*edit\.variant') {
+    throw 'editor adapter must preserve redaction variant when exporting whiteout edits.'
+}
+
 if ($officialEditorAdapter -notmatch 'data-mode="underline"' -or $officialEditorAdapter -notmatch 'data-mode="strikeout"' -or $officialEditorAdapter -notmatch 'function addSelectedTextLineMarkupEdits\(' -or $officialEditorAdapter -notmatch 'function getSelectedTextLineMarkupTargets\(') {
     throw 'editor adapter must support underline and strikeout markup over selected PDF text ranges.'
 }
@@ -263,6 +267,10 @@ if ($officialPdfLibAdapter -notmatch 'edit\.type === "textHighlight"[\s\S]*?opac
 
 if ($officialPdfLibAdapter -notmatch 'edit\.type === "whiteout"') {
     throw 'pdf-lib adapter must persist visual whiteout edits.'
+}
+
+if ($officialPdfLibAdapter -notmatch 'const isRedaction = edit\.variant === "redact"' -or $officialPdfLibAdapter -notmatch 'isRedaction \? \[0, 0, 0\]' -or $officialPdfLibAdapter -notmatch 'isRedaction \? 1 : editOpacity\(edit, 1\)') {
+    throw 'pdf-lib adapter must persist redaction edits as opaque black regions.'
 }
 
 if ($officialPdfLibAdapter -notmatch 'edit\.type === "stamp"') {

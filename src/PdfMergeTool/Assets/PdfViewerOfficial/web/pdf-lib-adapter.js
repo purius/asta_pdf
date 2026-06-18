@@ -227,13 +227,14 @@
       } else if (edit.type === "whiteout") {
         const height = Number(edit.height) || 0;
         const width = Number(edit.width) || 0;
+        const isRedaction = edit.variant === "redact";
         page.drawRectangle({
           x,
           y: pageHeight - yFromTop - height,
           width,
           height,
-          color: colorFromArray(pdfLib, edit.fillColor, [1, 1, 1]),
-          opacity: editOpacity(edit, 1)
+          color: colorFromArray(pdfLib, isRedaction ? [0, 0, 0] : edit.fillColor, isRedaction ? [0, 0, 0] : [1, 1, 1]),
+          opacity: isRedaction ? 1 : editOpacity(edit, 1)
         });
       } else if (edit.type === "rectangle") {
         const height = Number(edit.height) || 0;
