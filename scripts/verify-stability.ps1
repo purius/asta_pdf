@@ -8,12 +8,14 @@ $mainWindowPath = Join-Path $root 'src\PdfMergeTool\MainWindow.xaml.cs'
 $installerBuildPath = Join-Path $root 'scripts\build-installer.ps1'
 $buildScriptPath = Join-Path $root 'scripts\build.ps1'
 $publishScriptPath = Join-Path $root 'scripts\publish.ps1'
+$releaseWorkflowPath = Join-Path $root '.github\workflows\release.yml'
 $fallback = Get-Content -Raw $fallbackPath
 $update = Get-Content -Raw $updatePath
 $mainWindow = Get-Content -Raw $mainWindowPath
 $installerBuild = Get-Content -Raw $installerBuildPath
 $buildScript = Get-Content -Raw $buildScriptPath
 $publishScript = Get-Content -Raw $publishScriptPath
+$releaseWorkflow = Get-Content -Raw $releaseWorkflowPath
 
 if ($fallback -notmatch 'private const int MaxRenderCacheEntries') {
     throw 'PdfFallbackRenderService must cap per-session render cache entries.'
@@ -96,6 +98,21 @@ if ($buildScript -notmatch 'AstaPdf\.DotNetBuild' -or
     $publishScript -notmatch '\.WaitOne\(' -or
     $publishScript -notmatch 'finally[\s\S]*?ReleaseMutex\(\)') {
     throw 'Build and publish scripts must serialize dotnet restore/build/publish operations with the same mutex.'
+}
+
+if ($releaseWorkflow -notmatch 'verify-viewer-thumbnails\.ps1' -or
+    $releaseWorkflow -notmatch 'verify-stability\.ps1') {
+    throw 'Release workflow must run viewer thumbnail and stability verifications before publishing an installer.'
+}
+
+if ($releaseWorkflow -notmatch 'node --check src/PdfMergeTool/Assets/PdfViewerOfficial/web/app-adapter\.js' -or
+    $releaseWorkflow -notmatch 'node --check src/PdfMergeTool/Assets/PdfViewerOfficial/web/editor-adapter\.js' -or
+    $releaseWorkflow -notmatch 'node --check src/PdfMergeTool/Assets/PdfViewerOfficial/web/pdf-lib-adapter\.js') {
+    throw 'Release workflow must syntax-check official viewer adapter JavaScript before publishing an installer.'
+}
+
+if ($releaseWorkflow -match '(?s)name: Build installer.*?verify-viewer-thumbnails\.ps1') {
+    throw 'Release workflow must run verification steps before building the installer.'
 }
 
 Write-Output 'stability checks passed.'

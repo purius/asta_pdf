@@ -19,6 +19,19 @@ jobs:
       - name: Install Inno Setup
         run: choco install innosetup --yes --no-progress
 
+      - name: Verify viewer and stability contracts
+        shell: pwsh
+        run: |
+          .\scripts\verify-viewer-thumbnails.ps1
+          .\scripts\verify-stability.ps1
+
+      - name: Syntax-check viewer adapters
+        shell: pwsh
+        run: |
+          node --check src/PdfMergeTool/Assets/PdfViewerOfficial/web/app-adapter.js
+          node --check src/PdfMergeTool/Assets/PdfViewerOfficial/web/editor-adapter.js
+          node --check src/PdfMergeTool/Assets/PdfViewerOfficial/web/pdf-lib-adapter.js
+
       - name: Build installer
         shell: pwsh
         run: .\scripts\build-installer.ps1
