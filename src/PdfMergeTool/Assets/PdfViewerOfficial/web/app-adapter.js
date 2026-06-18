@@ -81,8 +81,26 @@ const AppBridge = (() => {
     app.page = targetPage;
   }
 
-  function goRelative(delta) {
-    goToPage((getApp()?.page ?? 1) + delta);
+  function getVisiblePageOrder() {
+    const totalPages = getTotalPages();
+    const validPages = pageOrder.filter(page => page >= 1 && page <= totalPages);
+    return validPages.length > 0
+      ? validPages
+      : Array.from({ length: totalPages }, (_, index) => index + 1);
+  }
+
+  function goRelativeInPageOrder(delta) {
+    const orderedPages = getVisiblePageOrder();
+    if (orderedPages.length === 0) {
+      return;
+    }
+
+    const currentPage = getApp()?.page ?? orderedPages[0];
+    const currentIndex = orderedPages.indexOf(currentPage);
+    const nextIndex = Math.min(
+      Math.max((currentIndex >= 0 ? currentIndex : 0) + delta, 0),
+      orderedPages.length - 1);
+    goToPage(orderedPages[nextIndex]);
   }
 
   function setScale(value) {
@@ -318,10 +336,10 @@ const AppBridge = (() => {
   function handleCommand(command) {
     switch (command) {
       case "nextPage":
-        goRelative(1);
+        goRelativeInPageOrder(1);
         break;
       case "prevPage":
-        goRelative(-1);
+        goRelativeInPageOrder(-1);
         break;
       case "firstPage":
         goToPage(1);

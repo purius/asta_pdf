@@ -160,6 +160,13 @@ if ($officialAdapter -notmatch 'type:\s*"insertExternalPages"[\s\S]*?insertionIn
     throw 'official viewer adapter must translate native drops into existing WPF insertion messages with an insertion index.'
 }
 
+if ($officialAdapter -notmatch 'function getVisiblePageOrder\(' -or
+    $officialAdapter -notmatch 'function goRelativeInPageOrder\(' -or
+    $officialAdapter -notmatch 'const currentIndex = orderedPages\.indexOf\(currentPage\)' -or
+    $officialAdapter -match 'function goRelative\(delta\) \{\s*goToPage\(\(getApp\(\)\?\.page \?\? 1\) \+ delta\);') {
+    throw 'official viewer next/previous commands must navigate through the app pageOrder, not raw PDF page numbers.'
+}
+
 if ($officialEditorAdapter -notmatch 'type:\s*"editorStateChanged"') {
     throw 'editor adapter must notify WPF when overlay edits make the document dirty.'
 }
