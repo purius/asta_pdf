@@ -1700,7 +1700,8 @@
           width: edit.width * scaleX,
           height: edit.height * scaleY,
           borderColor: toRgbArray(edit.borderColor),
-          borderWidth: (edit.borderWidth || 2) * Math.max(scaleX, scaleY)
+          borderWidth: (edit.borderWidth || 2) * Math.max(scaleX, scaleY),
+          rotate: normalizeRotation(edit.rotate, 0)
         };
       }
       if (edit.type === "ink") {

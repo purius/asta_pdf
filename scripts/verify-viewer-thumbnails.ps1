@@ -231,6 +231,10 @@ if (-not $lineArrowExportBlock -or $lineArrowExportBlock -notmatch 'borderWidth:
     throw 'editor adapter must export line and arrow stroke widths using the strongest page scale.'
 }
 
+if (-not $lineArrowExportBlock -or $lineArrowExportBlock -notmatch 'rotate:\s*normalizeRotation\(edit\.rotate, 0\)') {
+    throw 'editor adapter must export rotation for line and arrow edits.'
+}
+
 if ($lineArrowExportBlock -match 'borderWidth:\s*\(edit\.borderWidth \|\| 2\) \* scaleX') {
     throw 'editor adapter must not export line and arrow stroke widths using only scaleX.'
 }
@@ -289,6 +293,10 @@ if ($officialPdfLibAdapter -notmatch 'function drawArrow\(') {
 
 if ($officialPdfLibAdapter -notmatch 'function getLineEndpoints\(' -or $officialPdfLibAdapter -notmatch 'const centerY = pageHeight - yFromTop - height / 2' -or $officialPdfLibAdapter -notmatch 'const \{ start, end \} = getLineEndpoints\(edit, pageHeight\)') {
     throw 'pdf-lib adapter must persist line and arrow overlays using the same centered horizontal geometry as the editor UI.'
+}
+
+if ($officialPdfLibAdapter -notmatch 'function rotatePointAroundCenter\(' -or $officialPdfLibAdapter -notmatch 'getLineEndpoints\(edit, pageHeight\)[\s\S]*?rotatePointAroundCenter' -or $officialPdfLibAdapter -notmatch 'drawArrow\([\s\S]*?getLineEndpoints\(edit, pageHeight\)') {
+    throw 'pdf-lib adapter must persist line and arrow rotation around the same center as the editor UI.'
 }
 
 if ($officialPdfLibAdapter -notmatch 'function drawArrow\([\s\S]*?const opacity = editOpacity\(edit, 1\)' -or $officialPdfLibAdapter -notmatch 'drawArrow\([\s\S]*?page\.drawLine\(\{[\s\S]*?opacity') {

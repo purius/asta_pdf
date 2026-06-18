@@ -55,15 +55,36 @@
     return degrees === 0 ? undefined : pdfLib.degrees(degrees);
   }
 
+  function editRotationDegrees(edit) {
+    const numeric = Number(edit?.rotate);
+    if (!Number.isFinite(numeric)) return 0;
+    return Math.min(Math.max(numeric, -180), 180);
+  }
+
+  function rotatePointAroundCenter(point, center, degrees) {
+    if (!degrees) return point;
+    const radians = -degrees * Math.PI / 180;
+    const cos = Math.cos(radians);
+    const sin = Math.sin(radians);
+    const dx = point.x - center.x;
+    const dy = point.y - center.y;
+    return {
+      x: center.x + dx * cos - dy * sin,
+      y: center.y + dx * sin + dy * cos
+    };
+  }
+
   function getLineEndpoints(edit, pageHeight) {
     const x = Number(edit.x) || 0;
     const yFromTop = Number(edit.y) || 0;
     const width = Number(edit.width) || 0;
     const height = Number(edit.height) || 0;
     const centerY = pageHeight - yFromTop - height / 2;
+    const center = { x: x + width / 2, y: centerY };
+    const degrees = editRotationDegrees(edit);
     return {
-      start: { x, y: centerY },
-      end: { x: x + width, y: centerY }
+      start: rotatePointAroundCenter({ x, y: centerY }, center, degrees),
+      end: rotatePointAroundCenter({ x: x + width, y: centerY }, center, degrees)
     };
   }
 
