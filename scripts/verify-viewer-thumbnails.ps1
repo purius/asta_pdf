@@ -153,6 +153,10 @@ if ($officialEditorAdapter -notmatch 'function addSelectedTextWhiteoutEdits\(' -
     throw 'editor adapter must support whiteout over selected PDF text ranges.'
 }
 
+if ($officialEditorAdapter -notmatch 'data-mode="underline"' -or $officialEditorAdapter -notmatch 'data-mode="strikeout"' -or $officialEditorAdapter -notmatch 'function addSelectedTextLineMarkupEdits\(' -or $officialEditorAdapter -notmatch 'function getSelectedTextLineMarkupTargets\(') {
+    throw 'editor adapter must support underline and strikeout markup over selected PDF text ranges.'
+}
+
 if ($officialEditorAdapter -notmatch 'data-mode="replaceText"' -or $officialEditorAdapter -notmatch 'function findTextLayerElementAt\(') {
     throw 'editor adapter must expose a PDF text-layer replacement tool.'
 }

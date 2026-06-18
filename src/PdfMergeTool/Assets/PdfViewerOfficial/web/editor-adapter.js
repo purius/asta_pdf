@@ -269,6 +269,8 @@
       <button type="button" data-mode="arrow" title="Add arrow">Arrow</button>
       <button type="button" data-mode="pen" title="Draw freehand pen">Pen</button>
       <button type="button" data-mode="highlight" title="Draw highlight">Highlight</button>
+      <button type="button" data-mode="underline" title="Underline selected text">Underline</button>
+      <button type="button" data-mode="strikeout" title="Strike out selected text">Strike</button>
       <button type="button" data-mode="image" title="Add image">Image</button>
       <button type="button" data-mode="stamp" title="Add stamp">Stamp</button>
       <button type="button" data-mode="signature" title="Add signature image">Sign</button>
@@ -354,6 +356,12 @@
     } else if (mode === "highlight") {
       setTimeout(() => {
         if (addSelectedTextHighlightEdits()) {
+          setMode("select");
+        }
+      }, 0);
+    } else if (mode === "underline" || mode === "strikeout") {
+      setTimeout(() => {
+        if (addSelectedTextLineMarkupEdits(mode)) {
           setMode("select");
         }
       }, 0);
@@ -652,6 +660,27 @@
     return true;
   }
 
+  function addSelectedTextLineMarkupEdits(markupType) {
+    const targets = getSelectedTextLineMarkupTargets(markupType);
+    if (targets.length === 0) return false;
+
+    recordHistory();
+    for (const target of targets) {
+      addEdit({
+        type: "line",
+        page: getPageNumber(target.pageElement),
+        x: target.x,
+        y: target.y,
+        width: Math.max(target.width, 1),
+        height: 1,
+        borderColor: state.color,
+        borderWidth: Math.max(Number(toolbar?.querySelector("[data-role='strokeWidth']")?.value) || 2, 1)
+      });
+    }
+    window.getSelection()?.removeAllRanges();
+    return true;
+  }
+
   function getSelectedTextHighlightTargets() {
     const selection = window.getSelection?.();
     if (!selection || selection.isCollapsed || selection.rangeCount === 0) return [];
@@ -688,6 +717,48 @@
       width: rect.width,
       height: rect.height
     }));
+  }
+
+  function getSelectedTextLineMarkupTargets(markupType) {
+    const selection = window.getSelection?.();
+    if (!selection || selection.isCollapsed || selection.rangeCount === 0) return [];
+
+    const range = selection.getRangeAt(0);
+    const clientRects = [...range.getClientRects()]
+      .filter(rect => rect.width > 0 && rect.height > 0);
+    if (clientRects.length === 0) return [];
+
+    const pageElement = getPageElementForSelection(range, clientRects[0]);
+    if (!pageElement) return [];
+
+    const pageRect = pageElement.getBoundingClientRect();
+    const selectedRects = clientRects.filter(rect => {
+      const centerX = rect.left + rect.width / 2;
+      const centerY = rect.top + rect.height / 2;
+      const element = document.elementFromPoint(centerX, centerY);
+      return pageElement.contains(element);
+    });
+
+    if (selectedRects.length !== clientRects.length) {
+      postMessage({
+        type: "viewerDiagnostic",
+        level: "info",
+        message: "Selected text underline and strikeout markup is limited to one PDF page at a time."
+      });
+      return [];
+    }
+
+    return selectedRects.map(rect => {
+      const y = markupType === "strikeout"
+        ? rect.top + rect.height * 0.52
+        : rect.bottom - Math.max(1, rect.height * 0.08);
+      return {
+        pageElement,
+        x: rect.left - pageRect.left,
+        y: y - pageRect.top,
+        width: rect.width
+      };
+    });
   }
 
   function getSelectedTextWhiteoutTargets() {
