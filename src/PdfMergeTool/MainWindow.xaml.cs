@@ -297,6 +297,12 @@ public partial class MainWindow : Window
                 return;
             }
 
+            if (type == "overlayPdfExportFailed")
+            {
+                CompleteOverlayPdfExportFailure(document.RootElement);
+                return;
+            }
+
             if (type == "pageOrderChanged" &&
                 document.RootElement.TryGetProperty("pageOrder", out var pageOrderElement))
             {
@@ -1050,6 +1056,30 @@ public partial class MainWindow : Window
         catch (Exception ex)
         {
             completion.TrySetException(ex);
+        }
+        finally
+        {
+            _overlayPdfExportCompletion = null;
+        }
+    }
+
+    private void CompleteOverlayPdfExportFailure(JsonElement root)
+    {
+        var completion = _overlayPdfExportCompletion;
+        if (completion is null)
+        {
+            return;
+        }
+
+        try
+        {
+            var message = root.TryGetProperty("message", out var messageElement)
+                ? messageElement.GetString()
+                : null;
+            completion.TrySetException(new InvalidOperationException(
+                string.IsNullOrWhiteSpace(message)
+                    ? "PDF editor export failed."
+                    : message));
         }
         finally
         {

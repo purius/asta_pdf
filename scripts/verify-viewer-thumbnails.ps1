@@ -96,6 +96,10 @@ if ($officialAdapter -notmatch 'exportOverlayPdf') {
     throw 'official viewer adapter must expose a host-callable pdf-lib export path.'
 }
 
+if ($officialAdapter -notmatch 'type:\s*"overlayPdfExportFailed"' -or $officialAdapter -notmatch 'requestId:\s*data\.requestId \?\? null') {
+    throw 'official viewer adapter must report pdf-lib export failures back to WPF without waiting for a timeout.'
+}
+
 if ($officialAdapter -notmatch 'setEditorFonts') {
     throw 'official viewer adapter must accept the Windows font list from WPF.'
 }
@@ -400,6 +404,10 @@ if ($mainWindow -notmatch 'CollectEditorStateAsync') {
 
 if ($mainWindow -notmatch 'ExportOverlayPdfAsync') {
     throw 'MainWindow must export overlay edits through pdf-lib before saving.'
+}
+
+if ($mainWindow -notmatch 'overlayPdfExportFailed' -or $mainWindow -notmatch 'CompleteOverlayPdfExportFailure') {
+    throw 'MainWindow must complete failed overlay PDF exports immediately instead of timing out.'
 }
 
 if ($mainWindow -notmatch 'WindowsFontService\.ReadFontBase64') {

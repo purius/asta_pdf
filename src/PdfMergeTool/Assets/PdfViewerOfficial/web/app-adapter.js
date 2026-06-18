@@ -140,19 +140,28 @@ const AppBridge = (() => {
   }
 
   async function exportOverlayPdf(data) {
-    if (!window.PdfLibAdapter?.createOverlayPdf) {
-      throw new Error("PDF editor save adapter is not loaded.");
-    }
+    try {
+      if (!window.PdfLibAdapter?.createOverlayPdf) {
+        throw new Error("PDF editor save adapter is not loaded.");
+      }
 
-    const pdfBase64 = await window.PdfLibAdapter.createOverlayPdf({
-      ...data,
-      edits: Array.isArray(data.edits) ? data.edits : window.EditorAdapter?.getEdits?.() ?? []
-    });
-    postMessage({
-      type: "overlayPdfExported",
-      requestId: data.requestId ?? null,
-      pdfBase64
-    });
+      const pdfBase64 = await window.PdfLibAdapter.createOverlayPdf({
+        ...data,
+        edits: Array.isArray(data.edits) ? data.edits : window.EditorAdapter?.getEdits?.() ?? []
+      });
+      postMessage({
+        type: "overlayPdfExported",
+        requestId: data.requestId ?? null,
+        pdfBase64
+      });
+    } catch (error) {
+      postMessage({
+        type: "overlayPdfExportFailed",
+        requestId: data.requestId ?? null,
+        message: error?.message ?? String(error)
+      });
+      throw error;
+    }
   }
 
   function handleCommand(command) {
