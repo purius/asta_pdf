@@ -1442,6 +1442,39 @@
     return normalizeOpacity(edit?.opacity, edit?.type === "textHighlight" || edit?.tool === "highlight" ? 0.38 : 1);
   }
 
+  function buildSelectedPropertySnapshot(edit, properties = null) {
+    const snapshot = {
+      opacity: properties ? properties.opacity : getEditOpacity(edit),
+      rotate: properties ? properties.rotate : normalizeRotation(edit.rotate, 0)
+    };
+    if (edit.type === "text" || edit.type === "textReplace") {
+      snapshot.fontName = properties ? properties.fontName : edit.fontName ?? "";
+      snapshot.size = properties ? properties.size : Number(edit.size) || 0;
+      snapshot.color = properties ? properties.color : edit.color ?? "";
+      if (edit.type === "textReplace") {
+        snapshot.fillColor = properties ? properties.fillColor : edit.fillColor ?? "";
+      }
+    } else if (edit.type === "stamp") {
+      snapshot.fontName = properties ? properties.fontName : edit.fontName ?? "";
+      snapshot.size = properties ? properties.size : Number(edit.size) || 0;
+      snapshot.color = properties ? properties.color : edit.color ?? "";
+      snapshot.borderColor = properties ? properties.color : edit.borderColor ?? "";
+      snapshot.borderWidth = properties ? properties.strokeWidth : Number(edit.borderWidth) || 0;
+    } else if (edit.type === "rectangle" || edit.type === "ellipse" || edit.type === "textHighlight" || edit.type === "whiteout") {
+      snapshot.borderColor = properties ? properties.color : edit.borderColor ?? "";
+      snapshot.borderWidth = properties ? properties.strokeWidth : Number(edit.borderWidth) || 0;
+      snapshot.fillColor = properties ? properties.fillColor : edit.fillColor ?? "";
+    } else if (edit.type === "line" || edit.type === "arrow" || edit.type === "ink") {
+      snapshot.borderColor = properties ? properties.color : edit.borderColor ?? "";
+      snapshot.borderWidth = properties ? properties.strokeWidth : Number(edit.borderWidth) || 0;
+    }
+    return snapshot;
+  }
+
+  function arePropertySnapshotsEqual(left, right) {
+    return JSON.stringify(left) === JSON.stringify(right);
+  }
+
   function applySelectedProperties() {
     const properties = getToolbarProperties();
     state.fontName = properties.fontName;
@@ -1450,6 +1483,9 @@
 
     const edit = state.edits.find(item => item.id === state.selectedId);
     if (!edit) return;
+    const beforeProperties = buildSelectedPropertySnapshot(edit);
+    const afterProperties = buildSelectedPropertySnapshot(edit, properties);
+    if (arePropertySnapshotsEqual(beforeProperties, afterProperties)) return;
     recordHistory();
     edit.opacity = properties.opacity;
     edit.rotate = properties.rotate;

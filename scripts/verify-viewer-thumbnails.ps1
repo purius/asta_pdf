@@ -312,6 +312,14 @@ if ($officialEditorAdapter -notmatch 'data-role="rotation"' -or $officialEditorA
     throw 'editor adapter must expose and persist per-object rotation controls.'
 }
 
+if ($officialEditorAdapter -notmatch 'function buildSelectedPropertySnapshot\(' -or
+    $officialEditorAdapter -notmatch 'function arePropertySnapshotsEqual\(' -or
+    $officialEditorAdapter -notmatch 'const beforeProperties = buildSelectedPropertySnapshot\(edit\);' -or
+    $officialEditorAdapter -notmatch 'const afterProperties = buildSelectedPropertySnapshot\(edit, properties\);' -or
+    $officialEditorAdapter -notmatch 'if \(arePropertySnapshotsEqual\(beforeProperties, afterProperties\)\) return;[\s\S]*?recordHistory\(\);') {
+    throw 'editor adapter must not record history or dirty state when toolbar properties do not change the selected edit.'
+}
+
 if ($officialEditorAdapter -notmatch 'rotate:\s*normalizeRotation\(edit\.rotate, 0\)') {
     throw 'editor adapter must export normalized rotation for rotatable overlay edits.'
 }
