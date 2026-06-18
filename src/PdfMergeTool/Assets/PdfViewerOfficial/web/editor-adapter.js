@@ -1754,7 +1754,7 @@
           text: edit.text ?? "STAMP",
           color: toRgbArray(edit.color || "#dc2626"),
           borderColor: toRgbArray(edit.borderColor || "#dc2626"),
-          borderWidth: (edit.borderWidth || 3) * scaleX,
+          borderWidth: (edit.borderWidth || 3) * Math.max(scaleX, scaleY),
           fontName: edit.fontName || state.fontName,
           size: (edit.size || state.textSize) * scaleY,
           opacity

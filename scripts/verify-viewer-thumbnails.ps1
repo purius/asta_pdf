@@ -225,6 +225,16 @@ if ($shapeExportBlock -match 'borderWidth:\s*\(edit\.borderWidth \|\| 2\) \* sca
     throw 'editor adapter must not export rectangle and ellipse border widths using only scaleX.'
 }
 
+$stampExportBlock = [regex]::Match($officialEditorAdapter, 'if \(edit\.type === "stamp"\) \{[\s\S]*?return \{\s*type:\s*"stamp",[\s\S]*?opacity\s*\};').Value
+
+if (-not $stampExportBlock -or $stampExportBlock -notmatch 'borderWidth:\s*\(edit\.borderWidth \|\| 3\) \* Math\.max\(scaleX, scaleY\)') {
+    throw 'editor adapter must export stamp border widths using the strongest page scale.'
+}
+
+if ($stampExportBlock -match 'borderWidth:\s*\(edit\.borderWidth \|\| 3\) \* scaleX') {
+    throw 'editor adapter must not export stamp border widths using only scaleX.'
+}
+
 if ($officialEditorAdapter -match [char]0xfffd) {
     throw 'editor adapter UI strings must not contain replacement characters from broken encoding.'
 }
