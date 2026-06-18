@@ -52,7 +52,7 @@ internal static class UpdateService
 
     public static void OpenUpdatePage(UpdateCheckResult result)
     {
-        Process.Start(new ProcessStartInfo(result.ReleaseUrl.AbsoluteUri)
+        Process.Start(new ProcessStartInfo(result.InstallerUrl.AbsoluteUri)
         {
             UseShellExecute = true
         });

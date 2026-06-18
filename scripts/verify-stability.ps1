@@ -39,6 +39,10 @@ if ($update -notmatch 'Timeout = TimeSpan\.FromSeconds\(10\)') {
     throw 'UpdateService must use a bounded timeout for update checks.'
 }
 
+if ($update -notmatch 'Process\.Start\(new ProcessStartInfo\(result\.InstallerUrl\.AbsoluteUri\)') {
+    throw 'UpdateService must open the installer asset URL, not only the release page.'
+}
+
 if ($mainWindow -notmatch '_editorStateRequestId' -or
     $mainWindow -notmatch '_overlayPdfExportRequestId' -or
     $mainWindow -notmatch 'IsExpectedRequest\(root,\s*_editorStateRequestId' -or
