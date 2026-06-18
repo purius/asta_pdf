@@ -266,6 +266,18 @@ const AppBridge = (() => {
       case "editorDuplicateSelection":
         window.EditorAdapter?.duplicateSelected?.();
         break;
+      case "editorBringForward":
+        window.EditorAdapter?.changeSelectedLayerOrder?.("forward");
+        break;
+      case "editorSendBackward":
+        window.EditorAdapter?.changeSelectedLayerOrder?.("backward");
+        break;
+      case "editorBringToFront":
+        window.EditorAdapter?.changeSelectedLayerOrder?.("front");
+        break;
+      case "editorSendToBack":
+        window.EditorAdapter?.changeSelectedLayerOrder?.("back");
+        break;
       case "markClean":
         pageStateDirty = false;
         window.EditorAdapter?.markClean?.();

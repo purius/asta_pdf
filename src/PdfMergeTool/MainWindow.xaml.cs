@@ -2266,6 +2266,14 @@ public partial class MainWindow : Window
 
     private void OnEditorDuplicateSelectionClick(object sender, RoutedEventArgs e) => SendViewerCommand("editorDuplicateSelection");
 
+    private void OnEditorBringForwardClick(object sender, RoutedEventArgs e) => SendViewerCommand("editorBringForward");
+
+    private void OnEditorSendBackwardClick(object sender, RoutedEventArgs e) => SendViewerCommand("editorSendBackward");
+
+    private void OnEditorBringToFrontClick(object sender, RoutedEventArgs e) => SendViewerCommand("editorBringToFront");
+
+    private void OnEditorSendToBackClick(object sender, RoutedEventArgs e) => SendViewerCommand("editorSendToBack");
+
     private async void OnCopySelectedPagesClick(object sender, RoutedEventArgs e) => await CopySelectedPagesToClipboardAsync(cut: false);
 
     private async void OnCutSelectedPagesClick(object sender, RoutedEventArgs e) => await CopySelectedPagesToClipboardAsync(cut: true);

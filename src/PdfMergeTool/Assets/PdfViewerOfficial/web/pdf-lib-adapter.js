@@ -165,7 +165,9 @@
     }
     sourceBytes ??= base64ToBytes(options.sourceBase64);
     const pdfDoc = await pdfLib.PDFDocument.load(sourceBytes);
-    const edits = Array.isArray(options.edits) ? options.edits : [];
+    const edits = (Array.isArray(options.edits) ? options.edits : [])
+      .slice()
+      .sort((left, right) => (Number(left.zIndex) || 0) - (Number(right.zIndex) || 0));
     const fonts = options.fonts ?? {};
 
     for (const edit of edits) {

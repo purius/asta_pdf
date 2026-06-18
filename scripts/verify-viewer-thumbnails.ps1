@@ -181,6 +181,10 @@ if ($officialEditorAdapter -notmatch 'function copySelected\(' -or $officialEdit
     throw 'editor adapter must support copying, pasting, and duplicating selected overlay edits.'
 }
 
+if ($officialEditorAdapter -notmatch 'function changeSelectedLayerOrder\(' -or $officialEditorAdapter -notmatch 'data-action="bringForward"' -or $officialEditorAdapter -notmatch 'data-action="sendBackward"' -or $officialEditorAdapter -notmatch 'zIndex') {
+    throw 'editor adapter must support layer order controls for overlapping overlay edits.'
+}
+
 if ($officialEditorAdapter -match [char]0xfffd) {
     throw 'editor adapter UI strings must not contain replacement characters from broken encoding.'
 }
@@ -211,6 +215,10 @@ if ($officialPdfLibAdapter -notmatch 'function embedImage\(' -or $officialPdfLib
 
 if ($officialPdfLibAdapter -notmatch 'function drawInkPath\(' -or $officialPdfLibAdapter -notmatch 'edit\.type === "ink"') {
     throw 'pdf-lib adapter must persist freehand pen and highlight annotations.'
+}
+
+if ($officialPdfLibAdapter -notmatch 'sort\(\(left, right\) => \(Number\(left\.zIndex\) \|\| 0\) - \(Number\(right\.zIndex\) \|\| 0\)\)') {
+    throw 'pdf-lib adapter must preserve overlay layer order when saving edits.'
 }
 
 if ($officialPdfLibAdapter -notmatch 'edit\.type === "textHighlight"') {
@@ -265,7 +273,7 @@ if ($mainWindow -notmatch 'WindowsFontService\.ReadFontBase64') {
     throw 'MainWindow must embed only the Windows fonts used by overlay text edits.'
 }
 
-if ($mainWindow -notmatch 'OnEditorTextClick' -or $mainWindow -notmatch 'editorReplaceText' -or $mainWindow -notmatch 'editorSignature' -or $mainWindow -notmatch 'editorHighlight' -or $mainWindow -notmatch 'editorPen' -or $mainWindow -notmatch 'editorWhiteout' -or $mainWindow -notmatch 'editorDuplicateSelection') {
+if ($mainWindow -notmatch 'OnEditorTextClick' -or $mainWindow -notmatch 'editorReplaceText' -or $mainWindow -notmatch 'editorSignature' -or $mainWindow -notmatch 'editorHighlight' -or $mainWindow -notmatch 'editorPen' -or $mainWindow -notmatch 'editorWhiteout' -or $mainWindow -notmatch 'editorDuplicateSelection' -or $mainWindow -notmatch 'editorBringForward') {
     throw 'MainWindow must expose WPF toolbar commands for PDF editor tools.'
 }
 

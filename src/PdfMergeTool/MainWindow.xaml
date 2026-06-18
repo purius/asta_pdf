@@ -601,6 +601,26 @@
                                         Click="OnEditorDuplicateSelectionClick">
                                     <TextBlock Text="Duplicate" />
                                 </Button>
+                                <Button Style="{StaticResource ToolbarTextButtonStyle}"
+                                        ToolTip="Bring selected editor object forward"
+                                        Click="OnEditorBringForwardClick">
+                                    <TextBlock Text="Forward" />
+                                </Button>
+                                <Button Style="{StaticResource ToolbarTextButtonStyle}"
+                                        ToolTip="Send selected editor object backward"
+                                        Click="OnEditorSendBackwardClick">
+                                    <TextBlock Text="Backward" />
+                                </Button>
+                                <Button Style="{StaticResource ToolbarTextButtonStyle}"
+                                        ToolTip="Bring selected editor object to front"
+                                        Click="OnEditorBringToFrontClick">
+                                    <TextBlock Text="Front" />
+                                </Button>
+                                <Button Style="{StaticResource ToolbarTextButtonStyle}"
+                                        ToolTip="Send selected editor object to back"
+                                        Click="OnEditorSendToBackClick">
+                                    <TextBlock Text="Back" />
+                                </Button>
                             </StackPanel>
                         </Border>
 

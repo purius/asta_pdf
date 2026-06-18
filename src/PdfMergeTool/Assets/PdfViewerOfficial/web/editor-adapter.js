@@ -281,6 +281,10 @@
       <button type="button" data-action="copy" title="Copy selected">Copy</button>
       <button type="button" data-action="paste" title="Paste copied">Paste</button>
       <button type="button" data-action="duplicate" title="Duplicate selected">Duplicate</button>
+      <button type="button" data-action="bringForward" title="Bring selected forward">Forward</button>
+      <button type="button" data-action="sendBackward" title="Send selected backward">Backward</button>
+      <button type="button" data-action="bringToFront" title="Bring selected to front">Front</button>
+      <button type="button" data-action="sendToBack" title="Send selected to back">Back</button>
       <button type="button" data-action="delete" title="Delete selected">Delete</button>
     `;
     document.body.appendChild(toolbar);
@@ -295,6 +299,14 @@
         pasteCopiedEdit();
       } else if (button.dataset.action === "duplicate") {
         duplicateSelected();
+      } else if (button.dataset.action === "bringForward") {
+        changeSelectedLayerOrder("forward");
+      } else if (button.dataset.action === "sendBackward") {
+        changeSelectedLayerOrder("backward");
+      } else if (button.dataset.action === "bringToFront") {
+        changeSelectedLayerOrder("front");
+      } else if (button.dataset.action === "sendToBack") {
+        changeSelectedLayerOrder("back");
       } else if (button.dataset.action === "delete") {
         deleteSelected();
       }
@@ -769,11 +781,26 @@
 
   function addEdit(edit) {
     edit.id = edit.id || `edit-${nextEditId++}`;
+    edit.zIndex = Number.isFinite(Number(edit.zIndex)) ? Number(edit.zIndex) : getNextLayerIndex(edit.page);
     state.edits.push(edit);
     renderEdit(edit);
     state.dirty = true;
     postDirty();
     selectEdit(edit.id);
+  }
+
+  function getNextLayerIndex(pageNumber) {
+    const page = Number(pageNumber) || getCurrentPageNumber();
+    return state.edits
+      .filter(edit => Number(edit.page) === page)
+      .reduce((next, edit) => Math.max(next, Number(edit.zIndex) || 0), 0) + 10;
+  }
+
+  function ensureLayerIndex(edit) {
+    if (!Number.isFinite(Number(edit.zIndex))) {
+      edit.zIndex = getNextLayerIndex(edit.page);
+    }
+    return Number(edit.zIndex) || 0;
   }
 
   function renderEdit(edit) {
@@ -803,6 +830,7 @@
     element.style.top = `${edit.y}px`;
     element.style.width = `${edit.width}px`;
     element.style.height = `${edit.height}px`;
+    element.style.zIndex = String(ensureLayerIndex(edit));
     if (edit.type === "text" || edit.type === "textReplace") {
       setTextElementContent(element, edit.text ?? "");
       element.style.fontFamily = `"${edit.fontName || state.fontName}", sans-serif`;
@@ -1306,6 +1334,45 @@
     return pasteCopiedEdit(edit.page);
   }
 
+  function getOrderedPageEdits(pageNumber) {
+    return state.edits
+      .filter(edit => Number(edit.page) === Number(pageNumber))
+      .sort((left, right) => ensureLayerIndex(left) - ensureLayerIndex(right));
+  }
+
+  function changeSelectedLayerOrder(direction) {
+    const edit = state.edits.find(item => item.id === state.selectedId);
+    if (!edit) return false;
+    const ordered = getOrderedPageEdits(edit.page);
+    const index = ordered.findIndex(item => item.id === edit.id);
+    if (index < 0) return false;
+
+    recordHistory();
+    if (direction === "forward" && index < ordered.length - 1) {
+      const next = ordered[index + 1];
+      [edit.zIndex, next.zIndex] = [ensureLayerIndex(next), ensureLayerIndex(edit)];
+    } else if (direction === "backward" && index > 0) {
+      const previous = ordered[index - 1];
+      [edit.zIndex, previous.zIndex] = [ensureLayerIndex(previous), ensureLayerIndex(edit)];
+    } else if (direction === "front") {
+      edit.zIndex = ordered.reduce((max, item) => Math.max(max, ensureLayerIndex(item)), 0) + 10;
+    } else if (direction === "back") {
+      edit.zIndex = ordered.reduce((min, item) => Math.min(min, ensureLayerIndex(item)), ensureLayerIndex(edit)) - 10;
+    } else {
+      historyStack.pop();
+      return false;
+    }
+
+    getOrderedPageEdits(edit.page).forEach((item, layerIndex) => {
+      item.zIndex = (layerIndex + 1) * 10;
+      renderEdit(item);
+    });
+    selectEdit(edit.id);
+    state.dirty = true;
+    postDirty();
+    return true;
+  }
+
   function undo() {
     if (historyStack.length === 0) return false;
     redoStack.push(snapshotEdits());
@@ -1340,10 +1407,12 @@
       const pageSize = getPageSize(edit.page);
       const scaleX = rect?.width ? pageSize.width / rect.width : 1;
       const scaleY = rect?.height ? pageSize.height / rect.height : 1;
+      const zIndex = ensureLayerIndex(edit);
       if (edit.type === "text" || edit.type === "textReplace") {
         return {
           type: edit.type,
           page: edit.page,
+          zIndex,
           x: edit.x * scaleX,
           y: edit.y * scaleY,
           width: edit.width * scaleX,
@@ -1365,6 +1434,7 @@
         return {
           type: edit.type,
           page: edit.page,
+          zIndex,
           x: edit.x * scaleX,
           y: edit.y * scaleY,
           width: edit.width * scaleX,
@@ -1378,6 +1448,7 @@
           type: "ink",
           tool: edit.tool || "pen",
           page: edit.page,
+          zIndex,
           points: (Array.isArray(edit.points) ? edit.points : []).map(point => ({
             x: (Number(point.x) || 0) * scaleX,
             y: (Number(point.y) || 0) * scaleY
@@ -1391,6 +1462,7 @@
         return {
           type: "textHighlight",
           page: edit.page,
+          zIndex,
           x: edit.x * scaleX,
           y: edit.y * scaleY,
           width: edit.width * scaleX,
@@ -1403,6 +1475,7 @@
         return {
           type: "whiteout",
           page: edit.page,
+          zIndex,
           x: edit.x * scaleX,
           y: edit.y * scaleY,
           width: edit.width * scaleX,
@@ -1414,6 +1487,7 @@
         return {
           type: edit.type,
           page: edit.page,
+          zIndex,
           x: edit.x * scaleX,
           y: edit.y * scaleY,
           width: edit.width * scaleX,
@@ -1426,6 +1500,7 @@
         return {
           type: "stamp",
           page: edit.page,
+          zIndex,
           x: edit.x * scaleX,
           y: edit.y * scaleY,
           width: edit.width * scaleX,
@@ -1442,6 +1517,7 @@
         type: "rectangle",
         shape: edit.type,
         page: edit.page,
+        zIndex,
         x: edit.x * scaleX,
         y: edit.y * scaleY,
         width: edit.width * scaleX,
@@ -1513,6 +1589,7 @@
     copySelected,
     pasteCopiedEdit,
     duplicateSelected,
+    changeSelectedLayerOrder,
     undo,
     redo,
     hasDirtyEdits: () => state.dirty,
