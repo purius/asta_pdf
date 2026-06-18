@@ -37,7 +37,7 @@ internal static class UpdateService
         var latestTag = root.GetProperty("tag_name").GetString() ?? string.Empty;
         var latestVersionText = NormalizeVersionText(latestTag) ?? latestTag;
         var releaseUrl = GetUri(root, "html_url") ?? new Uri("https://github.com/purius/asta_pdf/releases/latest");
-        var installerUrl = FindInstallerUrl(root) ?? releaseUrl;
+        var installerUrl = FindInstallerUrl(root) ?? BuildInstallerDownloadUrl(latestTag) ?? releaseUrl;
 
         var currentVersion = ParseVersion(CurrentVersionText);
         var latestVersion = ParseVersion(latestVersionText);
@@ -91,6 +91,16 @@ internal static class UpdateService
         }
 
         return null;
+    }
+
+    private static Uri? BuildInstallerDownloadUrl(string? tag)
+    {
+        if (string.IsNullOrWhiteSpace(tag))
+        {
+            return null;
+        }
+
+        return new Uri($"https://github.com/purius/asta_pdf/releases/download/{Uri.EscapeDataString(tag.Trim())}/{InstallerAssetName}");
     }
 
     private static Uri? GetUri(JsonElement root, string propertyName)

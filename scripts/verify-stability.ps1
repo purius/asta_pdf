@@ -43,6 +43,11 @@ if ($update -notmatch 'Process\.Start\(new ProcessStartInfo\(result\.InstallerUr
     throw 'UpdateService must open the installer asset URL, not only the release page.'
 }
 
+if ($update -notmatch 'BuildInstallerDownloadUrl\(latestTag\)' -or
+    $update -notmatch 'releases/download/\{Uri\.EscapeDataString\(tag\.Trim\(\)\)\}/\{InstallerAssetName\}') {
+    throw 'UpdateService must fall back to a tag-based installer download URL when release assets are delayed.'
+}
+
 if ($mainWindow -notmatch '_editorStateRequestId' -or
     $mainWindow -notmatch '_overlayPdfExportRequestId' -or
     $mainWindow -notmatch 'IsExpectedRequest\(root,\s*_editorStateRequestId' -or
