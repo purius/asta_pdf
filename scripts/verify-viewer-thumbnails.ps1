@@ -124,6 +124,18 @@ if ($officialAdapter -notmatch 'applyPageStatePresentation') {
     throw 'official viewer adapter must visually hide deleted pages and thumbnails while saving page state.'
 }
 
+$officialPageChanging = [regex]::Match(
+    $officialAdapter,
+    'eventBus\?\._on\("pagechanging",\s*event\s*=>\s*\{[\s\S]*?\n    \}\);')
+if (-not $officialPageChanging.Success -or
+    $officialPageChanging.Groups[0].Value -match 'postPageOrder\(') {
+    throw 'official viewer pagechanging events must not republish full page order state during navigation.'
+}
+
+if ($officialAdapter -notmatch 'type:\s*"activePageChanged"[\s\S]*selectedPages:\s*\[\.\.\.selectedPages\]') {
+    throw 'official viewer pagechanging events must publish active page and selection without rebuilding page order state.'
+}
+
 if ($officialEditorAdapter -notmatch 'type:\s*"editorStateChanged"') {
     throw 'editor adapter must notify WPF when overlay edits make the document dirty.'
 }

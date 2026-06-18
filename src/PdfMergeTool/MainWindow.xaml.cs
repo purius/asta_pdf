@@ -305,6 +305,12 @@ public partial class MainWindow : Window
                 return;
             }
 
+            if (type == "activePageChanged")
+            {
+                ReceiveActivePageChanged(document.RootElement);
+                return;
+            }
+
             if (type == "pageOrderChanged" &&
                 document.RootElement.TryGetProperty("pageOrder", out var pageOrderElement))
             {
@@ -345,6 +351,18 @@ public partial class MainWindow : Window
             AppPaths.ViewerRuntimeDirectory,
             CoreWebView2HostResourceAccessKind.Allow);
         PdfViewer.CoreWebView2.Navigate($"https://{ViewerHost}/web/viewer.html");
+    }
+
+    private void ReceiveActivePageChanged(JsonElement root)
+    {
+        _activePage = root.TryGetProperty("activePage", out var activeElement) &&
+                      activeElement.ValueKind == JsonValueKind.Number
+            ? activeElement.GetInt32()
+            : _activePage;
+        _selectedPages = root.TryGetProperty("selectedPages", out var selectedElement) &&
+                         selectedElement.ValueKind == JsonValueKind.Array
+            ? selectedElement.EnumerateArray().Select(element => element.GetInt32()).ToList()
+            : _selectedPages;
     }
 
     private async void LoadPdf(string path, string? referencePath = null, bool dirtyAfterLoad = false)

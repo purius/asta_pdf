@@ -346,8 +346,11 @@ const AppBridge = (() => {
     eventBus?._on("pagechanging", event => {
       const activePage = event.pageNumber ?? app.page ?? 1;
       selectedPages = new Set([activePage]);
-      postMessage({ type: "activePageChanged", activePage });
-      postPageOrder();
+      postMessage({
+        type: "activePageChanged",
+        activePage,
+        selectedPages: [...selectedPages]
+      });
     });
 
     window.chrome?.webview?.addEventListener("message", handleHostMessage);
