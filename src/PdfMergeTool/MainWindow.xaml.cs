@@ -57,6 +57,8 @@ public partial class MainWindow : Window
     private bool _viewerLoadRecoveryAttempted;
     private bool _fallbackModeActive;
     private string? _fallbackSessionId;
+    private TaskCompletionSource<EditorExportState>? _editorStateCompletion;
+    private TaskCompletionSource<string>? _overlayPdfExportCompletion;
 
     public MainWindow(IEnumerable<string> initialFiles, bool openMergeWindow)
     {
@@ -73,6 +75,7 @@ public partial class MainWindow : Window
     private sealed record PageTransferPayload(string SourcePath, List<PdfPageTransform> Pages, bool Cut);
     private sealed record ExternalPagesDropMessage(string SourcePath, List<PdfPageTransform> Pages, int InsertionIndex);
     private sealed record ExternalFilesDropMessage(List<string> Paths, int InsertionIndex);
+    private sealed record EditorExportState(IReadOnlyList<JsonElement> Edits, IReadOnlyList<string> UsedFontNames, bool IsDirty);
 
     public void OpenFiles(IEnumerable<string> paths, bool openMergeWindow = false)
     {
@@ -156,6 +159,7 @@ public partial class MainWindow : Window
             if (type == "viewerReady")
             {
                 _viewerReady = true;
+                SendEditorFontsToViewer();
                 if (string.IsNullOrWhiteSpace(_pendingPdfPath))
                 {
                     return;
@@ -270,6 +274,26 @@ public partial class MainWindow : Window
             if (type == "viewerFirstPageRendered")
             {
                 ViewerLoading.Visibility = Visibility.Collapsed;
+                return;
+            }
+
+            if (type == "editorStateChanged")
+            {
+                _isDirty = document.RootElement.TryGetProperty("isDirty", out var dirtyElement) &&
+                           dirtyElement.GetBoolean();
+                UpdateWindowTitle();
+                return;
+            }
+
+            if (type == "editorStateCollected")
+            {
+                CompleteEditorStateCollection(document.RootElement);
+                return;
+            }
+
+            if (type == "overlayPdfExported")
+            {
+                CompleteOverlayPdfExport(document.RootElement);
                 return;
             }
 
@@ -897,6 +921,142 @@ public partial class MainWindow : Window
         PdfViewer.CoreWebView2.PostWebMessageAsJson(message);
     }
 
+    private void SendEditorFontsToViewer()
+    {
+        if (!_viewerReady || PdfViewer.CoreWebView2 is null)
+        {
+            return;
+        }
+
+        try
+        {
+            var fonts = WindowsFontService.GetInstalledFonts()
+                .Select(font => new { font.Name })
+                .ToList();
+            var message = JsonSerializer.Serialize(new
+            {
+                type = "setEditorFonts",
+                fonts
+            });
+            PdfViewer.CoreWebView2.PostWebMessageAsJson(message);
+        }
+        catch (Exception ex)
+        {
+            AppLogger.Error(ex, "Installed font list could not be sent to the PDF editor.");
+        }
+    }
+
+    private async Task<EditorExportState> CollectEditorStateAsync()
+    {
+        if (!_viewerReady || PdfViewer.CoreWebView2 is null)
+        {
+            return new EditorExportState([], [], false);
+        }
+
+        var requestId = Guid.NewGuid().ToString("N");
+        var completion = new TaskCompletionSource<EditorExportState>(TaskCreationOptions.RunContinuationsAsynchronously);
+        _editorStateCompletion = completion;
+        var message = JsonSerializer.Serialize(new
+        {
+            type = "collectEditorState",
+            requestId
+        });
+        PdfViewer.CoreWebView2.PostWebMessageAsJson(message);
+
+        var completed = await Task.WhenAny(completion.Task, Task.Delay(TimeSpan.FromSeconds(15)));
+        if (completed != completion.Task)
+        {
+            _editorStateCompletion = null;
+            throw new TimeoutException("PDF editor state collection timed out.");
+        }
+
+        return await completion.Task;
+    }
+
+    private void CompleteEditorStateCollection(JsonElement root)
+    {
+        var completion = _editorStateCompletion;
+        if (completion is null)
+        {
+            return;
+        }
+
+        try
+        {
+            var edits = root.TryGetProperty("edits", out var editsElement) && editsElement.ValueKind == JsonValueKind.Array
+                ? editsElement.EnumerateArray().Select(element => element.Clone()).ToList()
+                : [];
+            var usedFontNames = root.TryGetProperty("usedFontNames", out var fontsElement) && fontsElement.ValueKind == JsonValueKind.Array
+                ? fontsElement.EnumerateArray().Select(element => element.GetString() ?? string.Empty).Where(name => !string.IsNullOrWhiteSpace(name)).ToList()
+                : [];
+            var isDirty = root.TryGetProperty("isDirty", out var dirtyElement) && dirtyElement.GetBoolean();
+            completion.TrySetResult(new EditorExportState(edits, usedFontNames, isDirty));
+        }
+        catch (Exception ex)
+        {
+            completion.TrySetException(ex);
+        }
+        finally
+        {
+            _editorStateCompletion = null;
+        }
+    }
+
+    private async Task<string> ExportOverlayPdfAsync(string sourcePath, EditorExportState editorState)
+    {
+        if (!_viewerReady || PdfViewer.CoreWebView2 is null)
+        {
+            throw new InvalidOperationException("PDF viewer is not ready.");
+        }
+
+        var requestId = Guid.NewGuid().ToString("N");
+        var completion = new TaskCompletionSource<string>(TaskCreationOptions.RunContinuationsAsynchronously);
+        _overlayPdfExportCompletion = completion;
+        var message = JsonSerializer.Serialize(new
+        {
+            type = "exportOverlayPdf",
+            requestId,
+            sourceBase64 = Convert.ToBase64String(File.ReadAllBytes(sourcePath)),
+            edits = editorState.Edits,
+            fonts = WindowsFontService.ReadFontBase64(editorState.UsedFontNames)
+        });
+        PdfViewer.CoreWebView2.PostWebMessageAsJson(message);
+
+        var completed = await Task.WhenAny(completion.Task, Task.Delay(TimeSpan.FromSeconds(60)));
+        if (completed != completion.Task)
+        {
+            _overlayPdfExportCompletion = null;
+            throw new TimeoutException("PDF editor export timed out.");
+        }
+
+        return await completion.Task;
+    }
+
+    private void CompleteOverlayPdfExport(JsonElement root)
+    {
+        var completion = _overlayPdfExportCompletion;
+        if (completion is null)
+        {
+            return;
+        }
+
+        try
+        {
+            var pdfBase64 = root.TryGetProperty("pdfBase64", out var pdfElement)
+                ? pdfElement.GetString() ?? string.Empty
+                : string.Empty;
+            completion.TrySetResult(pdfBase64);
+        }
+        catch (Exception ex)
+        {
+            completion.TrySetException(ex);
+        }
+        finally
+        {
+            _overlayPdfExportCompletion = null;
+        }
+    }
+
     private void ReceiveA4PageImage(JsonElement root)
     {
         if (_a4ExportCompletion is null)
@@ -1221,7 +1381,16 @@ public partial class MainWindow : Window
 
         try
         {
-            var result = await _pdfService.SaveTransformedPagesAsync(_currentPdfPath, GetCurrentPageTransforms(), outputPath, CancellationToken.None);
+            var editorState = await CollectEditorStateAsync();
+            var outputTarget = editorState.Edits.Count > 0 ? CreateTempPdfPath("editor-source") : outputPath;
+            var result = await _pdfService.SaveTransformedPagesAsync(_currentPdfPath, GetCurrentPageTransforms(), outputTarget, CancellationToken.None);
+            var transformedTempPath = editorState.Edits.Count > 0 ? result.OutputPath : null;
+            if (editorState.Edits.Count > 0)
+            {
+                var exportedBase64 = await ExportOverlayPdfAsync(result.OutputPath, editorState);
+                await File.WriteAllBytesAsync(outputPath, Convert.FromBase64String(exportedBase64));
+                result = result with { OutputPath = outputPath };
+            }
             var message = string.IsNullOrWhiteSpace(result.WarningMessage)
                 ? $"저장 완료:\n{result.OutputPath}"
                 : $"저장 완료:\n{result.OutputPath}\n\n참고: {result.WarningMessage}";
@@ -1230,6 +1399,10 @@ public partial class MainWindow : Window
             UpdateWindowTitle();
             SendViewerCommand("markClean");
             LoadPdf(result.OutputPath);
+            if (transformedTempPath is not null)
+            {
+                TryDeleteTempFile(transformedTempPath);
+            }
             MessageBox.Show(this, message, "PDF 저장", MessageBoxButton.OK, MessageBoxImage.Information);
         }
         catch (Exception ex)

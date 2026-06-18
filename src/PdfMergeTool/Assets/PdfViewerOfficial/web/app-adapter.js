@@ -3,6 +3,7 @@ const AppBridge = (() => {
   let pageRotations = {};
   let selectedPages = new Set();
   let firstPageRendered = false;
+  let pageStateDirty = false;
 
   function postMessage(message) {
     window.chrome?.webview?.postMessage(message);
@@ -35,7 +36,7 @@ const AppBridge = (() => {
       rotations: pageRotations,
       selectedPages: [...selectedPages],
       activePage,
-      isDirty: false
+      isDirty: pageStateDirty || Boolean(window.EditorAdapter?.hasDirtyEdits?.())
     });
   }
 
@@ -50,6 +51,8 @@ const AppBridge = (() => {
   async function openPdf(data) {
     const app = await waitForApplication();
     firstPageRendered = false;
+    pageStateDirty = false;
+    window.EditorAdapter?.clear?.();
 
     let args;
     if (data.url) {
@@ -94,6 +97,7 @@ const AppBridge = (() => {
     for (const page of pages) {
       pageRotations[page] = ((pageRotations[page] ?? 0) + delta + 360) % 360;
     }
+    pageStateDirty = true;
     postPageOrder();
   }
 
@@ -101,6 +105,7 @@ const AppBridge = (() => {
     if (pageOrder.length <= 1 || selectedPages.size === 0) return;
     pageOrder = pageOrder.filter(page => !selectedPages.has(page));
     selectedPages = new Set([pageOrder[0]]);
+    pageStateDirty = true;
     postPageOrder();
     goToPage(pageOrder[0]);
   }
@@ -110,7 +115,10 @@ const AppBridge = (() => {
       throw new Error("PDF editor save adapter is not loaded.");
     }
 
-    const pdfBase64 = await window.PdfLibAdapter.createOverlayPdf(data);
+    const pdfBase64 = await window.PdfLibAdapter.createOverlayPdf({
+      ...data,
+      edits: Array.isArray(data.edits) ? data.edits : window.EditorAdapter?.getEdits?.() ?? []
+    });
     postMessage({
       type: "overlayPdfExported",
       requestId: data.requestId ?? null,
@@ -156,7 +164,21 @@ const AppBridge = (() => {
       case "deleteSelectedPages":
         deleteSelectedPages();
         break;
+      case "editorSelect":
+        window.EditorAdapter?.setMode?.("select");
+        break;
+      case "editorText":
+        window.EditorAdapter?.setMode?.("text");
+        break;
+      case "editorRectangle":
+        window.EditorAdapter?.setMode?.("rectangle");
+        break;
+      case "editorDeleteSelection":
+        window.EditorAdapter?.deleteSelected?.();
+        break;
       case "markClean":
+        pageStateDirty = false;
+        window.EditorAdapter?.markClean?.();
         postPageOrder();
         break;
       default:
@@ -173,6 +195,10 @@ const AppBridge = (() => {
         await openPdf(source);
       } else if (data.type === "command") {
         handleCommand(data.command);
+      } else if (data.type === "setEditorFonts") {
+        window.EditorAdapter?.setFonts?.(data.fonts);
+      } else if (data.type === "collectEditorState") {
+        window.EditorAdapter?.collectState?.(data.requestId ?? null);
       } else if (data.type === "exportOverlayPdf") {
         await exportOverlayPdf(data);
       }
@@ -184,6 +210,7 @@ const AppBridge = (() => {
   async function initialize() {
     const app = await waitForApplication();
     const eventBus = app.eventBus;
+    window.EditorAdapter?.initialize?.();
 
     eventBus?._on("pagesinit", () => {
       rebuildPageOrder(getTotalPages());

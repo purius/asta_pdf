@@ -61,7 +61,11 @@
 
   async function createOverlayPdf(options) {
     const pdfLib = getPdfLib();
-    const sourceBytes = options.sourceBytes ?? base64ToBytes(options.sourceBase64);
+    let sourceBytes = options.sourceBytes;
+    if (!sourceBytes && options.sourceUrl) {
+      sourceBytes = new Uint8Array(await (await fetch(options.sourceUrl)).arrayBuffer());
+    }
+    sourceBytes ??= base64ToBytes(options.sourceBase64);
     const pdfDoc = await pdfLib.PDFDocument.load(sourceBytes);
     const edits = Array.isArray(options.edits) ? options.edits : [];
     const fonts = options.fonts ?? {};
@@ -86,15 +90,40 @@
         });
       } else if (edit.type === "rectangle") {
         const height = Number(edit.height) || 0;
-        page.drawRectangle({
+        const width = Number(edit.width) || 0;
+        const options = {
           x,
           y: pageHeight - yFromTop - height,
-          width: Number(edit.width) || 0,
+          width,
           height,
           borderColor: colorFromArray(pdfLib, edit.borderColor, [0, 0, 0]),
           borderWidth: Number(edit.borderWidth) || DEFAULT_STROKE_WIDTH,
           color: edit.fillColor ? colorFromArray(pdfLib, edit.fillColor, [1, 1, 1]) : undefined,
           opacity: edit.opacity === undefined ? undefined : Number(edit.opacity)
+        };
+        if (edit.shape === "ellipse") {
+          page.drawEllipse({
+            x: x + width / 2,
+            y: pageHeight - yFromTop - height / 2,
+            xScale: width / 2,
+            yScale: height / 2,
+            borderColor: options.borderColor,
+            borderWidth: options.borderWidth,
+            color: options.color,
+            opacity: options.opacity
+          });
+        } else {
+          page.drawRectangle(options);
+        }
+      } else if (edit.type === "line") {
+        page.drawLine({
+          start: { x, y: pageHeight - yFromTop },
+          end: {
+            x: x + (Number(edit.width) || 0),
+            y: pageHeight - yFromTop - (Number(edit.height) || 0)
+          },
+          color: colorFromArray(pdfLib, edit.borderColor, [0, 0, 0]),
+          thickness: Number(edit.borderWidth) || DEFAULT_STROKE_WIDTH
         });
       }
     }

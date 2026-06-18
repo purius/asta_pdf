@@ -5,6 +5,7 @@ $root = Split-Path -Parent $PSScriptRoot
 $viewerPath = Join-Path $root 'src\PdfMergeTool\Assets\PdfViewer\viewer.html'
 $officialViewerPath = Join-Path $root 'src\PdfMergeTool\Assets\PdfViewerOfficial\web\viewer.html'
 $officialAdapterPath = Join-Path $root 'src\PdfMergeTool\Assets\PdfViewerOfficial\web\app-adapter.js'
+$officialEditorAdapterPath = Join-Path $root 'src\PdfMergeTool\Assets\PdfViewerOfficial\web\editor-adapter.js'
 $officialPdfLibAdapterPath = Join-Path $root 'src\PdfMergeTool\Assets\PdfViewerOfficial\web\pdf-lib-adapter.js'
 $officialPdfLibPath = Join-Path $root 'src\PdfMergeTool\Assets\PdfViewerOfficial\web\vendor\pdf-lib.min.js'
 $officialFontkitPath = Join-Path $root 'src\PdfMergeTool\Assets\PdfViewerOfficial\web\vendor\fontkit.umd.min.js'
@@ -12,6 +13,7 @@ $officialViewerScriptPath = Join-Path $root 'src\PdfMergeTool\Assets\PdfViewerOf
 $officialBuildPath = Join-Path $root 'src\PdfMergeTool\Assets\PdfViewerOfficial\build\pdf.mjs'
 $mainWindowPath = Join-Path $root 'src\PdfMergeTool\MainWindow.xaml.cs'
 $projectPath = Join-Path $root 'src\PdfMergeTool\PdfMergeTool.csproj'
+$fontServicePath = Join-Path $root 'src\PdfMergeTool\Services\WindowsFontService.cs'
 $viewer = Get-Content -Raw $viewerPath
 $mainWindow = Get-Content -Raw $mainWindowPath
 $project = Get-Content -Raw $projectPath
@@ -28,6 +30,10 @@ if (-not (Test-Path $officialPdfLibAdapterPath)) {
     throw 'official pdf-lib editor adapter must be packaged.'
 }
 
+if (-not (Test-Path $officialEditorAdapterPath)) {
+    throw 'official viewer editor overlay adapter must be packaged.'
+}
+
 if (-not (Test-Path $officialPdfLibPath)) {
     throw 'pdf-lib browser bundle must be packaged.'
 }
@@ -42,8 +48,10 @@ if (-not (Test-Path $officialBuildPath)) {
 
 $officialViewer = Get-Content -Raw $officialViewerPath
 $officialAdapter = Get-Content -Raw $officialAdapterPath
+$officialEditorAdapter = Get-Content -Raw $officialEditorAdapterPath
 $officialPdfLibAdapter = Get-Content -Raw $officialPdfLibAdapterPath
 $officialViewerScript = Get-Content -Raw $officialViewerScriptPath
+$fontService = Get-Content -Raw $fontServicePath
 
 if ($officialViewer -notmatch 'app-adapter\.js') {
     throw 'official viewer.html must load the app adapter.'
@@ -59,6 +67,10 @@ if ($officialViewer -notmatch 'vendor/fontkit\.umd\.min\.js') {
 
 if ($officialViewer -notmatch 'pdf-lib-adapter\.js') {
     throw 'official viewer.html must load the pdf-lib editor adapter.'
+}
+
+if ($officialViewer -notmatch 'editor-adapter\.js') {
+    throw 'official viewer.html must load the editor overlay adapter.'
 }
 
 if ($officialAdapter -notmatch 'window\.PDFViewerApplication') {
@@ -77,6 +89,30 @@ if ($officialAdapter -notmatch 'exportOverlayPdf') {
     throw 'official viewer adapter must expose a host-callable pdf-lib export path.'
 }
 
+if ($officialAdapter -notmatch 'setEditorFonts') {
+    throw 'official viewer adapter must accept the Windows font list from WPF.'
+}
+
+if ($officialAdapter -notmatch 'collectEditorState') {
+    throw 'official viewer adapter must expose editor state collection before saving.'
+}
+
+if ($officialEditorAdapter -notmatch 'type:\s*"editorStateChanged"') {
+    throw 'editor adapter must notify WPF when overlay edits make the document dirty.'
+}
+
+if ($officialEditorAdapter -notmatch 'type:\s*"editorStateCollected"') {
+    throw 'editor adapter must return bounded overlay edit state for persistence.'
+}
+
+if ($officialEditorAdapter -notmatch 'astaEditorToolbar') {
+    throw 'editor adapter must expose in-viewer text and shape editing controls.'
+}
+
+if ($officialEditorAdapter -notmatch 'data-mode="ellipse"' -or $officialEditorAdapter -notmatch 'data-mode="line"') {
+    throw 'editor adapter must expose ellipse and line shape editing controls.'
+}
+
 if ($officialPdfLibAdapter -notmatch 'PDFLib\.PDFDocument\.load') {
     throw 'pdf-lib adapter must load the source PDF through pdf-lib.'
 }
@@ -87,6 +123,10 @@ if ($officialPdfLibAdapter -notmatch 'pdfDoc\.registerFontkit') {
 
 if ($officialPdfLibAdapter -notmatch 'pdfDoc\.embedFont') {
     throw 'pdf-lib adapter must embed fonts for text overlay edits.'
+}
+
+if ($officialPdfLibAdapter -notmatch 'drawEllipse' -or $officialPdfLibAdapter -notmatch 'drawLine') {
+    throw 'pdf-lib adapter must persist ellipse and line overlay edits.'
 }
 
 if ($officialViewerScript -notmatch 'defaultOptions\.defaultUrl\s*=\s*\{[\s\S]*?value:\s*""') {
@@ -103,6 +143,26 @@ if ($mainWindow -notmatch 'Navigate\(\$"https://\{ViewerHost\}/web/viewer\.html"
 
 if ($mainWindow -notmatch '/web/ServedPdf/') {
     throw 'Served PDFs must be exposed under the official viewer web root.'
+}
+
+if ($mainWindow -notmatch 'CollectEditorStateAsync') {
+    throw 'MainWindow must collect editor overlay state before saving.'
+}
+
+if ($mainWindow -notmatch 'ExportOverlayPdfAsync') {
+    throw 'MainWindow must export overlay edits through pdf-lib before saving.'
+}
+
+if ($mainWindow -notmatch 'WindowsFontService\.ReadFontBase64') {
+    throw 'MainWindow must embed only the Windows fonts used by overlay text edits.'
+}
+
+if ($fontService -notmatch 'CurrentVersion\\Fonts') {
+    throw 'WindowsFontService must read installed Windows fonts from the registry.'
+}
+
+if ($fontService -notmatch 'Convert\.ToBase64String\(File\.ReadAllBytes') {
+    throw 'WindowsFontService must provide font bytes for pdf-lib embedding.'
 }
 
 if ($project -notmatch 'Assets\\PdfViewerOfficial\\\*\*\\\*') {
