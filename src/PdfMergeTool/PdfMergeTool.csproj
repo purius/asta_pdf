@@ -7,10 +7,10 @@
     <ImplicitUsings>enable</ImplicitUsings>
     <AssemblyName>PdfMergeTool</AssemblyName>
     <RootNamespace>PdfMergeTool</RootNamespace>
-    <Version>1.0.84</Version>
-    <AssemblyVersion>1.0.84.0</AssemblyVersion>
-    <FileVersion>1.0.84.0</FileVersion>
-    <InformationalVersion>1.0.84</InformationalVersion>
+    <Version>1.0.85</Version>
+    <AssemblyVersion>1.0.85.0</AssemblyVersion>
+    <FileVersion>1.0.85.0</FileVersion>
+    <InformationalVersion>1.0.85</InformationalVersion>
     <ApplicationIcon>Assets\AppIcon.ico</ApplicationIcon>
     <SatelliteResourceLanguages>ko</SatelliteResourceLanguages>
   </PropertyGroup>

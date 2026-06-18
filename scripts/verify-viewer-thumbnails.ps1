@@ -151,6 +151,12 @@ if ($officialAdapter -notmatch 'explicitNavigationSettledUntil' -or
     throw 'official viewer adapter must keep suppressing stale pagechanging events briefly after accepting an explicit navigation target.'
 }
 
+if ($officialAdapter -notmatch 'function resetExplicitNavigationTracking\(\)' -or
+    $officialAdapter -notmatch 'resetExplicitNavigationTracking\(\);[\s\S]*?window\.EditorAdapter\?\.clear\?\.\(\);' -or
+    $officialAdapter -notmatch 'function rebuildPageOrder\([\s\S]*?resetExplicitNavigationTracking\(\);') {
+    throw 'official viewer adapter must clear stale explicit navigation guards when loading or rebuilding a document.'
+}
+
 if ($officialAdapter -notmatch 'captureExplicitNavigationIntent' -or
     $officialAdapter -notmatch '#thumbnailsView|#thumbnailView' -or
     $officialAdapter -notmatch 'page-number') {

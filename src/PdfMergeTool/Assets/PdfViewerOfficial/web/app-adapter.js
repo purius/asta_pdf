@@ -26,7 +26,15 @@ const AppBridge = (() => {
     return getApp()?.pagesCount ?? getApp()?.pdfDocument?.numPages ?? 0;
   }
 
+  function resetExplicitNavigationTracking() {
+    explicitNavigationTarget = null;
+    explicitNavigationExpiresAt = 0;
+    explicitNavigationSettledUntil = 0;
+    lastAcceptedExplicitNavigationPage = null;
+  }
+
   function rebuildPageOrder(totalPages = getTotalPages()) {
+    resetExplicitNavigationTracking();
     pageOrder = Array.from({ length: totalPages }, (_, index) => index + 1);
     pageRotations = {};
     selectedPages = new Set(pageOrder.length > 0 ? [pageOrder[0]] : []);
@@ -58,6 +66,7 @@ const AppBridge = (() => {
     const app = await waitForApplication();
     firstPageRendered = false;
     pageStateDirty = false;
+    resetExplicitNavigationTracking();
     window.EditorAdapter?.clear?.();
 
     let args;
