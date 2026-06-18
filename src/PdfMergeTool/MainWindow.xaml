@@ -586,6 +586,21 @@
                                         Click="OnEditorSignatureClick">
                                     <TextBlock Text="Sign" />
                                 </Button>
+                                <Button Style="{StaticResource ToolbarTextButtonStyle}"
+                                        ToolTip="Copy selected editor object"
+                                        Click="OnEditorCopySelectionClick">
+                                    <TextBlock Text="Copy" />
+                                </Button>
+                                <Button Style="{StaticResource ToolbarTextButtonStyle}"
+                                        ToolTip="Paste copied editor object"
+                                        Click="OnEditorPasteSelectionClick">
+                                    <TextBlock Text="Paste" />
+                                </Button>
+                                <Button Style="{StaticResource ToolbarTextButtonStyle}"
+                                        ToolTip="Duplicate selected editor object"
+                                        Click="OnEditorDuplicateSelectionClick">
+                                    <TextBlock Text="Duplicate" />
+                                </Button>
                             </StackPanel>
                         </Border>
 

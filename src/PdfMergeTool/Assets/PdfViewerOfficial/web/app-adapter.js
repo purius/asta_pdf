@@ -257,6 +257,15 @@ const AppBridge = (() => {
       case "editorDeleteSelection":
         window.EditorAdapter?.deleteSelected?.();
         break;
+      case "editorCopySelection":
+        window.EditorAdapter?.copySelected?.();
+        break;
+      case "editorPasteSelection":
+        window.EditorAdapter?.pasteCopiedEdit?.();
+        break;
+      case "editorDuplicateSelection":
+        window.EditorAdapter?.duplicateSelected?.();
+        break;
       case "markClean":
         pageStateDirty = false;
         window.EditorAdapter?.markClean?.();

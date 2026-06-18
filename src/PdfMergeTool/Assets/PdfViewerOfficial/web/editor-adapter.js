@@ -14,6 +14,7 @@
   let toolbar;
   let historyStack = [];
   let redoStack = [];
+  let copiedEdit = null;
 
   function postMessage(message) {
     window.chrome?.webview?.postMessage(message);
@@ -76,6 +77,10 @@
 
   function getPageNumber(pageElement) {
     return Number(pageElement?.dataset?.pageNumber) || 1;
+  }
+
+  function getCurrentPageNumber() {
+    return Number(getApp()?.pdfViewer?.currentPageNumber) || 1;
   }
 
   function ensureStyle() {
@@ -273,6 +278,9 @@
       <span class="asta-editor-toolbar-separator"></span>
       <input data-role="strokeWidth" type="number" min="1" max="24" value="2" title="Line or border width" />
       <input data-role="fillColor" type="color" value="#ffffff" title="Fill color" />
+      <button type="button" data-action="copy" title="Copy selected">Copy</button>
+      <button type="button" data-action="paste" title="Paste copied">Paste</button>
+      <button type="button" data-action="duplicate" title="Duplicate selected">Duplicate</button>
       <button type="button" data-action="delete" title="Delete selected">Delete</button>
     `;
     document.body.appendChild(toolbar);
@@ -281,6 +289,12 @@
       if (!button) return;
       if (button.dataset.mode) {
         setMode(button.dataset.mode);
+      } else if (button.dataset.action === "copy") {
+        copySelected();
+      } else if (button.dataset.action === "paste") {
+        pasteCopiedEdit();
+      } else if (button.dataset.action === "duplicate") {
+        duplicateSelected();
       } else if (button.dataset.action === "delete") {
         deleteSelected();
       }
@@ -1249,6 +1263,49 @@
     postDirty();
   }
 
+  function copySelected() {
+    const edit = state.edits.find(item => item.id === state.selectedId);
+    if (!edit) return false;
+    copiedEdit = JSON.parse(JSON.stringify(edit));
+    return true;
+  }
+
+  function createPastedEdit(sourceEdit, targetPage = null) {
+    const edit = JSON.parse(JSON.stringify(sourceEdit));
+    const offset = 18;
+    edit.id = `edit-${nextEditId++}`;
+    edit.page = Math.max(1, Number(targetPage || sourceEdit.page || getCurrentPageNumber()) || 1);
+    if (Array.isArray(edit.points)) {
+      edit.points = edit.points.map(point => ({
+        x: Math.max(0, (Number(point.x) || 0) + offset),
+        y: Math.max(0, (Number(point.y) || 0) + offset)
+      }));
+    } else {
+      edit.x = Math.max(0, (Number(edit.x) || 0) + offset);
+      edit.y = Math.max(0, (Number(edit.y) || 0) + offset);
+    }
+    return edit;
+  }
+
+  function pasteCopiedEdit(targetPage = null) {
+    if (!copiedEdit) return false;
+    recordHistory();
+    const edit = createPastedEdit(copiedEdit, targetPage || getCurrentPageNumber());
+    state.edits.push(edit);
+    renderEdit(edit);
+    selectEdit(edit.id);
+    state.dirty = true;
+    postDirty();
+    return true;
+  }
+
+  function duplicateSelected() {
+    const edit = state.edits.find(item => item.id === state.selectedId);
+    if (!edit) return false;
+    copiedEdit = JSON.parse(JSON.stringify(edit));
+    return pasteCopiedEdit(edit.page);
+  }
+
   function undo() {
     if (historyStack.length === 0) return false;
     redoStack.push(snapshotEdits());
@@ -1428,6 +1485,18 @@
     });
     window.addEventListener("keydown", event => {
       if (event.target?.closest?.(".asta-editor-text-content")?.isContentEditable) return;
+      if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === "c" && state.selectedId) {
+        if (copySelected()) event.preventDefault();
+        return;
+      }
+      if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === "v") {
+        if (pasteCopiedEdit()) event.preventDefault();
+        return;
+      }
+      if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === "d") {
+        if (duplicateSelected()) event.preventDefault();
+        return;
+      }
       if (event.key === "Delete") {
         deleteSelected();
       }
@@ -1441,6 +1510,9 @@
     clear,
     markClean,
     deleteSelected,
+    copySelected,
+    pasteCopiedEdit,
+    duplicateSelected,
     undo,
     redo,
     hasDirtyEdits: () => state.dirty,

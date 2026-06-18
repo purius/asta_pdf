@@ -2260,6 +2260,12 @@ public partial class MainWindow : Window
 
     private void OnEditorSignatureClick(object sender, RoutedEventArgs e) => SendViewerCommand("editorSignature");
 
+    private void OnEditorCopySelectionClick(object sender, RoutedEventArgs e) => SendViewerCommand("editorCopySelection");
+
+    private void OnEditorPasteSelectionClick(object sender, RoutedEventArgs e) => SendViewerCommand("editorPasteSelection");
+
+    private void OnEditorDuplicateSelectionClick(object sender, RoutedEventArgs e) => SendViewerCommand("editorDuplicateSelection");
+
     private async void OnCopySelectedPagesClick(object sender, RoutedEventArgs e) => await CopySelectedPagesToClipboardAsync(cut: false);
 
     private async void OnCutSelectedPagesClick(object sender, RoutedEventArgs e) => await CopySelectedPagesToClipboardAsync(cut: true);
