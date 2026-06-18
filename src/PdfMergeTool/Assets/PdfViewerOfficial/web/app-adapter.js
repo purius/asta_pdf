@@ -7,6 +7,8 @@ const AppBridge = (() => {
   let thumbnailScale = 1;
   let explicitNavigationTarget = null;
   let explicitNavigationExpiresAt = 0;
+  let explicitNavigationSettledUntil = 0;
+  let lastAcceptedExplicitNavigationPage = null;
 
   function postMessage(message) {
     window.chrome?.webview?.postMessage(message);
@@ -177,9 +179,19 @@ const AppBridge = (() => {
   function beginExplicitPageNavigation(pageNumber) {
     explicitNavigationTarget = Number(pageNumber) || null;
     explicitNavigationExpiresAt = Date.now() + 900;
+    explicitNavigationSettledUntil = 0;
+    lastAcceptedExplicitNavigationPage = null;
   }
 
   function shouldAcceptPageChange(pageNumber) {
+    if (
+      lastAcceptedExplicitNavigationPage &&
+      Date.now() <= explicitNavigationSettledUntil &&
+      Number(pageNumber) !== lastAcceptedExplicitNavigationPage
+    ) {
+      return false;
+    }
+
     if (!explicitNavigationTarget) {
       return true;
     }
@@ -187,10 +199,14 @@ const AppBridge = (() => {
     if (Date.now() > explicitNavigationExpiresAt) {
       explicitNavigationTarget = null;
       explicitNavigationExpiresAt = 0;
+      explicitNavigationSettledUntil = 0;
+      lastAcceptedExplicitNavigationPage = null;
       return true;
     }
 
     if (Number(pageNumber) === explicitNavigationTarget) {
+      lastAcceptedExplicitNavigationPage = Number(pageNumber);
+      explicitNavigationSettledUntil = Date.now() + 450;
       explicitNavigationTarget = null;
       explicitNavigationExpiresAt = 0;
       return true;

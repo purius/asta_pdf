@@ -142,6 +142,15 @@ if ($officialAdapter -notmatch 'function beginExplicitPageNavigation\(' -or
     throw 'official viewer adapter must ignore transient pagechanging events that do not match the latest explicit navigation target.'
 }
 
+if ($officialAdapter -notmatch 'explicitNavigationSettledUntil' -or
+    $officialAdapter -notmatch 'lastAcceptedExplicitNavigationPage' -or
+    $officialAdapter -notmatch 'lastAcceptedExplicitNavigationPage = Number\(pageNumber\);' -or
+    $officialAdapter -notmatch 'explicitNavigationSettledUntil = Date\.now\(\) \+ 450;' -or
+    $officialAdapter -notmatch 'Date\.now\(\) <= explicitNavigationSettledUntil' -or
+    $officialAdapter -notmatch 'Number\(pageNumber\) !== lastAcceptedExplicitNavigationPage') {
+    throw 'official viewer adapter must keep suppressing stale pagechanging events briefly after accepting an explicit navigation target.'
+}
+
 if ($officialAdapter -notmatch 'captureExplicitNavigationIntent' -or
     $officialAdapter -notmatch '#thumbnailsView|#thumbnailView' -or
     $officialAdapter -notmatch 'page-number') {
