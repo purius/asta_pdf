@@ -113,6 +113,35 @@ const AppBridge = (() => {
     thumbnailsView?.style.setProperty("--thumbnail-width", `${Math.round(126 * thumbnailScale)}px`);
   }
 
+  function ensureDropIndicatorStyle() {
+    if (document.getElementById("asta-drop-indicator-style")) {
+      return;
+    }
+
+    const style = document.createElement("style");
+    style.id = "asta-drop-indicator-style";
+    style.textContent = `
+      #thumbnailsView .thumbnail.asta-drop-target::before,
+      #thumbnailsView .thumbnail.asta-drop-target::after {
+        content: "";
+        position: absolute;
+        top: 6px;
+        bottom: 6px;
+        width: 3px;
+        border-radius: 2px;
+        background: #2563eb;
+        box-shadow: 0 0 0 2px rgba(37, 99, 235, 0.18);
+      }
+      #thumbnailsView .thumbnail.asta-drop-before::before {
+        left: 2px;
+      }
+      #thumbnailsView .thumbnail.asta-drop-after::after {
+        right: 2px;
+      }
+    `;
+    document.head.appendChild(style);
+  }
+
   function beginExplicitPageNavigation(pageNumber) {
     explicitNavigationTarget = Number(pageNumber) || null;
     explicitNavigationExpiresAt = Date.now() + 900;
@@ -154,6 +183,81 @@ const AppBridge = (() => {
     if (targetPage) {
       beginExplicitPageNavigation(targetPage);
     }
+  }
+
+  function getThumbnailFromPoint(clientX, clientY) {
+    return document
+      .elementFromPoint(clientX, clientY)
+      ?.closest?.("#thumbnailsView .thumbnail[page-number]") ?? null;
+  }
+
+  function getDropInsertionIndex(clientX, clientY) {
+    const thumbnail = getThumbnailFromPoint(clientX, clientY);
+    if (!thumbnail) {
+      return pageOrder.length;
+    }
+
+    const targetPage = Number(thumbnail.getAttribute("page-number"));
+    const targetIndex = pageOrder.indexOf(targetPage);
+    if (targetIndex < 0) {
+      return pageOrder.length;
+    }
+
+    const rect = thumbnail.getBoundingClientRect();
+    return clientX < rect.left + rect.width / 2 ? targetIndex : targetIndex + 1;
+  }
+
+  function clearDropIndicators() {
+    document.querySelectorAll("#thumbnailsView .thumbnail.asta-drop-target").forEach(thumbnail => {
+      thumbnail.classList.remove("asta-drop-target", "asta-drop-before", "asta-drop-after");
+    });
+  }
+
+  function updateNativeDropIndicator(clientX, clientY) {
+    ensureDropIndicatorStyle();
+    clearDropIndicators();
+
+    const thumbnail = getThumbnailFromPoint(clientX, clientY);
+    if (!thumbnail) {
+      return;
+    }
+
+    const rect = thumbnail.getBoundingClientRect();
+    const placement = clientX < rect.left + rect.width / 2 ? "asta-drop-before" : "asta-drop-after";
+    thumbnail.classList.add("asta-drop-target", placement);
+  }
+
+  function handleNativePageTransferDrop(data) {
+    clearDropIndicators();
+    const raw = data.payload;
+    if (!raw) {
+      return;
+    }
+
+    try {
+      const payload = typeof raw === "string" ? JSON.parse(raw) : raw;
+      postMessage({
+        type: "insertExternalPages",
+        sourcePath: payload.sourcePath,
+        pages: Array.isArray(payload.pages) ? payload.pages : [],
+        insertionIndex: getDropInsertionIndex(data.clientX, data.clientY)
+      });
+    } catch (error) {
+      postDiagnostic("error", error?.message ?? "Dropped page data could not be read.");
+    }
+  }
+
+  function handleNativeFileDrop(data) {
+    clearDropIndicators();
+    if (!Array.isArray(data.paths) || data.paths.length === 0) {
+      return;
+    }
+
+    postMessage({
+      type: "insertExternalFiles",
+      paths: data.paths,
+      insertionIndex: getDropInsertionIndex(data.clientX, data.clientY)
+    });
   }
 
   function applyPageStatePresentation() {
@@ -359,6 +463,14 @@ const AppBridge = (() => {
         window.EditorAdapter?.collectState?.(data.requestId ?? null);
       } else if (data.type === "exportOverlayPdf") {
         await exportOverlayPdf(data);
+      } else if (data.type === "nativePageTransferDragOver" || data.type === "nativeFileDragOver") {
+        updateNativeDropIndicator(data.clientX, data.clientY);
+      } else if (data.type === "nativePageTransferDragLeave") {
+        clearDropIndicators();
+      } else if (data.type === "nativePageTransferDrop") {
+        handleNativePageTransferDrop(data);
+      } else if (data.type === "nativeFileDrop") {
+        handleNativeFileDrop(data);
       }
     } catch (error) {
       postDiagnostic("error", error?.message ?? String(error), { type: data.type });

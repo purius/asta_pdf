@@ -148,6 +148,18 @@ if ($officialAdapter -notmatch 'captureExplicitNavigationIntent' -or
     throw 'official viewer adapter must capture rapid thumbnail clicks as explicit navigation targets.'
 }
 
+if ($officialAdapter -notmatch 'nativePageTransferDragOver' -or
+    $officialAdapter -notmatch 'nativePageTransferDrop' -or
+    $officialAdapter -notmatch 'nativeFileDragOver' -or
+    $officialAdapter -notmatch 'nativeFileDrop') {
+    throw 'official viewer adapter must preserve native page and file drag/drop insertion messages from WPF.'
+}
+
+if ($officialAdapter -notmatch 'type:\s*"insertExternalPages"[\s\S]*?insertionIndex' -or
+    $officialAdapter -notmatch 'type:\s*"insertExternalFiles"[\s\S]*?paths[\s\S]*?insertionIndex') {
+    throw 'official viewer adapter must translate native drops into existing WPF insertion messages with an insertion index.'
+}
+
 if ($officialEditorAdapter -notmatch 'type:\s*"editorStateChanged"') {
     throw 'editor adapter must notify WPF when overlay edits make the document dirty.'
 }
