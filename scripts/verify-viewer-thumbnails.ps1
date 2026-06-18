@@ -14,9 +14,11 @@ $officialBuildPath = Join-Path $root 'src\PdfMergeTool\Assets\PdfViewerOfficial\
 $overlayGeometryVerificationPath = Join-Path $root 'scripts\verify-overlay-geometry.ps1'
 $overlayExportVerificationPath = Join-Path $root 'scripts\verify-pdf-lib-overlay-export.ps1'
 $mainWindowPath = Join-Path $root 'src\PdfMergeTool\MainWindow.xaml.cs'
+$mainWindowXamlPath = Join-Path $root 'src\PdfMergeTool\MainWindow.xaml'
 $projectPath = Join-Path $root 'src\PdfMergeTool\PdfMergeTool.csproj'
 $fontServicePath = Join-Path $root 'src\PdfMergeTool\Services\WindowsFontService.cs'
 $mainWindow = Get-Content -Raw $mainWindowPath
+$mainWindowXaml = Get-Content -Raw $mainWindowXamlPath
 $project = Get-Content -Raw $projectPath
 
 if (-not (Test-Path $officialViewerPath)) {
@@ -262,6 +264,21 @@ if ($officialEditorAdapter -notmatch 'type:\s*"editorStateCollected"') {
 
 if ($officialEditorAdapter -notmatch 'astaEditorToolbar') {
     throw 'editor adapter must expose in-viewer text and shape editing controls.'
+}
+
+if ($officialEditorAdapter -notmatch 'data-action="toggleTools"' -or
+    $officialEditorAdapter -notmatch 'asta-editor-tool-panel' -or
+    $officialEditorAdapter -notmatch '#astaEditorToolbar\.expanded \.asta-editor-tool-panel' -or
+    $officialEditorAdapter -notmatch 'max-height:\s*min\(70vh, 520px\)' -or
+    $officialEditorAdapter -notmatch 'aria-expanded') {
+    throw 'editor adapter toolbar must be collapsed into a compact menu so it does not cover the PDF page by default.'
+}
+
+if ($mainWindowXaml -notmatch 'Header="Edit Tools"' -or
+    $mainWindowXaml -notmatch 'MenuItem Header="Text"[\s\S]*?Click="OnEditorTextClick"' -or
+    $mainWindowXaml -notmatch 'MenuItem Header="Back"[\s\S]*?Click="OnEditorSendToBackClick"' -or
+    $mainWindowXaml -match '<TextBlock Text="Text" />') {
+    throw 'MainWindow editor commands must be compressed into a single toolbar menu instead of a long top button row.'
 }
 
 if ($officialEditorAdapter -notmatch 'data-mode="ellipse"' -or $officialEditorAdapter -notmatch 'data-mode="line"') {

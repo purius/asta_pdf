@@ -525,118 +525,61 @@
                         </Border>
 
                         <Border Style="{StaticResource ToolbarGroupStyle}">
-                            <StackPanel Orientation="Horizontal">
-                                <Button Style="{StaticResource ToolbarTextButtonStyle}"
-                                        ToolTip="텍스트 추가"
-                                        Click="OnEditorTextClick">
-                                    <TextBlock Text="Text" />
-                                </Button>
-                                <Button Style="{StaticResource ToolbarTextButtonStyle}"
-                                        ToolTip="기존 텍스트 시각 교체"
-                                        Click="OnEditorReplaceTextClick">
-                                    <TextBlock Text="Replace" />
-                                </Button>
-                                <Button Style="{StaticResource ToolbarTextButtonStyle}"
-                                        ToolTip="흰색 영역 덮기"
-                                        Click="OnEditorWhiteoutClick">
-                                    <TextBlock Text="Whiteout" />
-                                </Button>
-                                <Button Style="{StaticResource ToolbarTextButtonStyle}"
-                                        ToolTip="선택 텍스트 또는 영역 검정 처리"
-                                        Click="OnEditorRedactClick">
-                                    <TextBlock Text="Redact" />
-                                </Button>
-                                <Button Style="{StaticResource ToolbarTextButtonStyle}"
-                                        ToolTip="선택 PDF 텍스트 밑줄"
-                                        Click="OnEditorUnderlineClick">
-                                    <TextBlock Text="Underline" />
-                                </Button>
-                                <Button Style="{StaticResource ToolbarTextButtonStyle}"
-                                        ToolTip="선택 PDF 텍스트 취소선"
-                                        Click="OnEditorStrikeoutClick">
-                                    <TextBlock Text="Strike" />
-                                </Button>
-                                <Button Style="{StaticResource ToolbarTextButtonStyle}"
-                                        ToolTip="사각형 추가"
-                                        Click="OnEditorRectangleClick">
-                                    <TextBlock Text="Rect" />
-                                </Button>
-                                <Button Style="{StaticResource ToolbarTextButtonStyle}"
-                                        ToolTip="타원 추가"
-                                        Click="OnEditorEllipseClick">
-                                    <TextBlock Text="Ellipse" />
-                                </Button>
-                                <Button Style="{StaticResource ToolbarTextButtonStyle}"
-                                        ToolTip="선 추가"
-                                        Click="OnEditorLineClick">
-                                    <TextBlock Text="Line" />
-                                </Button>
-                                <Button Style="{StaticResource ToolbarTextButtonStyle}"
-                                        ToolTip="화살표 추가"
-                                        Click="OnEditorArrowClick">
-                                    <TextBlock Text="Arrow" />
-                                </Button>
-                                <Button Style="{StaticResource ToolbarTextButtonStyle}"
-                                        ToolTip="펜 그리기"
-                                        Click="OnEditorPenClick">
-                                    <TextBlock Text="Pen" />
-                                </Button>
-                                <Button Style="{StaticResource ToolbarTextButtonStyle}"
-                                        ToolTip="형광펜 표시"
-                                        Click="OnEditorHighlightClick">
-                                    <TextBlock Text="Highlight" />
-                                </Button>
-                                <Button Style="{StaticResource ToolbarTextButtonStyle}"
-                                        ToolTip="이미지 추가"
-                                        Click="OnEditorImageClick">
-                                    <TextBlock Text="Image" />
-                                </Button>
-                                <Button Style="{StaticResource ToolbarTextButtonStyle}"
-                                        ToolTip="스탬프 추가"
-                                        Click="OnEditorStampClick">
-                                    <TextBlock Text="Stamp" />
-                                </Button>
-                                <Button Style="{StaticResource ToolbarTextButtonStyle}"
-                                        ToolTip="서명 이미지 추가"
-                                        Click="OnEditorSignatureClick">
-                                    <TextBlock Text="Sign" />
-                                </Button>
-                                <Button Style="{StaticResource ToolbarTextButtonStyle}"
-                                        ToolTip="Copy selected editor object"
-                                        Click="OnEditorCopySelectionClick">
-                                    <TextBlock Text="Copy" />
-                                </Button>
-                                <Button Style="{StaticResource ToolbarTextButtonStyle}"
-                                        ToolTip="Paste copied editor object"
-                                        Click="OnEditorPasteSelectionClick">
-                                    <TextBlock Text="Paste" />
-                                </Button>
-                                <Button Style="{StaticResource ToolbarTextButtonStyle}"
-                                        ToolTip="Duplicate selected editor object"
-                                        Click="OnEditorDuplicateSelectionClick">
-                                    <TextBlock Text="Duplicate" />
-                                </Button>
-                                <Button Style="{StaticResource ToolbarTextButtonStyle}"
-                                        ToolTip="Bring selected editor object forward"
-                                        Click="OnEditorBringForwardClick">
-                                    <TextBlock Text="Forward" />
-                                </Button>
-                                <Button Style="{StaticResource ToolbarTextButtonStyle}"
-                                        ToolTip="Send selected editor object backward"
-                                        Click="OnEditorSendBackwardClick">
-                                    <TextBlock Text="Backward" />
-                                </Button>
-                                <Button Style="{StaticResource ToolbarTextButtonStyle}"
-                                        ToolTip="Bring selected editor object to front"
-                                        Click="OnEditorBringToFrontClick">
-                                    <TextBlock Text="Front" />
-                                </Button>
-                                <Button Style="{StaticResource ToolbarTextButtonStyle}"
-                                        ToolTip="Send selected editor object to back"
-                                        Click="OnEditorSendToBackClick">
-                                    <TextBlock Text="Back" />
-                                </Button>
-                            </StackPanel>
+                            <Menu Background="Transparent"
+                                  BorderThickness="0"
+                                  Padding="0">
+                                <MenuItem Header="Edit Tools">
+                                    <MenuItem Header="Text"
+                                              Click="OnEditorTextClick" />
+                                    <MenuItem Header="Replace"
+                                              Click="OnEditorReplaceTextClick" />
+                                    <MenuItem Header="Whiteout"
+                                              Click="OnEditorWhiteoutClick" />
+                                    <MenuItem Header="Redact"
+                                              Click="OnEditorRedactClick" />
+                                    <Separator />
+                                    <MenuItem Header="Underline"
+                                              Click="OnEditorUnderlineClick" />
+                                    <MenuItem Header="Strike"
+                                              Click="OnEditorStrikeoutClick" />
+                                    <Separator />
+                                    <MenuItem Header="Rect"
+                                              Click="OnEditorRectangleClick" />
+                                    <MenuItem Header="Ellipse"
+                                              Click="OnEditorEllipseClick" />
+                                    <MenuItem Header="Line"
+                                              Click="OnEditorLineClick" />
+                                    <MenuItem Header="Arrow"
+                                              Click="OnEditorArrowClick" />
+                                    <MenuItem Header="Pen"
+                                              Click="OnEditorPenClick" />
+                                    <MenuItem Header="Highlight"
+                                              Click="OnEditorHighlightClick" />
+                                    <Separator />
+                                    <MenuItem Header="Image"
+                                              Click="OnEditorImageClick" />
+                                    <MenuItem Header="Stamp"
+                                              Click="OnEditorStampClick" />
+                                    <MenuItem Header="Sign"
+                                              Click="OnEditorSignatureClick" />
+                                    <Separator />
+                                    <MenuItem Header="Copy"
+                                              Click="OnEditorCopySelectionClick" />
+                                    <MenuItem Header="Paste"
+                                              Click="OnEditorPasteSelectionClick" />
+                                    <MenuItem Header="Duplicate"
+                                              Click="OnEditorDuplicateSelectionClick" />
+                                    <Separator />
+                                    <MenuItem Header="Forward"
+                                              Click="OnEditorBringForwardClick" />
+                                    <MenuItem Header="Backward"
+                                              Click="OnEditorSendBackwardClick" />
+                                    <MenuItem Header="Front"
+                                              Click="OnEditorBringToFrontClick" />
+                                    <MenuItem Header="Back"
+                                              Click="OnEditorSendToBackClick" />
+                                </MenuItem>
+                            </Menu>
                         </Border>
 
                         <Border Style="{StaticResource ToolbarGroupStyle}">

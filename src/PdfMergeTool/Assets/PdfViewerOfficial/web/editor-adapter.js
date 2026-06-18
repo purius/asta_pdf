@@ -93,15 +93,38 @@
         z-index: 10000;
         right: 18px;
         top: 56px;
-        display: flex;
+        display: block;
+        font: 12px system-ui, sans-serif;
+      }
+      #astaEditorToolbar .asta-editor-tool-toggle {
+        height: 30px;
+        border: 1px solid #cbd5e1;
+        border-radius: 6px;
+        background: #ffffff;
+        color: #0f172a;
+        padding: 0 10px;
+        box-shadow: 0 6px 18px rgba(15, 23, 42, 0.14);
+        cursor: pointer;
+      }
+      #astaEditorToolbar .asta-editor-tool-panel {
+        position: absolute;
+        top: 36px;
+        right: 0;
+        display: none;
         align-items: center;
         gap: 6px;
-        padding: 6px;
+        flex-wrap: wrap;
+        width: min(760px, calc(100vw - 40px));
+        max-height: min(70vh, 520px);
+        overflow: auto;
+        padding: 8px;
         border: 1px solid #cbd5e1;
         border-radius: 8px;
         background: #ffffff;
         box-shadow: 0 10px 30px rgba(15, 23, 42, 0.18);
-        font: 12px system-ui, sans-serif;
+      }
+      #astaEditorToolbar.expanded .asta-editor-tool-panel {
+        display: flex;
       }
       #astaEditorToolbar button {
         height: 28px;
@@ -259,61 +282,75 @@
     toolbar = document.createElement("div");
     toolbar.id = "astaEditorToolbar";
     toolbar.innerHTML = `
-      <button type="button" data-mode="select" title="Select">Select</button>
-      <button type="button" data-mode="text" title="Add text">Text</button>
-      <button type="button" data-mode="replaceText" title="Replace existing text">Replace</button>
-      <button type="button" data-mode="whiteout" title="Cover an area with white">Whiteout</button>
-      <button type="button" data-mode="redact" title="Cover an area with black redaction">Redact</button>
-      <button type="button" data-mode="rectangle" title="Add rectangle">Rect</button>
-      <button type="button" data-mode="ellipse" title="Add ellipse">Ellipse</button>
-      <button type="button" data-mode="line" title="Add line">Line</button>
-      <button type="button" data-mode="arrow" title="Add arrow">Arrow</button>
-      <button type="button" data-mode="pen" title="Draw freehand pen">Pen</button>
-      <button type="button" data-mode="highlight" title="Draw highlight">Highlight</button>
-      <button type="button" data-mode="underline" title="Underline selected text">Underline</button>
-      <button type="button" data-mode="strikeout" title="Strike out selected text">Strike</button>
-      <button type="button" data-mode="image" title="Add image">Image</button>
-      <button type="button" data-mode="stamp" title="Add stamp">Stamp</button>
-      <button type="button" data-mode="signature" title="Add signature image">Sign</button>
-      <select data-role="font" title="Font"></select>
-      <input data-role="size" type="number" min="6" max="96" value="14" title="Text size" />
-      <input data-role="color" type="color" value="#111827" title="Color" />
-      <span class="asta-editor-toolbar-separator"></span>
-      <input data-role="strokeWidth" type="number" min="1" max="24" value="2" title="Line or border width" />
-      <input data-role="fillColor" type="color" value="#ffffff" title="Fill color" />
-      <input data-role="opacity" type="number" min="5" max="100" step="5" value="100" title="Opacity percent" />
-      <input data-role="rotation" type="number" min="-180" max="180" step="5" value="0" title="Rotation degrees" />
-      <button type="button" data-action="copy" title="Copy selected">Copy</button>
-      <button type="button" data-action="paste" title="Paste copied">Paste</button>
-      <button type="button" data-action="duplicate" title="Duplicate selected">Duplicate</button>
-      <button type="button" data-action="bringForward" title="Bring selected forward">Forward</button>
-      <button type="button" data-action="sendBackward" title="Send selected backward">Backward</button>
-      <button type="button" data-action="bringToFront" title="Bring selected to front">Front</button>
-      <button type="button" data-action="sendToBack" title="Send selected to back">Back</button>
-      <button type="button" data-action="delete" title="Delete selected">Delete</button>
+      <button type="button" class="asta-editor-tool-toggle" data-action="toggleTools" aria-expanded="false" title="Show editor tools">Edit Tools</button>
+      <div class="asta-editor-tool-panel" role="menu" aria-label="Editor tools">
+        <button type="button" data-mode="select" title="Select">Select</button>
+        <button type="button" data-mode="text" title="Add text">Text</button>
+        <button type="button" data-mode="replaceText" title="Replace existing text">Replace</button>
+        <button type="button" data-mode="whiteout" title="Cover an area with white">Whiteout</button>
+        <button type="button" data-mode="redact" title="Cover an area with black redaction">Redact</button>
+        <button type="button" data-mode="rectangle" title="Add rectangle">Rect</button>
+        <button type="button" data-mode="ellipse" title="Add ellipse">Ellipse</button>
+        <button type="button" data-mode="line" title="Add line">Line</button>
+        <button type="button" data-mode="arrow" title="Add arrow">Arrow</button>
+        <button type="button" data-mode="pen" title="Draw freehand pen">Pen</button>
+        <button type="button" data-mode="highlight" title="Draw highlight">Highlight</button>
+        <button type="button" data-mode="underline" title="Underline selected text">Underline</button>
+        <button type="button" data-mode="strikeout" title="Strike out selected text">Strike</button>
+        <button type="button" data-mode="image" title="Add image">Image</button>
+        <button type="button" data-mode="stamp" title="Add stamp">Stamp</button>
+        <button type="button" data-mode="signature" title="Add signature image">Sign</button>
+        <select data-role="font" title="Font"></select>
+        <input data-role="size" type="number" min="6" max="96" value="14" title="Text size" />
+        <input data-role="color" type="color" value="#111827" title="Color" />
+        <span class="asta-editor-toolbar-separator"></span>
+        <input data-role="strokeWidth" type="number" min="1" max="24" value="2" title="Line or border width" />
+        <input data-role="fillColor" type="color" value="#ffffff" title="Fill color" />
+        <input data-role="opacity" type="number" min="5" max="100" step="5" value="100" title="Opacity percent" />
+        <input data-role="rotation" type="number" min="-180" max="180" step="5" value="0" title="Rotation degrees" />
+        <button type="button" data-action="copy" title="Copy selected">Copy</button>
+        <button type="button" data-action="paste" title="Paste copied">Paste</button>
+        <button type="button" data-action="duplicate" title="Duplicate selected">Duplicate</button>
+        <button type="button" data-action="bringForward" title="Bring selected forward">Forward</button>
+        <button type="button" data-action="sendBackward" title="Send selected backward">Backward</button>
+        <button type="button" data-action="bringToFront" title="Bring selected to front">Front</button>
+        <button type="button" data-action="sendToBack" title="Send selected to back">Back</button>
+        <button type="button" data-action="delete" title="Delete selected">Delete</button>
+      </div>
     `;
     document.body.appendChild(toolbar);
     toolbar.addEventListener("click", event => {
       const button = event.target.closest("button");
       if (!button) return;
-      if (button.dataset.mode) {
+      if (button.dataset.action === "toggleTools") {
+        setToolbarExpanded(!toolbar.classList.contains("expanded"));
+      } else if (button.dataset.mode) {
         setMode(button.dataset.mode);
+        setToolbarExpanded(false);
       } else if (button.dataset.action === "copy") {
         copySelected();
+        setToolbarExpanded(false);
       } else if (button.dataset.action === "paste") {
         pasteCopiedEdit();
+        setToolbarExpanded(false);
       } else if (button.dataset.action === "duplicate") {
         duplicateSelected();
+        setToolbarExpanded(false);
       } else if (button.dataset.action === "bringForward") {
         changeSelectedLayerOrder("forward");
+        setToolbarExpanded(false);
       } else if (button.dataset.action === "sendBackward") {
         changeSelectedLayerOrder("backward");
+        setToolbarExpanded(false);
       } else if (button.dataset.action === "bringToFront") {
         changeSelectedLayerOrder("front");
+        setToolbarExpanded(false);
       } else if (button.dataset.action === "sendToBack") {
         changeSelectedLayerOrder("back");
+        setToolbarExpanded(false);
       } else if (button.dataset.action === "delete") {
         deleteSelected();
+        setToolbarExpanded(false);
       }
     });
     bindToolbarPropertyInput("font", event => {
@@ -342,6 +379,11 @@
     });
     setFonts([]);
     setMode("select");
+  }
+
+  function setToolbarExpanded(expanded) {
+    toolbar?.classList.toggle("expanded", expanded);
+    toolbar?.querySelector("[data-action='toggleTools']")?.setAttribute("aria-expanded", String(expanded));
   }
 
   function bindToolbarPropertyInput(role, handler) {
