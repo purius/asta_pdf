@@ -347,8 +347,15 @@
   function bindToolbarPropertyInput(role, handler) {
     const control = toolbar?.querySelector(`[data-role='${role}']`);
     if (!control) return;
-    control.addEventListener("input", handler);
-    control.addEventListener("change", handler);
+    let lastAppliedValue = control.value;
+    const guardedHandler = event => {
+      const nextValue = event.target.value;
+      if (nextValue === lastAppliedValue) return;
+      lastAppliedValue = nextValue;
+      handler(event);
+    };
+    control.addEventListener("input", guardedHandler);
+    control.addEventListener("change", guardedHandler);
   }
 
   function setMode(mode) {

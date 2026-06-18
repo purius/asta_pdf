@@ -270,9 +270,14 @@ if ($officialEditorAdapter -notmatch 'function bindToolbarPropertyInput\(' -or
     $officialEditorAdapter -notmatch 'bindToolbarPropertyInput\("fillColor"' -or
     $officialEditorAdapter -notmatch 'bindToolbarPropertyInput\("opacity"' -or
     $officialEditorAdapter -notmatch 'bindToolbarPropertyInput\("rotation"' -or
-    $officialEditorAdapter -notmatch 'addEventListener\("input", handler\)' -or
-    $officialEditorAdapter -notmatch 'addEventListener\("change", handler\)') {
+    $officialEditorAdapter -notmatch 'addEventListener\("input", guardedHandler\)' -or
+    $officialEditorAdapter -notmatch 'addEventListener\("change", guardedHandler\)') {
     throw 'editor toolbar property controls must apply changes immediately while the user types or picks colors.'
+}
+
+if ($officialEditorAdapter -notmatch 'let lastAppliedValue = control\.value;' -or
+    $officialEditorAdapter -notmatch 'const guardedHandler = event => \{[\s\S]*?if \(nextValue === lastAppliedValue\) return;[\s\S]*?lastAppliedValue = nextValue;[\s\S]*?handler\(event\);[\s\S]*?\};') {
+    throw 'editor toolbar property controls must ignore duplicate input/change events for the same value.'
 }
 
 if ($officialEditorAdapter -notmatch 'asta-editor-resize-handle' -or $officialEditorAdapter -notmatch 'function startResize\(') {
