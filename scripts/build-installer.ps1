@@ -54,8 +54,16 @@ function Invoke-InnoCompilerWithRetry {
             Remove-Item -LiteralPath $OutputPath -Force
         }
 
-        $compilerOutput = & $CompilerPath @CompilerArgs 2>&1
-        $exitCode = $LASTEXITCODE
+        $previousErrorActionPreference = $ErrorActionPreference
+        try {
+            $ErrorActionPreference = 'Continue'
+            $compilerOutput = & $CompilerPath @CompilerArgs 2>&1
+            $exitCode = $LASTEXITCODE
+        }
+        finally {
+            $ErrorActionPreference = $previousErrorActionPreference
+        }
+
         $compilerText = ($compilerOutput | ForEach-Object { $_.ToString() }) -join [Environment]::NewLine
         if (-not [string]::IsNullOrWhiteSpace($compilerText)) {
             Write-Host $compilerText

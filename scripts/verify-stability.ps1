@@ -55,6 +55,14 @@ if ($mainWindow -notmatch '_editorStateRequestId' -or
     throw 'WebView async editor responses must be matched by requestId before completing pending WPF tasks.'
 }
 
+if ($mainWindow -notmatch 'RemapEditorStateToOutputPageOrder' -or
+    $mainWindow -notmatch 'TryGetProperty\("page"' -or
+    $mainWindow -notmatch 'pageToOutputIndex' -or
+    $mainWindow -notmatch 'remappedEditorState' -or
+    $mainWindow -notmatch 'remappedEditorState\.Edits\.Count > 0 \? CreateTempPdfPath\("editor-source"\) : outputPath') {
+    throw 'Overlay edits must be remapped from original PDF page numbers to saved output page order before export.'
+}
+
 if ($installerBuild -notmatch 'Invoke-InnoCompilerWithRetry' -or
     $installerBuild -notmatch 'Start-Sleep -Seconds' -or
     $installerBuild -notmatch 'attempt -lt') {
@@ -65,6 +73,11 @@ if ($installerBuild -notmatch '2>&1' -or
     $installerBuild -notmatch 'Compile aborted' -or
     $installerBuild -notmatch 'Error in') {
     throw 'Installer build must treat Inno Setup error output as a failed attempt even when an installer file exists.'
+}
+
+if ($installerBuild -notmatch 'previousErrorActionPreference' -or
+    $installerBuild -notmatch "\`$ErrorActionPreference = 'Continue'") {
+    throw 'Installer build must capture Inno Setup stderr without letting PowerShell native-command errors bypass retry handling.'
 }
 
 Write-Output 'stability checks passed.'

@@ -3,6 +3,7 @@ using System.Globalization;
 using System.Printing;
 using System.Runtime.InteropServices;
 using System.Text.Json;
+using System.Text.Json.Nodes;
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Input;
@@ -1469,12 +1470,14 @@ public partial class MainWindow : Window
         try
         {
             var editorState = await CollectEditorStateAsync();
-            var outputTarget = editorState.Edits.Count > 0 ? CreateTempPdfPath("editor-source") : outputPath;
-            var result = await _pdfService.SaveTransformedPagesAsync(_currentPdfPath, GetCurrentPageTransforms(), outputTarget, CancellationToken.None);
-            var transformedTempPath = editorState.Edits.Count > 0 ? result.OutputPath : null;
-            if (editorState.Edits.Count > 0)
+            var pageTransforms = GetCurrentPageTransforms();
+            var remappedEditorState = RemapEditorStateToOutputPageOrder(editorState, pageTransforms);
+            var outputTarget = remappedEditorState.Edits.Count > 0 ? CreateTempPdfPath("editor-source") : outputPath;
+            var result = await _pdfService.SaveTransformedPagesAsync(_currentPdfPath, pageTransforms, outputTarget, CancellationToken.None);
+            var transformedTempPath = remappedEditorState.Edits.Count > 0 ? result.OutputPath : null;
+            if (remappedEditorState.Edits.Count > 0)
             {
-                var exportedBase64 = await ExportOverlayPdfAsync(result.OutputPath, editorState);
+                var exportedBase64 = await ExportOverlayPdfAsync(result.OutputPath, remappedEditorState);
                 await File.WriteAllBytesAsync(outputPath, Convert.FromBase64String(exportedBase64));
                 result = result with { OutputPath = outputPath };
             }
@@ -2080,6 +2083,44 @@ public partial class MainWindow : Window
         return _pageOrder
             .Select(page => new PdfPageTransform(page, GetRotation(page)))
             .ToList();
+    }
+
+    private static EditorExportState RemapEditorStateToOutputPageOrder(
+        EditorExportState editorState,
+        IReadOnlyList<PdfPageTransform> pageTransforms)
+    {
+        if (editorState.Edits.Count == 0)
+        {
+            return editorState;
+        }
+
+        var pageToOutputIndex = pageTransforms
+            .Select((transform, index) => new { transform.PageNumber, OutputPage = index + 1 })
+            .GroupBy(item => item.PageNumber)
+            .ToDictionary(group => group.Key, group => group.First().OutputPage);
+
+        var remappedEdits = new List<JsonElement>(editorState.Edits.Count);
+        foreach (var edit in editorState.Edits)
+        {
+            if (!edit.TryGetProperty("page", out var pageElement) ||
+                pageElement.ValueKind != JsonValueKind.Number ||
+                !pageToOutputIndex.TryGetValue(pageElement.GetInt32(), out var outputPage))
+            {
+                continue;
+            }
+
+            var editNode = JsonNode.Parse(edit.GetRawText())?.AsObject();
+            if (editNode is null)
+            {
+                continue;
+            }
+
+            editNode["page"] = outputPage;
+            using var document = JsonDocument.Parse(editNode.ToJsonString());
+            remappedEdits.Add(document.RootElement.Clone());
+        }
+
+        return editorState with { Edits = remappedEdits };
     }
 
     private List<PdfPageTransform> GetSelectedPageTransforms()
