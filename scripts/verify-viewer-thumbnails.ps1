@@ -255,6 +255,10 @@ if ($officialEditorAdapter -notmatch 'event\.defaultPrevented' -or
     throw 'editor adapter keyboard shortcuts must ignore handled and IME composition key events.'
 }
 
+if ($officialEditorAdapter -notmatch 'const onKeyDown = keyEvent => \{[\s\S]*?if \(keyEvent\.isComposing\) return;[\s\S]*?keyEvent\.key === "Enter"') {
+    throw 'inline text editing must not commit or cancel while an IME composition key event is active.'
+}
+
 if ($officialEditorAdapter -notmatch 'data-role="strokeWidth"' -or $officialEditorAdapter -notmatch 'data-role="fillColor"' -or $officialEditorAdapter -notmatch 'function applySelectedProperties\(' -or $officialEditorAdapter -notmatch 'function syncToolbarFromEdit\(') {
     throw 'editor adapter must expose per-object font, size, stroke width, and fill controls.'
 }

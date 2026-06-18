@@ -1484,6 +1484,7 @@
     };
     const onKeyDown = keyEvent => {
       keyEvent.stopPropagation();
+      if (keyEvent.isComposing) return;
       if (keyEvent.key === "Escape") {
         keyEvent.preventDefault();
         finish(false);
