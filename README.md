@@ -1,6 +1,6 @@
 # PDF Merge Tool
 
-Windows PDF viewer and merge utility MVP.
+Windows PDF viewer, lightweight editor, and merge utility.
 
 ## Current Features
 
@@ -13,7 +13,10 @@ Windows PDF viewer and merge utility MVP.
 - Reorder pages in the current viewer by dragging thumbnails.
 - Select multiple pages with Ctrl/Shift click and move them together.
 - Undo/redo page edits.
-- Delete, rotate, extract, split, and reverse pages without editing text.
+- Delete, rotate, extract, split, and reverse pages.
+- Add overlay text boxes, visual text replacement, whiteout/redaction, underline, strikeout, shapes, lines, arrows, freehand pen/highlight, images, stamps, and signatures.
+- Save overlay edits into the PDF with pdf-lib.
+- Use installed Windows fonts, including Korean-capable fonts, for overlay text and stamps.
 - Fit one page to the current viewer height.
 - Print the current PDF from the File menu or toolbar.
 - Open file merge as a separate menu/window.
@@ -26,7 +29,7 @@ Windows PDF viewer and merge utility MVP.
 - Save as `{first-file-name}_통합.pdf` next to the first file by default.
 - Standalone installer with app icon, shortcuts, PDF merge context-menu registration, and Windows uninstall entry.
 
-The viewer uses WebView2 and local PDF.js assets. Windows 11 normally includes the WebView2 runtime already.
+The viewer uses WebView2 and the official PDF.js viewer bundle packaged locally. Windows 11 normally includes the WebView2 runtime already.
 
 ## Viewer Shortcuts
 
@@ -109,6 +112,16 @@ Or pass PDFs directly:
 .\.tools\dotnet\dotnet.exe .\src\PdfMergeTool\bin\Debug\net8.0-windows\PdfMergeTool.dll --merge "C:\Docs\a.pdf" "C:\Docs\b.pdf"
 ```
 
-## Next Milestones
+## Verification
 
-- Image overlay on selected pages.
+Viewer/editor changes are gated by:
+
+```powershell
+.\scripts\verify-viewer-thumbnails.ps1
+.\scripts\verify-stability.ps1
+node --check src\PdfMergeTool\Assets\PdfViewerOfficial\web\app-adapter.js
+node --check src\PdfMergeTool\Assets\PdfViewerOfficial\web\editor-adapter.js
+node --check src\PdfMergeTool\Assets\PdfViewerOfficial\web\pdf-lib-adapter.js
+```
+
+`verify-viewer-thumbnails.ps1` also runs a real pdf-lib export smoke test that creates a PDF, applies overlay edits with fontkit/font embedding, and reloads the result.

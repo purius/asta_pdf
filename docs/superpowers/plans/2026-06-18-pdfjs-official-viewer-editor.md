@@ -23,6 +23,7 @@ Run these before shipping viewer/editor changes:
 
 ```powershell
 powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\scripts\verify-viewer-thumbnails.ps1
+powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\scripts\verify-pdf-lib-overlay-export.ps1
 powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\scripts\verify-stability.ps1
 node --check src\PdfMergeTool\Assets\PdfViewerOfficial\web\app-adapter.js
 node --check src\PdfMergeTool\Assets\PdfViewerOfficial\web\editor-adapter.js
