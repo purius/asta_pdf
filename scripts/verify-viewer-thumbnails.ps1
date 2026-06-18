@@ -381,6 +381,11 @@ if ($officialPdfLibAdapter -notmatch 'sort\(\(left, right\) => \(Number\(left\.z
     throw 'pdf-lib adapter must preserve overlay layer order when saving edits.'
 }
 
+if ($officialPdfLibAdapter -notmatch 'const pageCount = pdfDoc\.getPageCount\(\)' -or
+    $officialPdfLibAdapter -notmatch 'if \(pageIndex < 0 \|\| pageIndex >= pageCount\) \{[\s\S]*?continue;[\s\S]*?\}') {
+    throw 'pdf-lib adapter must skip stale overlay edits whose page no longer exists in the saved PDF.'
+}
+
 if ($officialPdfLibAdapter -notmatch 'function editOpacity\(' -or $officialPdfLibAdapter -notmatch 'page\.drawImage\(image,\s*\{[\s\S]*?opacity:\s*editOpacity\(edit, 1\)' -or $officialPdfLibAdapter -notmatch 'async function drawTextOverlay\([\s\S]*?opacity:\s*editOpacity\(edit, 1\)') {
     throw 'pdf-lib adapter must persist opacity for text and image overlay edits.'
 }

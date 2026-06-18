@@ -275,9 +275,13 @@
       .slice()
       .sort((left, right) => (Number(left.zIndex) || 0) - (Number(right.zIndex) || 0));
     const fonts = options.fonts ?? {};
+    const pageCount = pdfDoc.getPageCount();
 
     for (const edit of edits) {
-      const pageIndex = Math.max((Number(edit.page) || 1) - 1, 0);
+      const pageIndex = (Number(edit.page) || 1) - 1;
+      if (pageIndex < 0 || pageIndex >= pageCount) {
+        continue;
+      }
       const page = pdfDoc.getPage(pageIndex);
       const pageHeight = page.getHeight();
       const x = Number(edit.x) || 0;
