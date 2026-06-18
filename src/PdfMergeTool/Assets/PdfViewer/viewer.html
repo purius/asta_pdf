@@ -510,6 +510,21 @@
       renderedEndIndex = 0;
     }
 
+    function createThumbButton(pageNumber, displayIndex) {
+      const thumb = document.createElement('button');
+      thumb.className = 'thumb';
+      thumb.dataset.page = String(pageNumber);
+      thumb.type = 'button';
+      thumb.draggable = true;
+
+      const thumbLabel = document.createElement('span');
+      thumbLabel.textContent = String(displayIndex + 1);
+      thumb.appendChild(thumbLabel);
+      attachThumbEvents(thumb, pageNumber);
+      thumbs.appendChild(thumb);
+      return thumb;
+    }
+
     function bytesFromBase64(base64) {
       const binary = atob(base64);
       const bytes = new Uint8Array(binary.length);
@@ -1036,34 +1051,9 @@
       pageWrap.appendChild(label);
       pages.appendChild(pageWrap);
 
-      const thumb = document.createElement('button');
-      thumb.className = 'thumb';
-      thumb.dataset.page = String(pageNumber);
-      thumb.type = 'button';
-      thumb.draggable = true;
-
-      const thumbImage = document.createElement('img');
-      thumbImage.className = 'fallback-thumb-image';
-      thumbImage.alt = `${displayIndex + 1} 페이지`;
-      thumb.appendChild(thumbImage);
-
-      const thumbLabel = document.createElement('span');
-      thumbLabel.textContent = String(displayIndex + 1);
-      thumb.appendChild(thumbLabel);
-      attachThumbEvents(thumb, pageNumber);
-      thumbs.appendChild(thumb);
-
       const mainResult = await requestFallbackRender(pageNumber, 'main', pageWidth, rotation);
       if (token !== renderToken) return;
       pageImage.src = mainResult.url;
-
-      const thumbTargetWidth = clamp(Math.round(340 * thumbScale), 42, 190);
-      deferThumbnailRender(async () => {
-        if (token !== renderToken || !thumbImage.isConnected) return;
-        const thumbResult = await requestFallbackRender(pageNumber, 'thumb', thumbTargetWidth, rotation);
-        if (token !== renderToken || !thumbImage.isConnected) return;
-        thumbImage.src = thumbResult.url;
-      });
     }
 
     async function renderPage(pageNumber, displayIndex, token) {
@@ -1100,34 +1090,59 @@
       pageWrap.appendChild(label);
       pages.appendChild(pageWrap);
 
-      const thumbViewport = page.getViewport({ scale: thumbScale, rotation });
-      const thumbCanvas = document.createElement('canvas');
-      const thumbContext = thumbCanvas.getContext('2d', { alpha: false });
-      thumbCanvas.width = Math.floor(thumbViewport.width);
-      thumbCanvas.height = Math.floor(thumbViewport.height);
-      thumbContext.fillStyle = '#ffffff';
-      thumbContext.fillRect(0, 0, thumbCanvas.width, thumbCanvas.height);
-
-      const thumb = document.createElement('button');
-      thumb.className = 'thumb';
-      thumb.dataset.page = String(pageNumber);
-      thumb.type = 'button';
-      thumb.draggable = true;
-      thumb.appendChild(thumbCanvas);
-
-      const thumbLabel = document.createElement('span');
-      thumbLabel.textContent = String(displayIndex + 1);
-      thumb.appendChild(thumbLabel);
-      attachThumbEvents(thumb, pageNumber);
-      thumbs.appendChild(thumb);
-
       await page.render({ canvasContext: pageContext, viewport: pageViewport }).promise;
       if (token !== renderToken) return;
+    }
+
+    function renderFallbackThumbnail(pageNumber, displayIndex, token) {
+      const thumb = createThumbButton(pageNumber, displayIndex);
+      const thumbImage = document.createElement('img');
+      thumbImage.className = 'fallback-thumb-image';
+      thumbImage.alt = `${displayIndex + 1} 페이지`;
+      thumb.insertBefore(thumbImage, thumb.firstChild);
+
+      const rotation = ((pageRotations[pageNumber] ?? 0) % 360 + 360) % 360;
+      const thumbTargetWidth = clamp(Math.round(340 * thumbScale), 42, 190);
+      deferThumbnailRender(async () => {
+        if (token !== renderToken || !thumbImage.isConnected) return;
+        const thumbResult = await requestFallbackRender(pageNumber, 'thumb', thumbTargetWidth, rotation);
+        if (token !== renderToken || !thumbImage.isConnected) return;
+        thumbImage.src = thumbResult.url;
+      });
+    }
+
+    function renderPdfThumbnail(pageNumber, displayIndex, token) {
+      const thumb = createThumbButton(pageNumber, displayIndex);
+      const thumbCanvas = document.createElement('canvas');
+      const thumbContext = thumbCanvas.getContext('2d', { alpha: false });
+      thumb.insertBefore(thumbCanvas, thumb.firstChild);
 
       deferThumbnailRender(async () => {
         if (token !== renderToken || !thumbCanvas.isConnected) return;
+        const page = await pdfDocument.getPage(pageNumber);
+        if (token !== renderToken || !thumbCanvas.isConnected) return;
+
+        const rotation = (page.rotate + (pageRotations[pageNumber] ?? 0)) % 360;
+        const thumbViewport = page.getViewport({ scale: thumbScale, rotation });
+        thumbCanvas.width = Math.floor(thumbViewport.width);
+        thumbCanvas.height = Math.floor(thumbViewport.height);
+        thumbContext.fillStyle = '#ffffff';
+        thumbContext.fillRect(0, 0, thumbCanvas.width, thumbCanvas.height);
         await page.render({ canvasContext: thumbContext, viewport: thumbViewport }).promise;
       });
+    }
+
+    async function renderAllThumbnails(token) {
+      thumbs.replaceChildren();
+      for (let index = 0; index < pageOrder.length; index += 1) {
+        const pageNumber = pageOrder[index];
+        if (fallbackDocument) {
+          renderFallbackThumbnail(pageNumber, index, token);
+        } else {
+          renderPdfThumbnail(pageNumber, index, token);
+        }
+      }
+      updateThumbClasses();
     }
 
     async function renderDocument(keepPage = true, targetPageOverride = null) {
@@ -1137,6 +1152,7 @@
       setStatus('렌더링 중...');
       clearRenderedPages();
       updateThumbGridSize();
+      await renderAllThumbnails(token);
       const windowRange = getRenderWindow(targetPage);
       renderedStartIndex = windowRange.start;
       renderedEndIndex = windowRange.end;
