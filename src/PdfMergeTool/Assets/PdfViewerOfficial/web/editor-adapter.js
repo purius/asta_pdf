@@ -263,6 +263,7 @@
       <button type="button" data-mode="text" title="Add text">Text</button>
       <button type="button" data-mode="replaceText" title="Replace existing text">Replace</button>
       <button type="button" data-mode="whiteout" title="Cover an area with white">Whiteout</button>
+      <button type="button" data-mode="redact" title="Cover an area with black redaction">Redact</button>
       <button type="button" data-mode="rectangle" title="Add rectangle">Rect</button>
       <button type="button" data-mode="ellipse" title="Add ellipse">Ellipse</button>
       <button type="button" data-mode="line" title="Add line">Line</button>
@@ -350,6 +351,12 @@
     } else if (mode === "whiteout") {
       setTimeout(() => {
         if (addSelectedTextWhiteoutEdits()) {
+          setMode("select");
+        }
+      }, 0);
+    } else if (mode === "redact") {
+      setTimeout(() => {
+        if (addSelectedTextRedactEdits()) {
           setMode("select");
         }
       }, 0);
@@ -449,6 +456,20 @@
         fillColor: "#ffffff",
         borderColor: "#94a3b8",
         borderWidth: 1
+      });
+    } else if (state.mode === "redact") {
+      recordHistory();
+      addEdit({
+        type: "whiteout",
+        variant: "redact",
+        page: getPageNumber(pageElement),
+        x: point.x,
+        y: point.y,
+        width: 180,
+        height: 90,
+        fillColor: "#000000",
+        borderColor: "#000000",
+        borderWidth: 0
       });
     } else if (state.mode === "rectangle") {
       recordHistory();
@@ -660,6 +681,29 @@
     return true;
   }
 
+  function addSelectedTextRedactEdits() {
+    const targets = getSelectedTextRedactTargets();
+    if (targets.length === 0) return false;
+
+    recordHistory();
+    for (const target of targets) {
+      addEdit({
+        type: "whiteout",
+        variant: "redact",
+        page: getPageNumber(target.pageElement),
+        x: target.x,
+        y: target.y,
+        width: Math.max(target.width, 1),
+        height: Math.max(target.height, 1),
+        fillColor: "#000000",
+        borderColor: "#000000",
+        borderWidth: 0
+      });
+    }
+    window.getSelection()?.removeAllRanges();
+    return true;
+  }
+
   function addSelectedTextLineMarkupEdits(markupType) {
     const targets = getSelectedTextLineMarkupTargets(markupType);
     if (targets.length === 0) return false;
@@ -759,6 +803,44 @@
         width: rect.width
       };
     });
+  }
+
+  function getSelectedTextRedactTargets() {
+    const selection = window.getSelection?.();
+    if (!selection || selection.isCollapsed || selection.rangeCount === 0) return [];
+
+    const range = selection.getRangeAt(0);
+    const clientRects = [...range.getClientRects()]
+      .filter(rect => rect.width > 0 && rect.height > 0);
+    if (clientRects.length === 0) return [];
+
+    const pageElement = getPageElementForSelection(range, clientRects[0]);
+    if (!pageElement) return [];
+
+    const pageRect = pageElement.getBoundingClientRect();
+    const selectedRects = clientRects.filter(rect => {
+      const centerX = rect.left + rect.width / 2;
+      const centerY = rect.top + rect.height / 2;
+      const element = document.elementFromPoint(centerX, centerY);
+      return pageElement.contains(element);
+    });
+
+    if (selectedRects.length !== clientRects.length) {
+      postMessage({
+        type: "viewerDiagnostic",
+        level: "info",
+        message: "Selected text redaction is limited to one PDF page at a time."
+      });
+      return [];
+    }
+
+    return selectedRects.map(rect => ({
+      pageElement,
+      x: rect.left - pageRect.left,
+      y: rect.top - pageRect.top,
+      width: rect.width,
+      height: rect.height
+    }));
   }
 
   function getSelectedTextWhiteoutTargets() {
@@ -967,6 +1049,7 @@
     element.classList.toggle("asta-editor-highlight", edit.type === "ink" && edit.tool === "highlight");
     element.classList.toggle("asta-editor-textHighlight", edit.type === "textHighlight");
     element.classList.toggle("asta-editor-whiteout", edit.type === "whiteout");
+    element.classList.toggle("asta-editor-redact", edit.type === "whiteout" && edit.variant === "redact");
     element.style.left = `${edit.x}px`;
     element.style.top = `${edit.y}px`;
     element.style.width = `${edit.width}px`;
