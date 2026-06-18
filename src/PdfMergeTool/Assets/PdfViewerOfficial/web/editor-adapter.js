@@ -163,7 +163,7 @@
         background: rgba(255, 255, 255, 0.01);
       }
       .asta-editor-textReplace {
-        padding: 2px 4px;
+        padding: 0;
         white-space: pre-wrap;
         line-height: 1.25;
         background: #ffffff;
@@ -452,8 +452,7 @@
 
     const pageRect = pageElement.getBoundingClientRect();
     const textRect = textElement.getBoundingClientRect();
-    const computedStyle = window.getComputedStyle(textElement);
-    const fontSize = Number.parseFloat(computedStyle.fontSize) || state.textSize;
+    const metrics = getTextReplacementMetrics(textElement, textRect);
 
     recordHistory();
     addEdit({
@@ -462,14 +461,35 @@
       x: textRect.left - pageRect.left,
       y: textRect.top - pageRect.top,
       width: Math.max(textRect.width, 20),
-      height: Math.max(textRect.height, fontSize * 1.4),
+      height: Math.max(textRect.height, metrics.lineHeight),
       text: replacementText,
       originalText,
       fontName: state.fontName,
-      size: fontSize,
+      size: metrics.fontSize,
+      lineHeight: metrics.lineHeight,
+      textInsetX: metrics.textInsetX,
+      textInsetY: metrics.textInsetY,
+      whiteoutPadding: metrics.whiteoutPadding,
       color: state.color,
       fillColor: "#ffffff"
     });
+  }
+
+  function getTextReplacementMetrics(textElement, textRect) {
+    const computedStyle = window.getComputedStyle(textElement);
+    const fontSize = Number.parseFloat(computedStyle.fontSize) || state.textSize;
+    const parsedLineHeight = Number.parseFloat(computedStyle.lineHeight);
+    const lineHeight = Number.isFinite(parsedLineHeight)
+      ? parsedLineHeight
+      : Math.max(textRect.height, fontSize * 1.25);
+
+    return {
+      fontSize,
+      lineHeight: Math.max(lineHeight, fontSize),
+      textInsetX: 0,
+      textInsetY: 0,
+      whiteoutPadding: 1
+    };
   }
 
   function findTextLayerElementAt(clientX, clientY) {
@@ -523,8 +543,12 @@
       setTextElementContent(element, edit.text ?? "");
       element.style.fontFamily = `"${edit.fontName || state.fontName}", sans-serif`;
       element.style.fontSize = `${edit.size || state.textSize}px`;
+      element.style.lineHeight = edit.lineHeight ? `${edit.lineHeight}px` : "1.25";
       element.style.color = edit.color || state.color;
       element.style.background = edit.type === "textReplace" ? (edit.fillColor || "#ffffff") : "rgba(255, 255, 255, 0.01)";
+      element.style.padding = edit.type === "textReplace"
+        ? `${edit.textInsetY || 0}px ${edit.textInsetX || 0}px`
+        : "";
       ensureResizeHandle(element, edit.id);
     } else if (edit.type === "rectangle") {
       element.style.border = `${edit.borderWidth || 2}px solid ${edit.borderColor || state.color}`;
@@ -787,6 +811,10 @@
           originalText: edit.originalText ?? "",
           fontName: edit.fontName || state.fontName,
           size: (edit.size || state.textSize) * scaleY,
+          lineHeight: (edit.lineHeight || (edit.size || state.textSize) * 1.25) * scaleY,
+          textInsetX: (edit.textInsetX || 0) * scaleX,
+          textInsetY: (edit.textInsetY || 0) * scaleY,
+          whiteoutPadding: (edit.whiteoutPadding || 0) * Math.max(scaleX, scaleY),
           color: toRgbArray(edit.color),
           fillColor: toRgbArray(edit.fillColor || "#ffffff")
         };

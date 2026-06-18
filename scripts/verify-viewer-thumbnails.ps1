@@ -141,6 +141,10 @@ if ($officialEditorAdapter -notmatch 'data-mode="replaceText"' -or $officialEdit
     throw 'editor adapter must expose a PDF text-layer replacement tool.'
 }
 
+if ($officialEditorAdapter -notmatch 'function getTextReplacementMetrics\(' -or $officialEditorAdapter -notmatch 'whiteoutPadding' -or $officialEditorAdapter -notmatch 'lineHeight') {
+    throw 'editor adapter must preserve text-layer replacement metrics for stable visual text edits.'
+}
+
 if ($officialEditorAdapter -notmatch 'asta-editor-resize-handle' -or $officialEditorAdapter -notmatch 'function startResize\(') {
     throw 'editor adapter must support resizing selected overlay objects.'
 }
@@ -183,6 +187,10 @@ if ($officialPdfLibAdapter -notmatch 'edit\.type === "stamp"') {
 
 if ($officialPdfLibAdapter -notmatch 'edit\.type === "textReplace"' -or $officialPdfLibAdapter -notmatch 'drawTextReplacement') {
     throw 'pdf-lib adapter must persist visual replacement edits for existing PDF text.'
+}
+
+if ($officialPdfLibAdapter -notmatch 'whiteoutPadding' -or $officialPdfLibAdapter -notmatch 'lineHeight') {
+    throw 'pdf-lib adapter must apply text replacement metrics when saving visual text edits.'
 }
 
 if ($officialViewerScript -notmatch 'defaultOptions\.defaultUrl\s*=\s*\{[\s\S]*?value:\s*""') {

@@ -104,21 +104,30 @@
     const width = Number(edit.width) || 0;
     const height = Number(edit.height) || 0;
     const size = Number(edit.size) || DEFAULT_TEXT_SIZE;
+    const lineHeight = Number(edit.lineHeight) || size * 1.25;
+    const textInsetX = Number(edit.textInsetX) || 0;
+    const textInsetY = Number(edit.textInsetY) || 0;
+    const whiteoutPadding = Number(edit.whiteoutPadding) || 0;
     const font = await resolveFont(pdfDoc, pdfLib, edit, fonts);
 
     page.drawRectangle({
-      x,
-      y: pageHeight - yFromTop - height,
-      width,
-      height,
+      x: x - whiteoutPadding,
+      y: pageHeight - yFromTop - height - whiteoutPadding,
+      width: width + whiteoutPadding * 2,
+      height: height + whiteoutPadding * 2,
       color: colorFromArray(pdfLib, edit.fillColor, [1, 1, 1])
     });
-    page.drawText(String(edit.text ?? ""), {
-      x,
-      y: pageHeight - yFromTop - size,
-      size,
-      font,
-      color: colorFromArray(pdfLib, edit.color, [0, 0, 0])
+
+    const color = colorFromArray(pdfLib, edit.color, [0, 0, 0]);
+    const lines = String(edit.text ?? "").split(/\r\n|\r|\n/);
+    lines.forEach((line, index) => {
+      page.drawText(line, {
+        x: x + textInsetX,
+        y: pageHeight - yFromTop - textInsetY - size - index * lineHeight,
+        size,
+        font,
+        color
+      });
     });
   }
 
