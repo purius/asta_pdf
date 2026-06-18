@@ -162,6 +162,12 @@
         line-height: 1.25;
         background: rgba(255, 255, 255, 0.01);
       }
+      .asta-editor-textReplace {
+        padding: 2px 4px;
+        white-space: pre-wrap;
+        line-height: 1.25;
+        background: #ffffff;
+      }
       .asta-editor-rectangle {
         border: 2px solid #2563eb;
         background: rgba(37, 99, 235, 0.08);
@@ -213,6 +219,7 @@
     toolbar.innerHTML = `
       <button type="button" data-mode="select" title="Select">Select</button>
       <button type="button" data-mode="text" title="Add text">Text</button>
+      <button type="button" data-mode="replaceText" title="Replace existing text">Replace</button>
       <button type="button" data-mode="rectangle" title="Add rectangle">Rect</button>
       <button type="button" data-mode="ellipse" title="Add ellipse">Ellipse</button>
       <button type="button" data-mode="line" title="Add line">Line</button>
@@ -326,6 +333,8 @@
         size: state.textSize,
         color: state.color
       });
+    } else if (state.mode === "replaceText") {
+      addTextReplacementEdit(event, pageElement);
     } else if (state.mode === "rectangle") {
       recordHistory();
       addEdit({
@@ -425,6 +434,61 @@
     input.click();
   }
 
+  function addTextReplacementEdit(event, pageElement) {
+    const textElement = findTextLayerElementAt(event.clientX, event.clientY);
+    if (!textElement || !pageElement.contains(textElement)) {
+      postMessage({
+        type: "viewerDiagnostic",
+        level: "info",
+        message: "No selectable PDF text found at the clicked position."
+      });
+      return;
+    }
+
+    const originalText = textElement.textContent?.trim() || "";
+    if (!originalText) return;
+    const replacementText = window.prompt("Replacement text", originalText);
+    if (replacementText === null) return;
+
+    const pageRect = pageElement.getBoundingClientRect();
+    const textRect = textElement.getBoundingClientRect();
+    const computedStyle = window.getComputedStyle(textElement);
+    const fontSize = Number.parseFloat(computedStyle.fontSize) || state.textSize;
+
+    recordHistory();
+    addEdit({
+      type: "textReplace",
+      page: getPageNumber(pageElement),
+      x: textRect.left - pageRect.left,
+      y: textRect.top - pageRect.top,
+      width: Math.max(textRect.width, 20),
+      height: Math.max(textRect.height, fontSize * 1.4),
+      text: replacementText,
+      originalText,
+      fontName: state.fontName,
+      size: fontSize,
+      color: state.color,
+      fillColor: "#ffffff"
+    });
+  }
+
+  function findTextLayerElementAt(clientX, clientY) {
+    const editorLayer = document.elementFromPoint(clientX, clientY)?.closest?.(".asta-editor-layer");
+    if (editorLayer) {
+      editorLayer.style.pointerEvents = "none";
+    }
+    try {
+      const elements = document.elementsFromPoint(clientX, clientY);
+      return elements.find(element =>
+        element.matches?.(".textLayer span, .textLayer [role='presentation'], .textLayer [dir]")
+        && element.textContent?.trim());
+    } finally {
+      if (editorLayer) {
+        editorLayer.style.pointerEvents = "";
+      }
+    }
+  }
+
   function addEdit(edit) {
     edit.id = edit.id || `edit-${nextEditId++}`;
     state.edits.push(edit);
@@ -443,19 +507,24 @@
       element = document.createElement("div");
       element.dataset.editId = edit.id;
       element.className = `asta-editor-item asta-editor-${edit.type}`;
+      if (edit.type === "textReplace") {
+        element.classList.add("asta-editor-text-replace");
+      }
       element.addEventListener("pointerdown", event => startDrag(event, edit.id));
       element.addEventListener("dblclick", () => editText(edit.id));
       layer.appendChild(element);
     }
+    element.classList.toggle("asta-editor-text-replace", edit.type === "textReplace");
     element.style.left = `${edit.x}px`;
     element.style.top = `${edit.y}px`;
     element.style.width = `${edit.width}px`;
     element.style.height = `${edit.height}px`;
-    if (edit.type === "text") {
+    if (edit.type === "text" || edit.type === "textReplace") {
       setTextElementContent(element, edit.text ?? "");
       element.style.fontFamily = `"${edit.fontName || state.fontName}", sans-serif`;
       element.style.fontSize = `${edit.size || state.textSize}px`;
       element.style.color = edit.color || state.color;
+      element.style.background = edit.type === "textReplace" ? (edit.fillColor || "#ffffff") : "rgba(255, 255, 255, 0.01)";
       ensureResizeHandle(element, edit.id);
     } else if (edit.type === "rectangle") {
       element.style.border = `${edit.borderWidth || 2}px solid ${edit.borderColor || state.color}`;
@@ -623,7 +692,7 @@
       element.classList.toggle("selected", element.dataset.editId === editId);
     });
     const edit = state.edits.find(item => item.id === editId);
-    if (edit?.type === "text") {
+    if (edit?.type === "text" || edit?.type === "textReplace") {
       toolbar.querySelector("[data-role='font']").value = edit.fontName || state.fontName;
       toolbar.querySelector("[data-role='size']").value = edit.size || state.textSize;
       toolbar.querySelector("[data-role='color']").value = edit.color || state.color;
@@ -634,7 +703,7 @@
     const edit = state.edits.find(item => item.id === state.selectedId);
     if (!edit) return;
     recordHistory();
-    if (edit.type === "text") {
+    if (edit.type === "text" || edit.type === "textReplace") {
       edit.fontName = state.fontName;
       edit.size = state.textSize;
       edit.color = state.color;
@@ -651,7 +720,7 @@
 
   function editText(editId) {
     const edit = state.edits.find(item => item.id === editId);
-    if (!edit || (edit.type !== "text" && edit.type !== "stamp")) return;
+    if (!edit || (edit.type !== "text" && edit.type !== "textReplace" && edit.type !== "stamp")) return;
     const text = window.prompt("Edit text", edit.text ?? "");
     if (text === null) return;
     recordHistory();
@@ -706,18 +775,20 @@
       const pageSize = getPageSize(edit.page);
       const scaleX = rect?.width ? pageSize.width / rect.width : 1;
       const scaleY = rect?.height ? pageSize.height / rect.height : 1;
-      if (edit.type === "text") {
+      if (edit.type === "text" || edit.type === "textReplace") {
         return {
-          type: "text",
+          type: edit.type,
           page: edit.page,
           x: edit.x * scaleX,
           y: edit.y * scaleY,
           width: edit.width * scaleX,
           height: edit.height * scaleY,
           text: edit.text ?? "",
+          originalText: edit.originalText ?? "",
           fontName: edit.fontName || state.fontName,
           size: (edit.size || state.textSize) * scaleY,
-          color: toRgbArray(edit.color)
+          color: toRgbArray(edit.color),
+          fillColor: toRgbArray(edit.fillColor || "#ffffff")
         };
       }
       if (edit.type === "line" || edit.type === "arrow") {
@@ -774,7 +845,7 @@
 
   function getUsedFontNames() {
     return [...new Set(state.edits
-      .filter(edit => edit.type === "text")
+      .filter(edit => edit.type === "text" || edit.type === "textReplace")
       .map(edit => edit.fontName || state.fontName)
       .filter(Boolean))];
   }

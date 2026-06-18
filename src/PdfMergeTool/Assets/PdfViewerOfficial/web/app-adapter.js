@@ -221,6 +221,9 @@ const AppBridge = (() => {
       case "editorText":
         window.EditorAdapter?.setMode?.("text");
         break;
+      case "editorReplaceText":
+        window.EditorAdapter?.setMode?.("replaceText");
+        break;
       case "editorRectangle":
         window.EditorAdapter?.setMode?.("rectangle");
         break;

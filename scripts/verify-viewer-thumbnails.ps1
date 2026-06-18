@@ -137,6 +137,10 @@ if ($officialEditorAdapter -notmatch 'data-mode="image"' -or $officialEditorAdap
     throw 'editor adapter must expose image, stamp, and signature overlay controls.'
 }
 
+if ($officialEditorAdapter -notmatch 'data-mode="replaceText"' -or $officialEditorAdapter -notmatch 'function findTextLayerElementAt\(') {
+    throw 'editor adapter must expose a PDF text-layer replacement tool.'
+}
+
 if ($officialEditorAdapter -notmatch 'asta-editor-resize-handle' -or $officialEditorAdapter -notmatch 'function startResize\(') {
     throw 'editor adapter must support resizing selected overlay objects.'
 }
@@ -175,6 +179,10 @@ if ($officialPdfLibAdapter -notmatch 'function embedImage\(' -or $officialPdfLib
 
 if ($officialPdfLibAdapter -notmatch 'edit\.type === "stamp"') {
     throw 'pdf-lib adapter must persist stamp overlay edits.'
+}
+
+if ($officialPdfLibAdapter -notmatch 'edit\.type === "textReplace"' -or $officialPdfLibAdapter -notmatch 'drawTextReplacement') {
+    throw 'pdf-lib adapter must persist visual replacement edits for existing PDF text.'
 }
 
 if ($officialViewerScript -notmatch 'defaultOptions\.defaultUrl\s*=\s*\{[\s\S]*?value:\s*""') {

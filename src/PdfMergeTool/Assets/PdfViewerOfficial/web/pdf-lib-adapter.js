@@ -98,6 +98,30 @@
     }
   }
 
+  async function drawTextReplacement(pdfDoc, page, pdfLib, edit, pageHeight, fonts) {
+    const x = Number(edit.x) || 0;
+    const yFromTop = Number(edit.y) || 0;
+    const width = Number(edit.width) || 0;
+    const height = Number(edit.height) || 0;
+    const size = Number(edit.size) || DEFAULT_TEXT_SIZE;
+    const font = await resolveFont(pdfDoc, pdfLib, edit, fonts);
+
+    page.drawRectangle({
+      x,
+      y: pageHeight - yFromTop - height,
+      width,
+      height,
+      color: colorFromArray(pdfLib, edit.fillColor, [1, 1, 1])
+    });
+    page.drawText(String(edit.text ?? ""), {
+      x,
+      y: pageHeight - yFromTop - size,
+      size,
+      font,
+      color: colorFromArray(pdfLib, edit.color, [0, 0, 0])
+    });
+  }
+
   async function createOverlayPdf(options) {
     const pdfLib = getPdfLib();
     let sourceBytes = options.sourceBytes;
@@ -127,6 +151,8 @@
           color: colorFromArray(pdfLib, edit.color, [0, 0, 0]),
           rotate: edit.rotate ? pdfLib.degrees(Number(edit.rotate) || 0) : undefined
         });
+      } else if (edit.type === "textReplace") {
+        await drawTextReplacement(pdfDoc, page, pdfLib, edit, pageHeight, fonts);
       } else if (edit.type === "rectangle") {
         const height = Number(edit.height) || 0;
         const width = Number(edit.width) || 0;
