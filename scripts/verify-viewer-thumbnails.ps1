@@ -229,12 +229,20 @@ if ($officialPdfLibAdapter -notmatch 'function drawArrow\(') {
     throw 'pdf-lib adapter must persist arrow overlay edits.'
 }
 
+if ($officialPdfLibAdapter -notmatch 'function drawArrow\([\s\S]*?const opacity = editOpacity\(edit, 1\)' -or $officialPdfLibAdapter -notmatch 'drawArrow\([\s\S]*?page\.drawLine\(\{[\s\S]*?opacity') {
+    throw 'pdf-lib adapter must persist opacity for arrow overlay edits.'
+}
+
 if ($officialPdfLibAdapter -notmatch 'function embedImage\(' -or $officialPdfLibAdapter -notmatch 'page\.drawImage') {
     throw 'pdf-lib adapter must persist image and signature overlay edits.'
 }
 
 if ($officialPdfLibAdapter -notmatch 'function drawInkPath\(' -or $officialPdfLibAdapter -notmatch 'edit\.type === "ink"') {
     throw 'pdf-lib adapter must persist freehand pen and highlight annotations.'
+}
+
+if ($officialPdfLibAdapter -notmatch 'function drawInkPath\([\s\S]*?editOpacity\(edit, edit\.tool === "highlight" \? 0\.38 : 1\)') {
+    throw 'pdf-lib adapter must normalize opacity for freehand pen and highlight annotations.'
 }
 
 if ($officialPdfLibAdapter -notmatch 'sort\(\(left, right\) => \(Number\(left\.zIndex\) \|\| 0\) - \(Number\(right\.zIndex\) \|\| 0\)\)') {

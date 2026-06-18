@@ -84,13 +84,14 @@
     const height = Number(edit.height) || 0;
     const thickness = Number(edit.borderWidth) || DEFAULT_STROKE_WIDTH;
     const color = colorFromArray(pdfLib, edit.borderColor, [0, 0, 0]);
+    const opacity = editOpacity(edit, 1);
     const start = { x, y: pageHeight - yFromTop };
     const end = { x: x + width, y: pageHeight - yFromTop - height };
     const angle = Math.atan2(end.y - start.y, end.x - start.x);
     const headLength = Math.max(thickness * 6, 12);
     const wingAngle = Math.PI / 7;
 
-    page.drawLine({ start, end, color, thickness });
+    page.drawLine({ start, end, color, thickness, opacity });
     for (const direction of [-1, 1]) {
       page.drawLine({
         start: end,
@@ -99,7 +100,8 @@
           y: end.y - headLength * Math.sin(angle - direction * wingAngle)
         },
         color,
-        thickness
+        thickness,
+        opacity
       });
     }
   }
@@ -109,7 +111,7 @@
     if (points.length < 2) return;
     const color = colorFromArray(pdfLib, edit.borderColor, edit.tool === "highlight" ? [0.98, 0.8, 0.08] : [0, 0, 0]);
     const thickness = Math.max(Number(edit.borderWidth) || (edit.tool === "highlight" ? 12 : 2), 1);
-    const opacity = edit.opacity === undefined ? (edit.tool === "highlight" ? 0.38 : 1) : Number(edit.opacity);
+    const opacity = editOpacity(edit, edit.tool === "highlight" ? 0.38 : 1);
 
     for (let index = 1; index < points.length; index += 1) {
       const previous = points[index - 1];
