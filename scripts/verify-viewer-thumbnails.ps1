@@ -163,6 +163,17 @@ if ($officialAdapter -notmatch 'captureExplicitNavigationIntent' -or
     throw 'official viewer adapter must capture rapid thumbnail clicks as explicit navigation targets.'
 }
 
+$captureNavigationIntentBlock = [regex]::Match(
+    $officialAdapter,
+    'function captureExplicitNavigationIntent\(event\) \{[\s\S]*?\n  \}').Value
+if (-not $captureNavigationIntentBlock -or
+    $captureNavigationIntentBlock -notmatch 'if \(event\.defaultPrevented\) return;' -or
+    $captureNavigationIntentBlock -notmatch 'if \(event\.type === "pointerdown" && event\.isPrimary === false\) return;' -or
+    $captureNavigationIntentBlock -notmatch 'if \("button" in event && event\.button !== 0\) return;' -or
+    $captureNavigationIntentBlock -notmatch 'if \(event\.type === "click" && event\.detail === 0\) return;') {
+    throw 'official viewer adapter must only capture primary, unhandled thumbnail navigation events.'
+}
+
 if ($officialAdapter -notmatch 'nativePageTransferDragOver' -or
     $officialAdapter -notmatch 'nativePageTransferDrop' -or
     $officialAdapter -notmatch 'nativeFileDragOver' -or

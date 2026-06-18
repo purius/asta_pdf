@@ -236,6 +236,11 @@ const AppBridge = (() => {
   }
 
   function captureExplicitNavigationIntent(event) {
+    if (event.defaultPrevented) return;
+    if (event.type === "pointerdown" && event.isPrimary === false) return;
+    if ("button" in event && event.button !== 0) return;
+    if (event.type === "click" && event.detail === 0) return;
+
     const targetPage = findNavigationTargetPage(event.target);
     if (targetPage) {
       beginExplicitPageNavigation(targetPage);
