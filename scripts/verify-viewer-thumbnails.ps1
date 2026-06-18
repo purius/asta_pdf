@@ -213,6 +213,18 @@ if ($officialEditorAdapter -notmatch 'rotate:\s*normalizeRotation\(edit\.rotate,
     throw 'editor adapter must export normalized rotation for rotatable overlay edits.'
 }
 
+$textHighlightExportBlock = [regex]::Match($officialEditorAdapter, 'if \(edit\.type === "textHighlight"\) \{[\s\S]*?return \{\s*type:\s*"textHighlight",[\s\S]*?\};').Value
+
+if (-not $textHighlightExportBlock -or $textHighlightExportBlock -notmatch 'rotate:\s*normalizeRotation\(edit\.rotate, 0\)') {
+    throw 'editor adapter must export rotation for selected text highlight edits.'
+}
+
+$whiteoutExportBlock = [regex]::Match($officialEditorAdapter, 'if \(edit\.type === "whiteout"\) \{[\s\S]*?return \{\s*type:\s*"whiteout",[\s\S]*?\};').Value
+
+if (-not $whiteoutExportBlock -or $whiteoutExportBlock -notmatch 'rotate:\s*normalizeRotation\(edit\.rotate, 0\)') {
+    throw 'editor adapter must export rotation for whiteout and redaction edits.'
+}
+
 $lineArrowExportBlock = [regex]::Match($officialEditorAdapter, 'if \(edit\.type === "line" \|\| edit\.type === "arrow"\) \{[\s\S]*?(?=if \(edit\.type === "ink"\))').Value
 
 if (-not $lineArrowExportBlock -or $lineArrowExportBlock -notmatch 'borderWidth:\s*\(edit\.borderWidth \|\| 2\) \* Math\.max\(scaleX, scaleY\)') {
@@ -223,7 +235,7 @@ if ($lineArrowExportBlock -match 'borderWidth:\s*\(edit\.borderWidth \|\| 2\) \*
     throw 'editor adapter must not export line and arrow stroke widths using only scaleX.'
 }
 
-$shapeExportBlock = [regex]::Match($officialEditorAdapter, 'return \{\s*type:\s*"rectangle",[\s\S]*?opacity\s*\};').Value
+$shapeExportBlock = [regex]::Match($officialEditorAdapter, 'return \{\s*type:\s*"rectangle",[\s\S]*?\};').Value
 
 if (-not $shapeExportBlock -or $shapeExportBlock -notmatch 'borderWidth:\s*\(edit\.borderWidth \|\| 2\) \* Math\.max\(scaleX, scaleY\)') {
     throw 'editor adapter must export rectangle and ellipse border widths using the strongest page scale.'
@@ -233,7 +245,11 @@ if ($shapeExportBlock -match 'borderWidth:\s*\(edit\.borderWidth \|\| 2\) \* sca
     throw 'editor adapter must not export rectangle and ellipse border widths using only scaleX.'
 }
 
-$stampExportBlock = [regex]::Match($officialEditorAdapter, 'if \(edit\.type === "stamp"\) \{[\s\S]*?return \{\s*type:\s*"stamp",[\s\S]*?opacity\s*\};').Value
+if ($shapeExportBlock -notmatch 'rotate:\s*normalizeRotation\(edit\.rotate, 0\)') {
+    throw 'editor adapter must export rotation for rectangle and ellipse edits.'
+}
+
+$stampExportBlock = [regex]::Match($officialEditorAdapter, 'if \(edit\.type === "stamp"\) \{[\s\S]*?return \{\s*type:\s*"stamp",[\s\S]*?\};').Value
 
 if (-not $stampExportBlock -or $stampExportBlock -notmatch 'borderWidth:\s*\(edit\.borderWidth \|\| 3\) \* Math\.max\(scaleX, scaleY\)') {
     throw 'editor adapter must export stamp border widths using the strongest page scale.'

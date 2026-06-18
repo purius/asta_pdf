@@ -1728,7 +1728,8 @@
           width: edit.width * scaleX,
           height: edit.height * scaleY,
           fillColor: toRgbArray(edit.fillColor || "#facc15"),
-          opacity
+          opacity,
+          rotate: normalizeRotation(edit.rotate, 0)
         };
       }
       if (edit.type === "whiteout") {
@@ -1742,7 +1743,8 @@
           width: edit.width * scaleX,
           height: edit.height * scaleY,
           fillColor: toRgbArray(edit.fillColor || "#ffffff"),
-          opacity
+          opacity,
+          rotate: normalizeRotation(edit.rotate, 0)
         };
       }
       if (edit.type === "image" || edit.type === "signature") {
@@ -1791,7 +1793,8 @@
         borderColor: toRgbArray(edit.borderColor),
         borderWidth: (edit.borderWidth || 2) * Math.max(scaleX, scaleY),
         fillColor: edit.fillColor ? toRgbArray(edit.fillColor) : undefined,
-        opacity
+        opacity,
+        rotate: normalizeRotation(edit.rotate, 0)
       };
     });
   }
