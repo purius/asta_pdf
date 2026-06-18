@@ -140,6 +140,22 @@
         outline: 2px solid #2563eb;
         outline-offset: 2px;
       }
+      .asta-editor-resize-handle {
+        position: absolute;
+        right: -7px;
+        bottom: -7px;
+        width: 12px;
+        height: 12px;
+        border: 2px solid #ffffff;
+        border-radius: 50%;
+        background: #2563eb;
+        box-shadow: 0 1px 4px rgba(15, 23, 42, 0.3);
+        cursor: nwse-resize;
+        display: none;
+      }
+      .asta-editor-item.selected .asta-editor-resize-handle {
+        display: block;
+      }
       .asta-editor-text {
         padding: 2px 4px;
         white-space: pre-wrap;
@@ -149,6 +165,18 @@
       .asta-editor-rectangle {
         border: 2px solid #2563eb;
         background: rgba(37, 99, 235, 0.08);
+      }
+      .asta-editor-line,
+      .asta-editor-arrow {
+        min-height: 20px;
+      }
+      .asta-editor-line svg,
+      .asta-editor-arrow svg {
+        position: absolute;
+        inset: 0;
+        width: 100%;
+        height: 100%;
+        overflow: visible;
       }
       .asta-editor-crosshair .asta-editor-layer {
         cursor: crosshair;
@@ -168,6 +196,7 @@
       <button type="button" data-mode="rectangle" title="Add rectangle">Rect</button>
       <button type="button" data-mode="ellipse" title="Add ellipse">Ellipse</button>
       <button type="button" data-mode="line" title="Add line">Line</button>
+      <button type="button" data-mode="arrow" title="Add arrow">Arrow</button>
       <select data-role="font" title="Font"></select>
       <input data-role="size" type="number" min="6" max="96" value="14" title="Text size" />
       <input data-role="color" type="color" value="#111827" title="Color" />
@@ -308,7 +337,19 @@
         x: point.x,
         y: point.y,
         width: 140,
-        height: 0,
+        height: 24,
+        borderColor: state.color,
+        borderWidth: 2
+      });
+    } else if (state.mode === "arrow") {
+      recordHistory();
+      addEdit({
+        type: "arrow",
+        page: getPageNumber(pageElement),
+        x: point.x,
+        y: point.y,
+        width: 140,
+        height: 36,
         borderColor: state.color,
         borderWidth: 2
       });
@@ -342,24 +383,86 @@
     element.style.width = `${edit.width}px`;
     element.style.height = `${edit.height}px`;
     if (edit.type === "text") {
-      element.textContent = edit.text ?? "";
+      setTextElementContent(element, edit.text ?? "");
       element.style.fontFamily = `"${edit.fontName || state.fontName}", sans-serif`;
       element.style.fontSize = `${edit.size || state.textSize}px`;
       element.style.color = edit.color || state.color;
+      ensureResizeHandle(element, edit.id);
     } else if (edit.type === "rectangle") {
       element.style.border = `${edit.borderWidth || 2}px solid ${edit.borderColor || state.color}`;
       element.style.background = "rgba(37, 99, 235, 0.08)";
       element.style.borderColor = edit.borderColor || state.color;
+      ensureResizeHandle(element, edit.id);
     } else if (edit.type === "ellipse") {
       element.style.border = `${edit.borderWidth || 2}px solid ${edit.borderColor || state.color}`;
       element.style.borderRadius = "50%";
       element.style.background = "rgba(37, 99, 235, 0.08)";
+      ensureResizeHandle(element, edit.id);
     } else if (edit.type === "line") {
-      element.style.height = `${Math.max(edit.borderWidth || 2, 2)}px`;
-      element.style.minHeight = `${Math.max(edit.borderWidth || 2, 2)}px`;
-      element.style.background = edit.borderColor || state.color;
+      renderLineSvg(element, edit, false);
+      ensureResizeHandle(element, edit.id);
+    } else if (edit.type === "arrow") {
+      renderLineSvg(element, edit, true);
+      ensureResizeHandle(element, edit.id);
     }
     element.classList.toggle("selected", state.selectedId === edit.id);
+  }
+
+  function ensureResizeHandle(element, editId) {
+    let handle = element.querySelector(":scope > .asta-editor-resize-handle");
+    if (!handle) {
+      handle = document.createElement("span");
+      handle.className = "asta-editor-resize-handle";
+      handle.addEventListener("pointerdown", event => startResize(event, editId));
+      element.appendChild(handle);
+    }
+  }
+
+  function setTextElementContent(element, text) {
+    let content = element.querySelector(":scope > .asta-editor-text-content");
+    if (!content) {
+      content = document.createElement("span");
+      content.className = "asta-editor-text-content";
+      element.prepend(content);
+    }
+    content.textContent = text;
+  }
+
+  function renderLineSvg(element, edit, withArrowHead) {
+    const color = edit.borderColor || state.color;
+    const width = Math.max(Number(edit.width) || 1, 1);
+    const height = Math.max(Number(edit.height) || 1, 1);
+    const strokeWidth = Math.max(Number(edit.borderWidth) || 2, 2);
+    element.style.border = "0";
+    element.style.background = "transparent";
+    element.querySelector(":scope > svg")?.remove();
+
+    const svg = document.createElementNS("http://www.w3.org/2000/svg", "svg");
+    svg.setAttribute("viewBox", `0 0 ${width} ${height}`);
+    svg.setAttribute("preserveAspectRatio", "none");
+
+    const line = document.createElementNS("http://www.w3.org/2000/svg", "line");
+    line.setAttribute("x1", "0");
+    line.setAttribute("y1", String(height / 2));
+    line.setAttribute("x2", String(width));
+    line.setAttribute("y2", String(height / 2));
+    line.setAttribute("stroke", color);
+    line.setAttribute("stroke-width", String(strokeWidth));
+    line.setAttribute("stroke-linecap", "round");
+    svg.appendChild(line);
+
+    if (withArrowHead) {
+      const headSize = Math.max(strokeWidth * 4, 10);
+      const head = document.createElementNS("http://www.w3.org/2000/svg", "path");
+      head.setAttribute("d", `M ${width} ${height / 2} L ${Math.max(width - headSize, 0)} ${Math.max(height / 2 - headSize / 2, 0)} M ${width} ${height / 2} L ${Math.max(width - headSize, 0)} ${Math.min(height / 2 + headSize / 2, height)}`);
+      head.setAttribute("stroke", color);
+      head.setAttribute("stroke-width", String(strokeWidth));
+      head.setAttribute("stroke-linecap", "round");
+      head.setAttribute("fill", "none");
+      svg.appendChild(head);
+    }
+
+    element.prepend(svg);
   }
 
   function startDrag(event, editId) {
@@ -394,6 +497,39 @@
     window.addEventListener("pointerup", up, { once: true });
   }
 
+  function startResize(event, editId) {
+    event.preventDefault();
+    event.stopPropagation();
+    selectEdit(editId);
+    const edit = state.edits.find(item => item.id === editId);
+    if (!edit) return;
+    const startX = event.clientX;
+    const startY = event.clientY;
+    const initialWidth = Number(edit.width) || 1;
+    const initialHeight = Number(edit.height) || 1;
+    const pointerId = event.pointerId;
+    const target = event.currentTarget;
+    recordHistory();
+    target.setPointerCapture(pointerId);
+
+    function move(moveEvent) {
+      edit.width = Math.max(20, initialWidth + moveEvent.clientX - startX);
+      edit.height = Math.max(edit.type === "line" || edit.type === "arrow" ? 20 : 16, initialHeight + moveEvent.clientY - startY);
+      renderEdit(edit);
+    }
+
+    function up() {
+      target.releasePointerCapture(pointerId);
+      window.removeEventListener("pointermove", move);
+      window.removeEventListener("pointerup", up);
+      state.dirty = true;
+      postDirty();
+    }
+
+    window.addEventListener("pointermove", move);
+    window.addEventListener("pointerup", up, { once: true });
+  }
+
   function selectEdit(editId) {
     state.selectedId = editId;
     document.querySelectorAll(".asta-editor-item").forEach(element => {
@@ -415,7 +551,7 @@
       edit.fontName = state.fontName;
       edit.size = state.textSize;
       edit.color = state.color;
-    } else if (edit.type === "rectangle" || edit.type === "ellipse" || edit.type === "line") {
+    } else if (edit.type === "rectangle" || edit.type === "ellipse" || edit.type === "line" || edit.type === "arrow") {
       edit.borderColor = state.color;
     }
     state.dirty = true;
@@ -494,9 +630,9 @@
           color: toRgbArray(edit.color)
         };
       }
-      if (edit.type === "line") {
+      if (edit.type === "line" || edit.type === "arrow") {
         return {
-          type: "line",
+          type: edit.type,
           page: edit.page,
           x: edit.x * scaleX,
           y: edit.y * scaleY,

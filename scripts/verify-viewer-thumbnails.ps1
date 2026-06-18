@@ -129,6 +129,14 @@ if ($officialEditorAdapter -notmatch 'data-mode="ellipse"' -or $officialEditorAd
     throw 'editor adapter must expose ellipse and line shape editing controls.'
 }
 
+if ($officialEditorAdapter -notmatch 'data-mode="arrow"') {
+    throw 'editor adapter must expose arrow editing controls.'
+}
+
+if ($officialEditorAdapter -notmatch 'asta-editor-resize-handle' -or $officialEditorAdapter -notmatch 'function startResize\(') {
+    throw 'editor adapter must support resizing selected overlay objects.'
+}
+
 if ($officialEditorAdapter -notmatch 'function undo\(\)' -or $officialEditorAdapter -notmatch 'function redo\(\)') {
     throw 'editor adapter must support undo and redo for overlay edits.'
 }
@@ -151,6 +159,10 @@ if ($officialPdfLibAdapter -notmatch 'pdfDoc\.embedFont') {
 
 if ($officialPdfLibAdapter -notmatch 'drawEllipse' -or $officialPdfLibAdapter -notmatch 'drawLine') {
     throw 'pdf-lib adapter must persist ellipse and line overlay edits.'
+}
+
+if ($officialPdfLibAdapter -notmatch 'function drawArrow\(') {
+    throw 'pdf-lib adapter must persist arrow overlay edits.'
 }
 
 if ($officialViewerScript -notmatch 'defaultOptions\.defaultUrl\s*=\s*\{[\s\S]*?value:\s*""') {

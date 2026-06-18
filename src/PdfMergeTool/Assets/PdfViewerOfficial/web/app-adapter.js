@@ -230,6 +230,9 @@ const AppBridge = (() => {
       case "editorLine":
         window.EditorAdapter?.setMode?.("line");
         break;
+      case "editorArrow":
+        window.EditorAdapter?.setMode?.("arrow");
+        break;
       case "editorDeleteSelection":
         window.EditorAdapter?.deleteSelected?.();
         break;

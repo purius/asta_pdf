@@ -59,6 +59,33 @@
     return pdfDoc.embedFont(pdfLib.StandardFonts.Helvetica);
   }
 
+  function drawArrow(page, pdfLib, edit, pageHeight) {
+    const x = Number(edit.x) || 0;
+    const yFromTop = Number(edit.y) || 0;
+    const width = Number(edit.width) || 0;
+    const height = Number(edit.height) || 0;
+    const thickness = Number(edit.borderWidth) || DEFAULT_STROKE_WIDTH;
+    const color = colorFromArray(pdfLib, edit.borderColor, [0, 0, 0]);
+    const start = { x, y: pageHeight - yFromTop };
+    const end = { x: x + width, y: pageHeight - yFromTop - height };
+    const angle = Math.atan2(end.y - start.y, end.x - start.x);
+    const headLength = Math.max(thickness * 6, 12);
+    const wingAngle = Math.PI / 7;
+
+    page.drawLine({ start, end, color, thickness });
+    for (const direction of [-1, 1]) {
+      page.drawLine({
+        start: end,
+        end: {
+          x: end.x - headLength * Math.cos(angle - direction * wingAngle),
+          y: end.y - headLength * Math.sin(angle - direction * wingAngle)
+        },
+        color,
+        thickness
+      });
+    }
+  }
+
   async function createOverlayPdf(options) {
     const pdfLib = getPdfLib();
     let sourceBytes = options.sourceBytes;
@@ -125,6 +152,8 @@
           color: colorFromArray(pdfLib, edit.borderColor, [0, 0, 0]),
           thickness: Number(edit.borderWidth) || DEFAULT_STROKE_WIDTH
         });
+      } else if (edit.type === "arrow") {
+        drawArrow(page, pdfLib, edit, pageHeight);
       }
     }
 
