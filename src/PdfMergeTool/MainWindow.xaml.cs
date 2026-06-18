@@ -2240,6 +2240,8 @@ public partial class MainWindow : Window
 
     private void OnEditorReplaceTextClick(object sender, RoutedEventArgs e) => SendViewerCommand("editorReplaceText");
 
+    private void OnEditorWhiteoutClick(object sender, RoutedEventArgs e) => SendViewerCommand("editorWhiteout");
+
     private void OnEditorRectangleClick(object sender, RoutedEventArgs e) => SendViewerCommand("editorRectangle");
 
     private void OnEditorEllipseClick(object sender, RoutedEventArgs e) => SendViewerCommand("editorEllipse");

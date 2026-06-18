@@ -141,6 +141,10 @@ if ($officialEditorAdapter -notmatch 'data-mode="pen"' -or $officialEditorAdapte
     throw 'editor adapter must expose freehand pen and highlight annotation tools.'
 }
 
+if ($officialEditorAdapter -notmatch 'data-mode="whiteout"' -or $officialEditorAdapter -notmatch 'type:\s*"whiteout"') {
+    throw 'editor adapter must expose a whiteout tool for visually covering arbitrary PDF regions.'
+}
+
 if ($officialEditorAdapter -notmatch 'function addSelectedTextHighlightEdits\(' -or $officialEditorAdapter -notmatch 'function getSelectedTextHighlightTargets\(' -or $officialEditorAdapter -notmatch 'type:\s*"textHighlight"') {
     throw 'editor adapter must support highlighting selected PDF text ranges.'
 }
@@ -209,6 +213,10 @@ if ($officialPdfLibAdapter -notmatch 'edit\.type === "textHighlight"') {
     throw 'pdf-lib adapter must persist selected text highlight annotations.'
 }
 
+if ($officialPdfLibAdapter -notmatch 'edit\.type === "whiteout"') {
+    throw 'pdf-lib adapter must persist visual whiteout edits.'
+}
+
 if ($officialPdfLibAdapter -notmatch 'edit\.type === "stamp"') {
     throw 'pdf-lib adapter must persist stamp overlay edits.'
 }
@@ -253,7 +261,7 @@ if ($mainWindow -notmatch 'WindowsFontService\.ReadFontBase64') {
     throw 'MainWindow must embed only the Windows fonts used by overlay text edits.'
 }
 
-if ($mainWindow -notmatch 'OnEditorTextClick' -or $mainWindow -notmatch 'editorReplaceText' -or $mainWindow -notmatch 'editorSignature' -or $mainWindow -notmatch 'editorHighlight' -or $mainWindow -notmatch 'editorPen') {
+if ($mainWindow -notmatch 'OnEditorTextClick' -or $mainWindow -notmatch 'editorReplaceText' -or $mainWindow -notmatch 'editorSignature' -or $mainWindow -notmatch 'editorHighlight' -or $mainWindow -notmatch 'editorPen' -or $mainWindow -notmatch 'editorWhiteout') {
     throw 'MainWindow must expose WPF toolbar commands for PDF editor tools.'
 }
 

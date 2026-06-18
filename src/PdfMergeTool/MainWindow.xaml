@@ -537,6 +537,11 @@
                                     <TextBlock Text="Replace" />
                                 </Button>
                                 <Button Style="{StaticResource ToolbarTextButtonStyle}"
+                                        ToolTip="흰색 영역 덮기"
+                                        Click="OnEditorWhiteoutClick">
+                                    <TextBlock Text="Whiteout" />
+                                </Button>
+                                <Button Style="{StaticResource ToolbarTextButtonStyle}"
                                         ToolTip="사각형 추가"
                                         Click="OnEditorRectangleClick">
                                     <TextBlock Text="Rect" />

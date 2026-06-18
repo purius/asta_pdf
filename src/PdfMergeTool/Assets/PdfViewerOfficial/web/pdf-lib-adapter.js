@@ -199,6 +199,16 @@
           color: colorFromArray(pdfLib, edit.fillColor, [0.98, 0.8, 0.08]),
           opacity: edit.opacity === undefined ? 0.38 : Number(edit.opacity)
         });
+      } else if (edit.type === "whiteout") {
+        const height = Number(edit.height) || 0;
+        const width = Number(edit.width) || 0;
+        page.drawRectangle({
+          x,
+          y: pageHeight - yFromTop - height,
+          width,
+          height,
+          color: colorFromArray(pdfLib, edit.fillColor, [1, 1, 1])
+        });
       } else if (edit.type === "rectangle") {
         const height = Number(edit.height) || 0;
         const width = Number(edit.width) || 0;

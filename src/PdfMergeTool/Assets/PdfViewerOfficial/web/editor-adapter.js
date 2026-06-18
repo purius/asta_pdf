@@ -178,6 +178,10 @@
         opacity: 0.38;
         mix-blend-mode: multiply;
       }
+      .asta-editor-whiteout {
+        background: #ffffff;
+        border: 1px dashed #94a3b8;
+      }
       .asta-editor-rectangle {
         border: 2px solid #2563eb;
         background: rgba(37, 99, 235, 0.08);
@@ -253,6 +257,7 @@
       <button type="button" data-mode="select" title="Select">Select</button>
       <button type="button" data-mode="text" title="Add text">Text</button>
       <button type="button" data-mode="replaceText" title="Replace existing text">Replace</button>
+      <button type="button" data-mode="whiteout" title="Cover an area with white">Whiteout</button>
       <button type="button" data-mode="rectangle" title="Add rectangle">Rect</button>
       <button type="button" data-mode="ellipse" title="Add ellipse">Ellipse</button>
       <button type="button" data-mode="line" title="Add line">Line</button>
@@ -388,6 +393,19 @@
       });
     } else if (state.mode === "replaceText") {
       addTextReplacementEdit(event, pageElement);
+    } else if (state.mode === "whiteout") {
+      recordHistory();
+      addEdit({
+        type: "whiteout",
+        page: getPageNumber(pageElement),
+        x: point.x,
+        y: point.y,
+        width: 180,
+        height: 90,
+        fillColor: "#ffffff",
+        borderColor: "#94a3b8",
+        borderWidth: 1
+      });
     } else if (state.mode === "rectangle") {
       recordHistory();
       addEdit({
@@ -766,6 +784,7 @@
     element.classList.toggle("asta-editor-text-replace", edit.type === "textReplace");
     element.classList.toggle("asta-editor-highlight", edit.type === "ink" && edit.tool === "highlight");
     element.classList.toggle("asta-editor-textHighlight", edit.type === "textHighlight");
+    element.classList.toggle("asta-editor-whiteout", edit.type === "whiteout");
     element.style.left = `${edit.x}px`;
     element.style.top = `${edit.y}px`;
     element.style.width = `${edit.width}px`;
@@ -795,6 +814,11 @@
       element.style.border = "0";
       element.style.background = edit.fillColor || "#facc15";
       element.style.opacity = String(edit.opacity ?? 0.38);
+      ensureResizeHandle(element, edit.id);
+    } else if (edit.type === "whiteout") {
+      element.style.border = `${edit.borderWidth || 1}px dashed ${edit.borderColor || "#94a3b8"}`;
+      element.style.background = edit.fillColor || "#ffffff";
+      element.style.opacity = "1";
       ensureResizeHandle(element, edit.id);
     } else if (edit.type === "line") {
       renderLineSvg(element, edit, false);
@@ -1121,7 +1145,7 @@
       edit.color = properties.color;
       edit.borderColor = properties.color;
       edit.borderWidth = properties.strokeWidth;
-    } else if (edit.type === "rectangle" || edit.type === "ellipse" || edit.type === "textHighlight") {
+    } else if (edit.type === "rectangle" || edit.type === "ellipse" || edit.type === "textHighlight" || edit.type === "whiteout") {
       edit.borderColor = properties.color;
       edit.borderWidth = properties.strokeWidth;
       edit.fillColor = properties.fillColor;
@@ -1316,6 +1340,17 @@
           height: edit.height * scaleY,
           fillColor: toRgbArray(edit.fillColor || "#facc15"),
           opacity: edit.opacity ?? 0.38
+        };
+      }
+      if (edit.type === "whiteout") {
+        return {
+          type: "whiteout",
+          page: edit.page,
+          x: edit.x * scaleX,
+          y: edit.y * scaleY,
+          width: edit.width * scaleX,
+          height: edit.height * scaleY,
+          fillColor: toRgbArray(edit.fillColor || "#ffffff")
         };
       }
       if (edit.type === "image" || edit.type === "signature") {
