@@ -399,6 +399,7 @@
     let isRenderingDocument = false;
     let programmaticScrollTargetPage = null;
     let scrollHandlingSuppressedUntil = 0;
+    let lastUserScrollAt = 0;
     let scrollWindowSwitching = false;
     const windowInstanceId = crypto.randomUUID?.() ?? `${Date.now()}-${Math.random()}`;
 
@@ -1034,6 +1035,15 @@
         performance.now() < scrollHandlingSuppressedUntil;
     }
 
+    function markUserScrollIntent() {
+      if (isRenderingDocument || programmaticScrollTargetPage !== null) return;
+      lastUserScrollAt = performance.now();
+    }
+
+    function hasRecentUserScrollIntent() {
+      return performance.now() - lastUserScrollAt < 700;
+    }
+
     function attachThumbEvents(thumb, pageNumber) {
       thumb.addEventListener('dragstart', (event) => {
         const payload = buildPageTransferPayload(pageNumber);
@@ -1372,7 +1382,7 @@
       await renderDocument(false);
     }
 
-    async function goToPage(pageNumber, smooth = true) {
+    async function goToPage(pageNumber, smooth = false) {
       if (!hasDocument()) return;
       const page = clamp(pageNumber, 1, getDocumentPageCount());
       setActive(page);
@@ -1380,9 +1390,9 @@
         await renderDocument(true, page);
       }
 
-      beginProgrammaticScroll(page, smooth ? 520 : 220);
+      beginProgrammaticScroll(page, 260);
       document.getElementById(`page-${page}`)?.scrollIntoView({
-        behavior: smooth ? 'smooth' : 'auto',
+        behavior: 'auto',
         block: 'start'
       });
     }
@@ -1623,7 +1633,7 @@
       });
       setActive(closest);
 
-      if (pageOrder.length > renderWindowPageCount && !scrollWindowSwitching) {
+      if (pageOrder.length > renderWindowPageCount && !scrollWindowSwitching && hasRecentUserScrollIntent()) {
         const nearBottom = pages.scrollTop + pages.clientHeight >= pages.scrollHeight - 48;
         const nearTop = pages.scrollTop <= 24;
         let targetPage = null;
@@ -1648,6 +1658,20 @@
             });
         }
       }
+    }, { passive: true });
+
+    pages.addEventListener('wheel', (event) => {
+      if (!event.ctrlKey) {
+        markUserScrollIntent();
+      }
+    }, { passive: true });
+
+    pages.addEventListener('pointerdown', () => {
+      markUserScrollIntent();
+    }, { passive: true });
+
+    pages.addEventListener('touchstart', () => {
+      markUserScrollIntent();
     }, { passive: true });
 
     window.addEventListener('wheel', (event) => {

@@ -45,6 +45,26 @@ if ($viewer -notmatch 'beginProgrammaticScroll\(targetPage') {
     throw 'renderDocument must mark its target scroll as programmatic before scrollIntoView.'
 }
 
+if ($viewer -notmatch 'let lastUserScrollAt = 0') {
+    throw 'viewer.html must track recent direct user scrolling separately from page navigation.'
+}
+
+if ($viewer -notmatch 'function markUserScrollIntent\(\)') {
+    throw 'viewer.html must record user scroll intent before allowing render-window switches.'
+}
+
+if ($viewer -notmatch 'function hasRecentUserScrollIntent\(\)') {
+    throw 'viewer.html must gate render-window switches on recent user scroll intent.'
+}
+
+if ($viewer -notmatch 'async function goToPage\(pageNumber, smooth = false\)') {
+    throw 'page navigation must default to immediate scrolling to avoid smooth-scroll feedback loops.'
+}
+
+if ($viewer -match "behavior: smooth \\? 'smooth' : 'auto'") {
+    throw 'page navigation must not use smooth scrolling for document page jumps.'
+}
+
 if ($viewer -notmatch 'for \(let index = 0; index < pageOrder\.length; index \+= 1\)') {
     throw 'thumbnail rendering must iterate over every page in pageOrder.'
 }
