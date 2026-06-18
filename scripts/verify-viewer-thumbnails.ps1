@@ -217,6 +217,10 @@ if ($officialPdfLibAdapter -notmatch 'pdfDoc\.embedFont') {
     throw 'pdf-lib adapter must embed fonts for text overlay edits.'
 }
 
+if ($officialPdfLibAdapter -notmatch 'async function drawTextOverlay\(' -or $officialPdfLibAdapter -notmatch 'String\(edit\.text \?\? ""\)\.split\(/\\r\\n\|\\r\|\\n/\)' -or $officialPdfLibAdapter -notmatch 'Number\(edit\.lineHeight\)') {
+    throw 'pdf-lib adapter must persist multiline text overlay edits with line-height.'
+}
+
 if ($officialPdfLibAdapter -notmatch 'drawEllipse' -or $officialPdfLibAdapter -notmatch 'drawLine') {
     throw 'pdf-lib adapter must persist ellipse and line overlay edits.'
 }
@@ -237,7 +241,7 @@ if ($officialPdfLibAdapter -notmatch 'sort\(\(left, right\) => \(Number\(left\.z
     throw 'pdf-lib adapter must preserve overlay layer order when saving edits.'
 }
 
-if ($officialPdfLibAdapter -notmatch 'function editOpacity\(' -or $officialPdfLibAdapter -notmatch 'page\.drawImage\(image,\s*\{[\s\S]*?opacity:\s*editOpacity\(edit, 1\)' -or $officialPdfLibAdapter -notmatch 'page\.drawText\(String\(edit\.text \?\? ""\),\s*\{[\s\S]*?opacity:\s*editOpacity\(edit, 1\)') {
+if ($officialPdfLibAdapter -notmatch 'function editOpacity\(' -or $officialPdfLibAdapter -notmatch 'page\.drawImage\(image,\s*\{[\s\S]*?opacity:\s*editOpacity\(edit, 1\)' -or $officialPdfLibAdapter -notmatch 'async function drawTextOverlay\([\s\S]*?opacity:\s*editOpacity\(edit, 1\)') {
     throw 'pdf-lib adapter must persist opacity for text and image overlay edits.'
 }
 

@@ -165,6 +165,28 @@
     });
   }
 
+  async function drawTextOverlay(pdfDoc, page, pdfLib, edit, pageHeight, fonts) {
+    const x = Number(edit.x) || 0;
+    const yFromTop = Number(edit.y) || 0;
+    const size = Number(edit.size) || DEFAULT_TEXT_SIZE;
+    const lineHeight = Number(edit.lineHeight) || size * 1.25;
+    const font = await resolveFont(pdfDoc, pdfLib, edit, fonts);
+    const color = colorFromArray(pdfLib, edit.color, [0, 0, 0]);
+    const lines = String(edit.text ?? "").split(/\r\n|\r|\n/);
+
+    lines.forEach((line, index) => {
+      page.drawText(line, {
+        x,
+        y: pageHeight - yFromTop - size - index * lineHeight,
+        size,
+        font,
+        color,
+        opacity: editOpacity(edit, 1),
+        rotate: edit.rotate ? pdfLib.degrees(Number(edit.rotate) || 0) : undefined
+      });
+    });
+  }
+
   async function createOverlayPdf(options) {
     const pdfLib = getPdfLib();
     let sourceBytes = options.sourceBytes;
@@ -186,17 +208,7 @@
       const yFromTop = Number(edit.y) || 0;
 
       if (edit.type === "text") {
-        const font = await resolveFont(pdfDoc, pdfLib, edit, fonts);
-        const size = Number(edit.size) || DEFAULT_TEXT_SIZE;
-        page.drawText(String(edit.text ?? ""), {
-          x,
-          y: pageHeight - yFromTop - size,
-          size,
-          font,
-          color: colorFromArray(pdfLib, edit.color, [0, 0, 0]),
-          opacity: editOpacity(edit, 1),
-          rotate: edit.rotate ? pdfLib.degrees(Number(edit.rotate) || 0) : undefined
-        });
+        await drawTextOverlay(pdfDoc, page, pdfLib, edit, pageHeight, fonts);
       } else if (edit.type === "textReplace") {
         await drawTextReplacement(pdfDoc, page, pdfLib, edit, pageHeight, fonts);
       } else if (edit.type === "textHighlight") {
