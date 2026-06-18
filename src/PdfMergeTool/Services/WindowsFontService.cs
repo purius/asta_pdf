@@ -84,10 +84,12 @@ internal static class WindowsFontService
                 continue;
             }
 
-            var name = NormalizeFontName(valueName);
-            if (!fonts.ContainsKey(name))
+            foreach (var name in NormalizeFontNames(valueName))
             {
-                fonts[name] = new WindowsFontInfo(name, path);
+                if (!fonts.ContainsKey(name))
+                {
+                    fonts[name] = new WindowsFontInfo(name, path);
+                }
             }
         }
     }
@@ -97,9 +99,14 @@ internal static class WindowsFontService
         return Path.GetExtension(path).ToLowerInvariant() is ".ttf" or ".otf" or ".ttc";
     }
 
-    private static string NormalizeFontName(string registryName)
+    private static IReadOnlyList<string> NormalizeFontNames(string registryName)
     {
         var parenIndex = registryName.IndexOf(" (", StringComparison.Ordinal);
-        return (parenIndex > 0 ? registryName[..parenIndex] : registryName).Trim();
+        var normalized = (parenIndex > 0 ? registryName[..parenIndex] : registryName).Trim();
+        return normalized
+            .Split(" & ", StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
+            .Where(name => !string.IsNullOrWhiteSpace(name))
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .ToList();
     }
 }

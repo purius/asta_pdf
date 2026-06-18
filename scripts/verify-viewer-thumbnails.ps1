@@ -482,6 +482,10 @@ if ($fontService -notmatch 'CurrentVersion\\Fonts') {
     throw 'WindowsFontService must read installed Windows fonts from the registry.'
 }
 
+if ($fontService -notmatch 'NormalizeFontNames' -or $fontService -notmatch '\.Split\(' -or $fontService -notmatch '" & "') {
+    throw 'WindowsFontService must expose bundled registry font family names such as Korean UI font collections as individual choices.'
+}
+
 if ($fontService -notmatch 'Convert\.ToBase64String\(File\.ReadAllBytes') {
     throw 'WindowsFontService must provide font bytes for pdf-lib embedding.'
 }
