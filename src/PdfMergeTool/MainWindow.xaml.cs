@@ -58,7 +58,9 @@ public partial class MainWindow : Window
     private bool _fallbackModeActive;
     private string? _fallbackSessionId;
     private TaskCompletionSource<EditorExportState>? _editorStateCompletion;
+    private string? _editorStateRequestId;
     private TaskCompletionSource<string>? _overlayPdfExportCompletion;
+    private string? _overlayPdfExportRequestId;
 
     public MainWindow(IEnumerable<string> initialFiles, bool openMergeWindow)
     {
@@ -962,6 +964,7 @@ public partial class MainWindow : Window
         var requestId = Guid.NewGuid().ToString("N");
         var completion = new TaskCompletionSource<EditorExportState>(TaskCreationOptions.RunContinuationsAsynchronously);
         _editorStateCompletion = completion;
+        _editorStateRequestId = requestId;
         var message = JsonSerializer.Serialize(new
         {
             type = "collectEditorState",
@@ -973,6 +976,7 @@ public partial class MainWindow : Window
         if (completed != completion.Task)
         {
             _editorStateCompletion = null;
+            _editorStateRequestId = null;
             throw new TimeoutException("PDF editor state collection timed out.");
         }
 
@@ -983,6 +987,11 @@ public partial class MainWindow : Window
     {
         var completion = _editorStateCompletion;
         if (completion is null)
+        {
+            return;
+        }
+
+        if (!IsExpectedRequest(root, _editorStateRequestId, "editor state collection"))
         {
             return;
         }
@@ -1005,6 +1014,7 @@ public partial class MainWindow : Window
         finally
         {
             _editorStateCompletion = null;
+            _editorStateRequestId = null;
         }
     }
 
@@ -1018,6 +1028,7 @@ public partial class MainWindow : Window
         var requestId = Guid.NewGuid().ToString("N");
         var completion = new TaskCompletionSource<string>(TaskCreationOptions.RunContinuationsAsynchronously);
         _overlayPdfExportCompletion = completion;
+        _overlayPdfExportRequestId = requestId;
         var message = JsonSerializer.Serialize(new
         {
             type = "exportOverlayPdf",
@@ -1032,6 +1043,7 @@ public partial class MainWindow : Window
         if (completed != completion.Task)
         {
             _overlayPdfExportCompletion = null;
+            _overlayPdfExportRequestId = null;
             throw new TimeoutException("PDF editor export timed out.");
         }
 
@@ -1042,6 +1054,11 @@ public partial class MainWindow : Window
     {
         var completion = _overlayPdfExportCompletion;
         if (completion is null)
+        {
+            return;
+        }
+
+        if (!IsExpectedRequest(root, _overlayPdfExportRequestId, "overlay PDF export"))
         {
             return;
         }
@@ -1060,6 +1077,7 @@ public partial class MainWindow : Window
         finally
         {
             _overlayPdfExportCompletion = null;
+            _overlayPdfExportRequestId = null;
         }
     }
 
@@ -1067,6 +1085,11 @@ public partial class MainWindow : Window
     {
         var completion = _overlayPdfExportCompletion;
         if (completion is null)
+        {
+            return;
+        }
+
+        if (!IsExpectedRequest(root, _overlayPdfExportRequestId, "overlay PDF export failure"))
         {
             return;
         }
@@ -1084,7 +1107,23 @@ public partial class MainWindow : Window
         finally
         {
             _overlayPdfExportCompletion = null;
+            _overlayPdfExportRequestId = null;
         }
+    }
+
+    private static bool IsExpectedRequest(JsonElement root, string? expectedRequestId, string operation)
+    {
+        var actualRequestId = root.TryGetProperty("requestId", out var requestElement)
+            ? requestElement.GetString()
+            : null;
+        if (!string.IsNullOrWhiteSpace(expectedRequestId) &&
+            string.Equals(actualRequestId, expectedRequestId, StringComparison.Ordinal))
+        {
+            return true;
+        }
+
+        AppLogger.Info($"Ignoring stale {operation} response. Expected requestId={expectedRequestId ?? "<none>"}, actual requestId={actualRequestId ?? "<none>"}.");
+        return false;
     }
 
     private void ReceiveA4PageImage(JsonElement root)

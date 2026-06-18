@@ -4,8 +4,10 @@ $ErrorActionPreference = 'Stop'
 $root = Split-Path -Parent $PSScriptRoot
 $fallbackPath = Join-Path $root 'src\PdfMergeTool\Services\PdfFallbackRenderService.cs'
 $updatePath = Join-Path $root 'src\PdfMergeTool\Services\UpdateService.cs'
+$mainWindowPath = Join-Path $root 'src\PdfMergeTool\MainWindow.xaml.cs'
 $fallback = Get-Content -Raw $fallbackPath
 $update = Get-Content -Raw $updatePath
+$mainWindow = Get-Content -Raw $mainWindowPath
 
 if ($fallback -notmatch 'private const int MaxRenderCacheEntries') {
     throw 'PdfFallbackRenderService must cap per-session render cache entries.'
@@ -33,6 +35,13 @@ if ($update -notmatch 'private static readonly HttpClient HttpClient') {
 
 if ($update -notmatch 'Timeout = TimeSpan\.FromSeconds\(10\)') {
     throw 'UpdateService must use a bounded timeout for update checks.'
+}
+
+if ($mainWindow -notmatch '_editorStateRequestId' -or
+    $mainWindow -notmatch '_overlayPdfExportRequestId' -or
+    $mainWindow -notmatch 'IsExpectedRequest\(root,\s*_editorStateRequestId' -or
+    $mainWindow -notmatch 'IsExpectedRequest\(root,\s*_overlayPdfExportRequestId') {
+    throw 'WebView async editor responses must be matched by requestId before completing pending WPF tasks.'
 }
 
 Write-Output 'stability checks passed.'
