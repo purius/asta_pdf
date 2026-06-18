@@ -149,6 +149,10 @@ if ($officialEditorAdapter -notmatch 'function getSelectedTextReplacementTarget\
     throw 'editor adapter must support replacing a selected PDF text range, not only a clicked text span.'
 }
 
+if ($officialEditorAdapter -notmatch 'contentEditable\s*=\s*"true"' -or $officialEditorAdapter -notmatch 'function beginInlineTextEdit\(' -or $officialEditorAdapter -notmatch 'function commitInlineTextEdit\(') {
+    throw 'editor adapter must support direct inline editing for text, text replacement, and stamp overlays.'
+}
+
 if ($officialEditorAdapter -notmatch 'asta-editor-resize-handle' -or $officialEditorAdapter -notmatch 'function startResize\(') {
     throw 'editor adapter must support resizing selected overlay objects.'
 }

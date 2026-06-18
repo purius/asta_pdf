@@ -204,6 +204,20 @@
         background: rgba(255, 255, 255, 0.02);
         text-transform: uppercase;
       }
+      .asta-editor-text-content {
+        display: block;
+        min-width: 100%;
+        min-height: 100%;
+        outline: none;
+      }
+      .asta-editor-item.inline-editing {
+        cursor: text;
+      }
+      .asta-editor-item.inline-editing .asta-editor-text-content {
+        cursor: text;
+        user-select: text;
+        background: rgba(37, 99, 235, 0.08);
+      }
       .asta-editor-crosshair .asta-editor-layer {
         cursor: crosshair;
       }
@@ -643,7 +657,7 @@
         element.classList.add("asta-editor-text-replace");
       }
       element.addEventListener("pointerdown", event => startDrag(event, edit.id));
-      element.addEventListener("dblclick", () => editText(edit.id));
+      element.addEventListener("dblclick", event => beginInlineTextEdit(edit.id, event));
       layer.appendChild(element);
     }
     element.classList.toggle("asta-editor-text-replace", edit.type === "textReplace");
@@ -707,6 +721,7 @@
       content.className = "asta-editor-text-content";
       element.prepend(content);
     }
+    if (content.isContentEditable) return;
     content.textContent = text;
   }
 
@@ -758,6 +773,7 @@
   }
 
   function startDrag(event, editId) {
+    if (event.target.closest?.(".asta-editor-text-content")?.isContentEditable) return;
     event.preventDefault();
     event.stopPropagation();
     selectEdit(editId);
@@ -855,15 +871,83 @@
   }
 
   function editText(editId) {
+    beginInlineTextEdit(editId);
+  }
+
+  function beginInlineTextEdit(editId, event = null) {
+    event?.preventDefault();
+    event?.stopPropagation();
     const edit = state.edits.find(item => item.id === editId);
     if (!edit || (edit.type !== "text" && edit.type !== "textReplace" && edit.type !== "stamp")) return;
-    const text = window.prompt("Edit text", edit.text ?? "");
-    if (text === null) return;
+    const element = document.querySelector(`[data-edit-id="${editId}"]`);
+    const content = element?.querySelector(":scope > .asta-editor-text-content");
+    if (!element || !content || content.isContentEditable) return;
+
+    selectEdit(editId);
+    const originalText = edit.text ?? "";
+    element.classList.add("inline-editing");
+    content.contentEditable = "true";
+    content.dataset.originalText = originalText;
+    content.focus();
+    selectContent(content);
+
+    const finish = commit => {
+      content.removeEventListener("keydown", onKeyDown);
+      content.removeEventListener("blur", onBlur);
+      commitInlineTextEdit(editId, commit);
+    };
+    const onKeyDown = keyEvent => {
+      keyEvent.stopPropagation();
+      if (keyEvent.key === "Escape") {
+        keyEvent.preventDefault();
+        finish(false);
+        return;
+      }
+      if (keyEvent.key === "Enter" && !keyEvent.shiftKey) {
+        keyEvent.preventDefault();
+        finish(true);
+      }
+    };
+    const onBlur = () => finish(true);
+
+    content.addEventListener("keydown", onKeyDown);
+    content.addEventListener("blur", onBlur);
+  }
+
+  function commitInlineTextEdit(editId, commit) {
+    const edit = state.edits.find(item => item.id === editId);
+    const element = document.querySelector(`[data-edit-id="${editId}"]`);
+    const content = element?.querySelector(":scope > .asta-editor-text-content");
+    if (!edit || !element || !content) return;
+
+    const originalText = content.dataset.originalText ?? edit.text ?? "";
+    const nextText = normalizeEditableText(content.innerText);
+    content.contentEditable = "false";
+    delete content.dataset.originalText;
+    element.classList.remove("inline-editing");
+
+    if (!commit || nextText === originalText) {
+      content.textContent = originalText;
+      return;
+    }
+
     recordHistory();
-    edit.text = text;
+    edit.text = nextText;
     state.dirty = true;
     renderEdit(edit);
     postDirty();
+  }
+
+  function normalizeEditableText(text) {
+    return String(text ?? "").replace(/\r\n/g, "\n").replace(/\r/g, "\n").replace(/\n$/, "");
+  }
+
+  function selectContent(element) {
+    const range = document.createRange();
+    range.selectNodeContents(element);
+    const selection = window.getSelection();
+    selection?.removeAllRanges();
+    selection?.addRange(range);
   }
 
   function deleteSelected() {
@@ -1014,6 +1098,7 @@
       subtree: true
     });
     window.addEventListener("keydown", event => {
+      if (event.target?.closest?.(".asta-editor-text-content")?.isContentEditable) return;
       if (event.key === "Delete") {
         deleteSelected();
       }
