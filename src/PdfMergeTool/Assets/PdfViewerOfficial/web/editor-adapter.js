@@ -12,6 +12,8 @@
 
   let nextEditId = 1;
   let toolbar;
+  let historyStack = [];
+  let redoStack = [];
 
   function postMessage(message) {
     window.chrome?.webview?.postMessage(message);
@@ -23,6 +25,33 @@
       isDirty: state.dirty,
       editCount: state.edits.length
     });
+  }
+
+  function snapshotEdits() {
+    return JSON.stringify(state.edits);
+  }
+
+  function recordHistory() {
+    historyStack.push(snapshotEdits());
+    if (historyStack.length > 100) {
+      historyStack.shift();
+    }
+    redoStack = [];
+  }
+
+  function restoreSnapshot(snapshot) {
+    state.edits = JSON.parse(snapshot);
+    nextEditId = state.edits.reduce((nextId, edit) => {
+      const match = /^edit-(\d+)$/.exec(edit.id || "");
+      return match ? Math.max(nextId, Number(match[1]) + 1) : nextId;
+    }, 1);
+    state.selectedId = null;
+    document.querySelectorAll(".asta-editor-item").forEach(element => element.remove());
+    for (const edit of state.edits) {
+      renderEdit(edit);
+    }
+    state.dirty = true;
+    postDirty();
   }
 
   function getApp() {
@@ -117,7 +146,7 @@
         line-height: 1.25;
         background: rgba(255, 255, 255, 0.01);
       }
-      .asta-editor-rect {
+      .asta-editor-rectangle {
         border: 2px solid #2563eb;
         background: rgba(37, 99, 235, 0.08);
       }
@@ -134,15 +163,15 @@
     toolbar = document.createElement("div");
     toolbar.id = "astaEditorToolbar";
     toolbar.innerHTML = `
-      <button type="button" data-mode="select" title="선택">선택</button>
-      <button type="button" data-mode="text" title="텍스트 추가">텍스트</button>
-      <button type="button" data-mode="rectangle" title="사각형 추가">사각형</button>
-      <button type="button" data-mode="ellipse" title="원/타원 추가">타원</button>
-      <button type="button" data-mode="line" title="선 추가">선</button>
-      <select data-role="font" title="글꼴"></select>
-      <input data-role="size" type="number" min="6" max="96" value="14" title="글자 크기" />
-      <input data-role="color" type="color" value="#111827" title="색상" />
-      <button type="button" data-action="delete" title="선택 삭제">삭제</button>
+      <button type="button" data-mode="select" title="Select">Select</button>
+      <button type="button" data-mode="text" title="Add text">Text</button>
+      <button type="button" data-mode="rectangle" title="Add rectangle">Rect</button>
+      <button type="button" data-mode="ellipse" title="Add ellipse">Ellipse</button>
+      <button type="button" data-mode="line" title="Add line">Line</button>
+      <select data-role="font" title="Font"></select>
+      <input data-role="size" type="number" min="6" max="96" value="14" title="Text size" />
+      <input data-role="color" type="color" value="#111827" title="Color" />
+      <button type="button" data-action="delete" title="Delete selected">Delete</button>
     `;
     document.body.appendChild(toolbar);
     toolbar.addEventListener("click", event => {
@@ -230,8 +259,9 @@
     }
     const point = pagePoint(event, pageElement);
     if (state.mode === "text") {
-      const text = window.prompt("추가할 텍스트", "");
+      const text = window.prompt("Text to add", "");
       if (!text) return;
+      recordHistory();
       addEdit({
         type: "text",
         page: getPageNumber(pageElement),
@@ -245,6 +275,7 @@
         color: state.color
       });
     } else if (state.mode === "rectangle") {
+      recordHistory();
       addEdit({
         type: "rectangle",
         page: getPageNumber(pageElement),
@@ -257,6 +288,7 @@
         borderWidth: 2
       });
     } else if (state.mode === "ellipse") {
+      recordHistory();
       addEdit({
         type: "ellipse",
         page: getPageNumber(pageElement),
@@ -269,6 +301,7 @@
         borderWidth: 2
       });
     } else if (state.mode === "line") {
+      recordHistory();
       addEdit({
         type: "line",
         page: getPageNumber(pageElement),
@@ -314,6 +347,8 @@
       element.style.fontSize = `${edit.size || state.textSize}px`;
       element.style.color = edit.color || state.color;
     } else if (edit.type === "rectangle") {
+      element.style.border = `${edit.borderWidth || 2}px solid ${edit.borderColor || state.color}`;
+      element.style.background = "rgba(37, 99, 235, 0.08)";
       element.style.borderColor = edit.borderColor || state.color;
     } else if (edit.type === "ellipse") {
       element.style.border = `${edit.borderWidth || 2}px solid ${edit.borderColor || state.color}`;
@@ -338,6 +373,7 @@
     const initialX = edit.x;
     const initialY = edit.y;
     const pointerId = event.pointerId;
+    recordHistory();
     event.currentTarget.setPointerCapture(pointerId);
 
     function move(moveEvent) {
@@ -374,6 +410,7 @@
   function updateSelectedStyle() {
     const edit = state.edits.find(item => item.id === state.selectedId);
     if (!edit) return;
+    recordHistory();
     if (edit.type === "text") {
       edit.fontName = state.fontName;
       edit.size = state.textSize;
@@ -389,8 +426,9 @@
   function editText(editId) {
     const edit = state.edits.find(item => item.id === editId);
     if (!edit || edit.type !== "text") return;
-    const text = window.prompt("텍스트 수정", edit.text ?? "");
+    const text = window.prompt("Edit text", edit.text ?? "");
     if (text === null) return;
+    recordHistory();
     edit.text = text;
     state.dirty = true;
     renderEdit(edit);
@@ -399,12 +437,27 @@
 
   function deleteSelected() {
     if (!state.selectedId) return;
+    recordHistory();
     const editId = state.selectedId;
     state.edits = state.edits.filter(edit => edit.id !== editId);
     document.querySelector(`[data-edit-id="${editId}"]`)?.remove();
     state.selectedId = null;
     state.dirty = true;
     postDirty();
+  }
+
+  function undo() {
+    if (historyStack.length === 0) return false;
+    redoStack.push(snapshotEdits());
+    restoreSnapshot(historyStack.pop());
+    return true;
+  }
+
+  function redo() {
+    if (redoStack.length === 0) return false;
+    historyStack.push(snapshotEdits());
+    restoreSnapshot(redoStack.pop());
+    return true;
   }
 
   function toRgbArray(hex) {
@@ -483,6 +536,8 @@
     state.edits = [];
     state.selectedId = null;
     state.dirty = false;
+    historyStack = [];
+    redoStack = [];
     document.querySelectorAll(".asta-editor-item").forEach(element => element.remove());
     postDirty();
   }
@@ -509,6 +564,8 @@
     clear,
     markClean,
     deleteSelected,
+    undo,
+    redo,
     hasDirtyEdits: () => state.dirty,
     getEdits: exportEdits,
     getUsedFontNames,

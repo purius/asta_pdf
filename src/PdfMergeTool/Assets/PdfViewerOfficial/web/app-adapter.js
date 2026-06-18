@@ -4,6 +4,7 @@ const AppBridge = (() => {
   let selectedPages = new Set();
   let firstPageRendered = false;
   let pageStateDirty = false;
+  let thumbnailScale = 1;
 
   function postMessage(message) {
     window.chrome?.webview?.postMessage(message);
@@ -30,6 +31,7 @@ const AppBridge = (() => {
 
   function postPageOrder() {
     const activePage = getApp()?.page ?? pageOrder[0] ?? 1;
+    applyPageStatePresentation();
     postMessage({
       type: "pageOrderChanged",
       pageOrder,
@@ -101,9 +103,36 @@ const AppBridge = (() => {
     postPageOrder();
   }
 
+  function setThumbnailScale(nextScale) {
+    thumbnailScale = Math.min(Math.max(nextScale, 0.75), 1.8);
+    const thumbnailsView = document.getElementById("thumbnailsView");
+    thumbnailsView?.style.setProperty("--thumbnail-width", `${Math.round(126 * thumbnailScale)}px`);
+  }
+
+  function applyPageStatePresentation() {
+    const visiblePages = new Set(pageOrder);
+    document.querySelectorAll(".page[data-page-number]").forEach(page => {
+      const pageNumber = Number(page.dataset.pageNumber);
+      page.hidden = visiblePages.size > 0 && !visiblePages.has(pageNumber);
+    });
+    document.querySelectorAll("#thumbnailsView .thumbnail[page-number]").forEach(thumbnail => {
+      const pageNumber = Number(thumbnail.getAttribute("page-number"));
+      thumbnail.hidden = visiblePages.size > 0 && !visiblePages.has(pageNumber);
+    });
+  }
+
   function deleteSelectedPages() {
     if (pageOrder.length <= 1 || selectedPages.size === 0) return;
     pageOrder = pageOrder.filter(page => !selectedPages.has(page));
+    selectedPages = new Set([pageOrder[0]]);
+    pageStateDirty = true;
+    postPageOrder();
+    goToPage(pageOrder[0]);
+  }
+
+  function reversePageOrder() {
+    if (pageOrder.length <= 1) return;
+    pageOrder = [...pageOrder].reverse();
     selectedPages = new Set([pageOrder[0]]);
     pageStateDirty = true;
     postPageOrder();
@@ -152,6 +181,15 @@ const AppBridge = (() => {
       case "fitPage":
         setScale("page-fit");
         break;
+      case "thumbZoomIn":
+        setThumbnailScale(thumbnailScale + 0.15);
+        break;
+      case "thumbZoomOut":
+        setThumbnailScale(thumbnailScale - 0.15);
+        break;
+      case "thumbZoomReset":
+        setThumbnailScale(1);
+        break;
       case "rotateSelectedClockwise":
         rotateSelectedPages(90);
         break;
@@ -164,6 +202,19 @@ const AppBridge = (() => {
       case "deleteSelectedPages":
         deleteSelectedPages();
         break;
+      case "reversePageOrder":
+        reversePageOrder();
+        break;
+      case "undo":
+        if (!window.EditorAdapter?.undo?.()) {
+          postDiagnostic("info", "No editor action to undo.");
+        }
+        break;
+      case "redo":
+        if (!window.EditorAdapter?.redo?.()) {
+          postDiagnostic("info", "No editor action to redo.");
+        }
+        break;
       case "editorSelect":
         window.EditorAdapter?.setMode?.("select");
         break;
@@ -172,6 +223,12 @@ const AppBridge = (() => {
         break;
       case "editorRectangle":
         window.EditorAdapter?.setMode?.("rectangle");
+        break;
+      case "editorEllipse":
+        window.EditorAdapter?.setMode?.("ellipse");
+        break;
+      case "editorLine":
+        window.EditorAdapter?.setMode?.("line");
         break;
       case "editorDeleteSelection":
         window.EditorAdapter?.deleteSelected?.();
@@ -218,9 +275,11 @@ const AppBridge = (() => {
 
     eventBus?._on("pagesloaded", event => {
       rebuildPageOrder(event.pagesCount ?? getTotalPages());
+      setTimeout(applyPageStatePresentation, 0);
     });
 
     eventBus?._on("pagerendered", event => {
+      setTimeout(applyPageStatePresentation, 0);
       if (!firstPageRendered) {
         firstPageRendered = true;
         postMessage({

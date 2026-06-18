@@ -97,6 +97,22 @@ if ($officialAdapter -notmatch 'collectEditorState') {
     throw 'official viewer adapter must expose editor state collection before saving.'
 }
 
+if ($officialAdapter -notmatch 'thumbZoomIn' -or $officialAdapter -notmatch 'thumbZoomOut' -or $officialAdapter -notmatch 'thumbZoomReset') {
+    throw 'official viewer adapter must preserve thumbnail zoom commands from the WPF toolbar.'
+}
+
+if ($officialAdapter -notmatch 'reversePageOrder') {
+    throw 'official viewer adapter must preserve reverse page order command semantics.'
+}
+
+if ($officialAdapter -notmatch 'case "undo"' -or $officialAdapter -notmatch 'case "redo"') {
+    throw 'official viewer adapter must preserve undo and redo commands.'
+}
+
+if ($officialAdapter -notmatch 'applyPageStatePresentation') {
+    throw 'official viewer adapter must visually hide deleted pages and thumbnails while saving page state.'
+}
+
 if ($officialEditorAdapter -notmatch 'type:\s*"editorStateChanged"') {
     throw 'editor adapter must notify WPF when overlay edits make the document dirty.'
 }
@@ -111,6 +127,14 @@ if ($officialEditorAdapter -notmatch 'astaEditorToolbar') {
 
 if ($officialEditorAdapter -notmatch 'data-mode="ellipse"' -or $officialEditorAdapter -notmatch 'data-mode="line"') {
     throw 'editor adapter must expose ellipse and line shape editing controls.'
+}
+
+if ($officialEditorAdapter -notmatch 'function undo\(\)' -or $officialEditorAdapter -notmatch 'function redo\(\)') {
+    throw 'editor adapter must support undo and redo for overlay edits.'
+}
+
+if ($officialEditorAdapter -match [char]0xfffd) {
+    throw 'editor adapter UI strings must not contain replacement characters from broken encoding.'
 }
 
 if ($officialPdfLibAdapter -notmatch 'PDFLib\.PDFDocument\.load') {
