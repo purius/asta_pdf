@@ -60,6 +60,14 @@ if ($update -notmatch 'BuildInstallerDownloadUrl\(latestTag\)' -or
     throw 'UpdateService must fall back to a tag-based installer download URL when release assets are delayed.'
 }
 
+if ($update -notmatch 'CheckForUpdatesViaReleaseRedirectAsync' -or
+    $update -notmatch 'https://github\.com/purius/asta_pdf/releases/latest' -or
+    $update -notmatch 'HttpCompletionOption\.ResponseHeadersRead' -or
+    $update -notmatch 'TryGetReleaseTagFromUrl' -or
+    $update -notmatch 'catch \(HttpRequestException ex\)') {
+    throw 'UpdateService must fall back to the GitHub releases/latest redirect when the API is rate-limited or unavailable.'
+}
+
 if ($mainWindow -notmatch '_editorStateRequestId' -or
     $mainWindow -notmatch '_overlayPdfExportRequestId' -or
     $mainWindow -notmatch 'IsExpectedRequest\(root,\s*_editorStateRequestId' -or

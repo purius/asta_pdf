@@ -27,27 +27,35 @@ internal static class UpdateService
 
     public static async Task<UpdateCheckResult> CheckForUpdatesAsync(CancellationToken cancellationToken = default)
     {
-        using var response = await HttpClient.GetAsync(LatestReleaseApiUrl, cancellationToken);
-        response.EnsureSuccessStatusCode();
+        try
+        {
+            using var response = await HttpClient.GetAsync(LatestReleaseApiUrl, cancellationToken);
+            response.EnsureSuccessStatusCode();
 
-        await using var stream = await response.Content.ReadAsStreamAsync(cancellationToken);
-        using var document = await JsonDocument.ParseAsync(stream, cancellationToken: cancellationToken);
-        var root = document.RootElement;
+            await using var stream = await response.Content.ReadAsStreamAsync(cancellationToken);
+            using var document = await JsonDocument.ParseAsync(stream, cancellationToken: cancellationToken);
+            var root = document.RootElement;
 
-        var latestTag = root.GetProperty("tag_name").GetString() ?? string.Empty;
-        var latestVersionText = NormalizeVersionText(latestTag) ?? latestTag;
-        var releaseUrl = GetUri(root, "html_url") ?? new Uri("https://github.com/purius/asta_pdf/releases/latest");
-        var installerUrl = FindInstallerUrl(root) ?? BuildInstallerDownloadUrl(latestTag) ?? releaseUrl;
+            var latestTag = root.GetProperty("tag_name").GetString() ?? string.Empty;
+            var latestVersionText = NormalizeVersionText(latestTag) ?? latestTag;
+            var releaseUrl = GetUri(root, "html_url") ?? new Uri("https://github.com/purius/asta_pdf/releases/latest");
+            var installerUrl = FindInstallerUrl(root) ?? BuildInstallerDownloadUrl(latestTag) ?? releaseUrl;
 
-        var currentVersion = ParseVersion(CurrentVersionText);
-        var latestVersion = ParseVersion(latestVersionText);
+            var currentVersion = ParseVersion(CurrentVersionText);
+            var latestVersion = ParseVersion(latestVersionText);
 
-        return new UpdateCheckResult(
-            CurrentVersionText,
-            latestVersionText,
-            latestVersion > currentVersion,
-            releaseUrl,
-            installerUrl);
+            return new UpdateCheckResult(
+                CurrentVersionText,
+                latestVersionText,
+                latestVersion > currentVersion,
+                releaseUrl,
+                installerUrl);
+        }
+        catch (HttpRequestException ex)
+        {
+            AppLogger.Error(ex, "GitHub latest release API failed. Falling back to releases/latest redirect.");
+            return await CheckForUpdatesViaReleaseRedirectAsync(cancellationToken);
+        }
     }
 
     public static void OpenUpdatePage(UpdateCheckResult result)
@@ -101,6 +109,48 @@ internal static class UpdateService
         }
 
         return new Uri($"https://github.com/purius/asta_pdf/releases/download/{Uri.EscapeDataString(tag.Trim())}/{InstallerAssetName}");
+    }
+
+    private static async Task<UpdateCheckResult> CheckForUpdatesViaReleaseRedirectAsync(CancellationToken cancellationToken)
+    {
+        var latestUrl = new Uri("https://github.com/purius/asta_pdf/releases/latest");
+        using var response = await HttpClient.GetAsync(latestUrl, HttpCompletionOption.ResponseHeadersRead, cancellationToken);
+        response.EnsureSuccessStatusCode();
+
+        var releaseUrl = response.RequestMessage?.RequestUri ?? latestUrl;
+        var latestTag = TryGetReleaseTagFromUrl(releaseUrl) ?? string.Empty;
+        if (string.IsNullOrWhiteSpace(latestTag))
+        {
+            throw new InvalidOperationException("GitHub latest release redirect did not include a release tag.");
+        }
+
+        var latestVersionText = NormalizeVersionText(latestTag) ?? latestTag;
+        var currentVersion = ParseVersion(CurrentVersionText);
+        var latestVersion = ParseVersion(latestVersionText);
+        var installerUrl = BuildInstallerDownloadUrl(latestTag) ?? releaseUrl;
+
+        return new UpdateCheckResult(
+            CurrentVersionText,
+            latestVersionText,
+            latestVersion > currentVersion,
+            releaseUrl,
+            installerUrl);
+    }
+
+    private static string? TryGetReleaseTagFromUrl(Uri url)
+    {
+        var marker = "/releases/tag/";
+        var path = url.AbsolutePath;
+        var markerIndex = path.IndexOf(marker, StringComparison.OrdinalIgnoreCase);
+        if (markerIndex < 0)
+        {
+            return null;
+        }
+
+        var tag = path[(markerIndex + marker.Length)..];
+        return string.IsNullOrWhiteSpace(tag)
+            ? null
+            : Uri.UnescapeDataString(tag.Trim('/'));
     }
 
     private static Uri? GetUri(JsonElement root, string propertyName)
