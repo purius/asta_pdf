@@ -185,6 +185,10 @@ if ($officialEditorAdapter -notmatch 'function changeSelectedLayerOrder\(' -or $
     throw 'editor adapter must support layer order controls for overlapping overlay edits.'
 }
 
+if ($officialEditorAdapter -notmatch 'data-role="opacity"' -or $officialEditorAdapter -notmatch 'function normalizeOpacity\(' -or $officialEditorAdapter -notmatch 'edit\.opacity = properties\.opacity') {
+    throw 'editor adapter must expose and persist per-object opacity controls.'
+}
+
 if ($officialEditorAdapter -match [char]0xfffd) {
     throw 'editor adapter UI strings must not contain replacement characters from broken encoding.'
 }
@@ -219,6 +223,10 @@ if ($officialPdfLibAdapter -notmatch 'function drawInkPath\(' -or $officialPdfLi
 
 if ($officialPdfLibAdapter -notmatch 'sort\(\(left, right\) => \(Number\(left\.zIndex\) \|\| 0\) - \(Number\(right\.zIndex\) \|\| 0\)\)') {
     throw 'pdf-lib adapter must preserve overlay layer order when saving edits.'
+}
+
+if ($officialPdfLibAdapter -notmatch 'function editOpacity\(' -or $officialPdfLibAdapter -notmatch 'page\.drawImage\(image,\s*\{[\s\S]*?opacity:\s*editOpacity\(edit, 1\)' -or $officialPdfLibAdapter -notmatch 'page\.drawText\(String\(edit\.text \?\? ""\),\s*\{[\s\S]*?opacity:\s*editOpacity\(edit, 1\)') {
+    throw 'pdf-lib adapter must persist opacity for text and image overlay edits.'
 }
 
 if ($officialPdfLibAdapter -notmatch 'edit\.type === "textHighlight"') {

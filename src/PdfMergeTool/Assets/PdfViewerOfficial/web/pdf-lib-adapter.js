@@ -42,6 +42,12 @@
     );
   }
 
+  function editOpacity(edit, fallback = 1) {
+    const numeric = Number(edit?.opacity);
+    if (!Number.isFinite(numeric)) return fallback;
+    return Math.min(Math.max(numeric, 0.05), 1);
+  }
+
   async function resolveFont(pdfDoc, pdfLib, edit, fonts) {
     const fontName = edit.fontName || "default";
     const fontSource = fonts?.[fontName] ?? edit.fontBytes ?? edit.fontBase64;
@@ -141,7 +147,8 @@
       y: pageHeight - yFromTop - height - whiteoutPadding,
       width: width + whiteoutPadding * 2,
       height: height + whiteoutPadding * 2,
-      color: colorFromArray(pdfLib, edit.fillColor, [1, 1, 1])
+      color: colorFromArray(pdfLib, edit.fillColor, [1, 1, 1]),
+      opacity: editOpacity(edit, 1)
     });
 
     const color = colorFromArray(pdfLib, edit.color, [0, 0, 0]);
@@ -152,7 +159,8 @@
         y: pageHeight - yFromTop - textInsetY - size - index * lineHeight,
         size,
         font,
-        color
+        color,
+        opacity: editOpacity(edit, 1)
       });
     });
   }
@@ -186,6 +194,7 @@
           size,
           font,
           color: colorFromArray(pdfLib, edit.color, [0, 0, 0]),
+          opacity: editOpacity(edit, 1),
           rotate: edit.rotate ? pdfLib.degrees(Number(edit.rotate) || 0) : undefined
         });
       } else if (edit.type === "textReplace") {
@@ -209,7 +218,8 @@
           y: pageHeight - yFromTop - height,
           width,
           height,
-          color: colorFromArray(pdfLib, edit.fillColor, [1, 1, 1])
+          color: colorFromArray(pdfLib, edit.fillColor, [1, 1, 1]),
+          opacity: editOpacity(edit, 1)
         });
       } else if (edit.type === "rectangle") {
         const height = Number(edit.height) || 0;
@@ -222,7 +232,7 @@
           borderColor: colorFromArray(pdfLib, edit.borderColor, [0, 0, 0]),
           borderWidth: Number(edit.borderWidth) || DEFAULT_STROKE_WIDTH,
           color: edit.fillColor ? colorFromArray(pdfLib, edit.fillColor, [1, 1, 1]) : undefined,
-          opacity: edit.opacity === undefined ? undefined : Number(edit.opacity)
+          opacity: editOpacity(edit, 1)
         };
         if (edit.shape === "ellipse") {
           page.drawEllipse({
@@ -246,7 +256,8 @@
             y: pageHeight - yFromTop - (Number(edit.height) || 0)
           },
           color: colorFromArray(pdfLib, edit.borderColor, [0, 0, 0]),
-          thickness: Number(edit.borderWidth) || DEFAULT_STROKE_WIDTH
+          thickness: Number(edit.borderWidth) || DEFAULT_STROKE_WIDTH,
+          opacity: editOpacity(edit, 1)
         });
       } else if (edit.type === "arrow") {
         drawArrow(page, pdfLib, edit, pageHeight);
@@ -260,7 +271,8 @@
           x,
           y: pageHeight - yFromTop - height,
           width,
-          height
+          height,
+          opacity: editOpacity(edit, 1)
         });
       } else if (edit.type === "stamp") {
         const width = Number(edit.width) || 0;
@@ -278,14 +290,16 @@
           width,
           height,
           borderColor,
-          borderWidth
+          borderWidth,
+          opacity: editOpacity(edit, 1)
         });
         page.drawText(text, {
           x: x + Math.max((width - textWidth) / 2, borderWidth + 2),
           y: pageHeight - yFromTop - height / 2 - size / 3,
           size,
           font,
-          color
+          color,
+          opacity: editOpacity(edit, 1)
         });
       }
     }

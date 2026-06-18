@@ -278,6 +278,7 @@
       <span class="asta-editor-toolbar-separator"></span>
       <input data-role="strokeWidth" type="number" min="1" max="24" value="2" title="Line or border width" />
       <input data-role="fillColor" type="color" value="#ffffff" title="Fill color" />
+      <input data-role="opacity" type="number" min="5" max="100" step="5" value="100" title="Opacity percent" />
       <button type="button" data-action="copy" title="Copy selected">Copy</button>
       <button type="button" data-action="paste" title="Paste copied">Paste</button>
       <button type="button" data-action="duplicate" title="Duplicate selected">Duplicate</button>
@@ -327,6 +328,9 @@
       applySelectedProperties();
     });
     toolbar.querySelector("[data-role='fillColor']").addEventListener("change", () => {
+      applySelectedProperties();
+    });
+    toolbar.querySelector("[data-role='opacity']").addEventListener("change", () => {
       applySelectedProperties();
     });
     setFonts([]);
@@ -881,6 +885,7 @@
       element.style.fontSize = `${edit.size || Math.max(state.textSize, 20)}px`;
       ensureResizeHandle(element, edit.id);
     }
+    element.style.opacity = edit.type === "ink" ? "1" : String(getEditOpacity(edit));
     element.classList.toggle("selected", state.selectedId === edit.id);
   }
 
@@ -997,7 +1002,7 @@
     polyline.setAttribute("stroke-linecap", "round");
     polyline.setAttribute("stroke-linejoin", "round");
     polyline.setAttribute("fill", "none");
-    polyline.setAttribute("opacity", String(edit.opacity ?? 1));
+    polyline.setAttribute("opacity", String(getEditOpacity(edit)));
     svg.appendChild(polyline);
     element.prepend(svg);
   }
@@ -1143,6 +1148,7 @@
     const colorInput = toolbar.querySelector("[data-role='color']");
     const strokeWidthInput = toolbar.querySelector("[data-role='strokeWidth']");
     const fillColorInput = toolbar.querySelector("[data-role='fillColor']");
+    const opacityInput = toolbar.querySelector("[data-role='opacity']");
 
     if (edit.type === "text" || edit.type === "textReplace" || edit.type === "stamp") {
       fontInput.value = edit.fontName || state.fontName;
@@ -1153,6 +1159,7 @@
     }
     strokeWidthInput.value = edit.borderWidth || (edit.type === "stamp" ? 3 : 2);
     fillColorInput.value = edit.fillColor || "#ffffff";
+    opacityInput.value = Math.round(getEditOpacity(edit) * 100);
   }
 
   function getToolbarProperties() {
@@ -1161,8 +1168,20 @@
       size: Number(toolbar.querySelector("[data-role='size']").value) || state.textSize,
       color: toolbar.querySelector("[data-role='color']").value || state.color,
       strokeWidth: Math.max(Number(toolbar.querySelector("[data-role='strokeWidth']").value) || 2, 1),
-      fillColor: toolbar.querySelector("[data-role='fillColor']").value || "#ffffff"
+      fillColor: toolbar.querySelector("[data-role='fillColor']").value || "#ffffff",
+      opacity: normalizeOpacity(toolbar.querySelector("[data-role='opacity']").value)
     };
+  }
+
+  function normalizeOpacity(value, fallback = 1) {
+    const numeric = Number(value);
+    if (!Number.isFinite(numeric)) return fallback;
+    const normalized = numeric > 1 ? numeric / 100 : numeric;
+    return Math.min(Math.max(normalized, 0.05), 1);
+  }
+
+  function getEditOpacity(edit) {
+    return normalizeOpacity(edit?.opacity, edit?.type === "textHighlight" || edit?.tool === "highlight" ? 0.38 : 1);
   }
 
   function applySelectedProperties() {
@@ -1174,6 +1193,7 @@
     const edit = state.edits.find(item => item.id === state.selectedId);
     if (!edit) return;
     recordHistory();
+    edit.opacity = properties.opacity;
     if (edit.type === "text" || edit.type === "textReplace") {
       edit.fontName = properties.fontName;
       edit.size = properties.size;
@@ -1408,11 +1428,13 @@
       const scaleX = rect?.width ? pageSize.width / rect.width : 1;
       const scaleY = rect?.height ? pageSize.height / rect.height : 1;
       const zIndex = ensureLayerIndex(edit);
+      const opacity = getEditOpacity(edit);
       if (edit.type === "text" || edit.type === "textReplace") {
         return {
           type: edit.type,
           page: edit.page,
           zIndex,
+          opacity,
           x: edit.x * scaleX,
           y: edit.y * scaleY,
           width: edit.width * scaleX,
@@ -1435,6 +1457,7 @@
           type: edit.type,
           page: edit.page,
           zIndex,
+          opacity,
           x: edit.x * scaleX,
           y: edit.y * scaleY,
           width: edit.width * scaleX,
@@ -1455,7 +1478,7 @@
           })),
           borderColor: toRgbArray(edit.borderColor || state.color),
           borderWidth: (edit.borderWidth || 2) * Math.max(scaleX, scaleY),
-          opacity: edit.opacity ?? 1
+          opacity
         };
       }
       if (edit.type === "textHighlight") {
@@ -1468,7 +1491,7 @@
           width: edit.width * scaleX,
           height: edit.height * scaleY,
           fillColor: toRgbArray(edit.fillColor || "#facc15"),
-          opacity: edit.opacity ?? 0.38
+          opacity
         };
       }
       if (edit.type === "whiteout") {
@@ -1480,7 +1503,8 @@
           y: edit.y * scaleY,
           width: edit.width * scaleX,
           height: edit.height * scaleY,
-          fillColor: toRgbArray(edit.fillColor || "#ffffff")
+          fillColor: toRgbArray(edit.fillColor || "#ffffff"),
+          opacity
         };
       }
       if (edit.type === "image" || edit.type === "signature") {
@@ -1493,7 +1517,8 @@
           width: edit.width * scaleX,
           height: edit.height * scaleY,
           imageDataUrl: edit.imageDataUrl,
-          imageMimeType: edit.imageMimeType
+          imageMimeType: edit.imageMimeType,
+          opacity
         };
       }
       if (edit.type === "stamp") {
@@ -1510,7 +1535,8 @@
           borderColor: toRgbArray(edit.borderColor || "#dc2626"),
           borderWidth: (edit.borderWidth || 3) * scaleX,
           fontName: edit.fontName || state.fontName,
-          size: (edit.size || state.textSize) * scaleY
+          size: (edit.size || state.textSize) * scaleY,
+          opacity
         };
       }
       return {
@@ -1524,7 +1550,8 @@
         height: edit.height * scaleY,
         borderColor: toRgbArray(edit.borderColor),
         borderWidth: (edit.borderWidth || 2) * scaleX,
-        fillColor: edit.fillColor ? toRgbArray(edit.fillColor) : undefined
+        fillColor: edit.fillColor ? toRgbArray(edit.fillColor) : undefined,
+        opacity
       };
     });
   }
