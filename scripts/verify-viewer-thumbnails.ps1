@@ -243,6 +243,12 @@ if ($officialEditorAdapter -notmatch 'contentEditable\s*=\s*"true"' -or $officia
     throw 'editor adapter must support direct inline editing for text, text replacement, and stamp overlays.'
 }
 
+if ($officialEditorAdapter -notmatch 'function isEditorTypingTarget\(' -or
+    $officialEditorAdapter -notmatch 'target\.matches\?\.\("input, textarea, select"\)' -or
+    $officialEditorAdapter -notmatch 'if \(isEditorTypingTarget\(event\.target\)\) return;') {
+    throw 'editor adapter keyboard shortcuts must not delete/copy/paste overlay objects while toolbar inputs or inline text are focused.'
+}
+
 if ($officialEditorAdapter -notmatch 'data-role="strokeWidth"' -or $officialEditorAdapter -notmatch 'data-role="fillColor"' -or $officialEditorAdapter -notmatch 'function applySelectedProperties\(' -or $officialEditorAdapter -notmatch 'function syncToolbarFromEdit\(') {
     throw 'editor adapter must expose per-object font, size, stroke width, and fill controls.'
 }

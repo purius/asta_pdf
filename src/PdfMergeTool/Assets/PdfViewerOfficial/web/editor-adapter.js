@@ -1822,6 +1822,13 @@
     postDirty();
   }
 
+  function isEditorTypingTarget(target) {
+    return Boolean(target && (
+      target.closest?.(".asta-editor-text-content")?.isContentEditable ||
+      target.matches?.("input, textarea, select")
+    ));
+  }
+
   function initialize() {
     createToolbar();
     ensureLayers();
@@ -1831,7 +1838,7 @@
       subtree: true
     });
     window.addEventListener("keydown", event => {
-      if (event.target?.closest?.(".asta-editor-text-content")?.isContentEditable) return;
+      if (isEditorTypingTarget(event.target)) return;
       if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === "c" && state.selectedId) {
         if (copySelected()) event.preventDefault();
         return;
