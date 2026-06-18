@@ -389,6 +389,7 @@
     let redoStack = [];
     let isDirty = false;
     let documentSourcePath = '';
+    let thumbnailRenderKey = '';
     let renderedStartIndex = 0;
     let renderedEndIndex = 0;
     let scrollWindowSwitching = false;
@@ -503,11 +504,15 @@
     }
 
     function clearRenderedPages() {
-      thumbs.replaceChildren();
       pages.replaceChildren();
       activePage = 1;
       renderedStartIndex = 0;
       renderedEndIndex = 0;
+    }
+
+    function clearThumbnailCache() {
+      thumbnailRenderKey = '';
+      thumbs.replaceChildren();
     }
 
     function createThumbButton(pageNumber, displayIndex) {
@@ -1133,6 +1138,19 @@
     }
 
     async function renderAllThumbnails(token) {
+      const nextKey = JSON.stringify({
+        mode: fallbackDocument ? 'fallback' : 'pdfjs',
+        sessionId: fallbackDocument?.sessionId ?? '',
+        pageOrder,
+        pageRotations,
+        thumbScale
+      });
+      if (thumbnailRenderKey === nextKey) {
+        updateThumbClasses();
+        return;
+      }
+
+      thumbnailRenderKey = nextKey;
       thumbs.replaceChildren();
       for (let index = 0; index < pageOrder.length; index += 1) {
         const pageNumber = pageOrder[index];
@@ -1192,6 +1210,7 @@
       selectedPages.clear();
       lastSelectedPage = null;
       documentSourcePath = sourcePath ?? '';
+      clearThumbnailCache();
       clearRenderedPages();
       empty.style.display = 'none';
       app.style.display = 'grid';
@@ -1240,6 +1259,7 @@
         pageOrder = [];
         pageRotations = {};
         selectedPages.clear();
+        clearThumbnailCache();
         setLoadingState(false);
         pageCount.textContent = '총 0 페이지';
         setStatus('PDF를 열지 못했습니다.');
@@ -1264,6 +1284,7 @@
       selectedPages.clear();
       lastSelectedPage = null;
       documentSourcePath = source.sourcePath ?? '';
+      clearThumbnailCache();
       clearRenderedPages();
       empty.style.display = 'none';
       app.style.display = 'grid';
