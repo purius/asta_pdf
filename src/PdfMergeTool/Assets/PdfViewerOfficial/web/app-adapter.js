@@ -219,6 +219,15 @@ const AppBridge = (() => {
     }
   }
 
+  function markNativeViewerNavigationIntent(event) {
+    if (event.defaultPrevented || event.isComposing) return;
+    if ("button" in event && event.button !== 0) return;
+    const target = event.target?.closest?.("#previous, #next, #firstPage, #lastPage, #pageNumber");
+    if (target) {
+      markUserPageChangeIntent();
+    }
+  }
+
   function hasRecentUserPageChangeIntent() {
     return Date.now() - lastUserPageChangeIntentAt <= 1200;
   }
@@ -647,6 +656,9 @@ const AppBridge = (() => {
     document.addEventListener("wheel", markUserPageChangeIntent, { passive: true });
     document.addEventListener("touchstart", markUserPageChangeIntent, { passive: true });
     document.addEventListener("keydown", markKeyboardPageChangeIntent, true);
+    document.addEventListener("click", markNativeViewerNavigationIntent, true);
+    document.addEventListener("change", markNativeViewerNavigationIntent, true);
+    document.addEventListener("input", markNativeViewerNavigationIntent, true);
     postMessage({ type: "viewerReady" });
   }
 

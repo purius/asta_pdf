@@ -188,6 +188,14 @@ if ($officialAdapter -notmatch 'function markUserPageChangeIntent\(' -or
     throw 'official viewer adapter must record real user scroll and keyboard navigation before accepting non-target pagechanging events.'
 }
 
+if ($officialAdapter -notmatch 'function markNativeViewerNavigationIntent\(' -or
+    $officialAdapter -notmatch '#previous, #next, #firstPage, #lastPage, #pageNumber' -or
+    $officialAdapter -notmatch 'document\.addEventListener\("click", markNativeViewerNavigationIntent, true\)' -or
+    $officialAdapter -notmatch 'document\.addEventListener\("change", markNativeViewerNavigationIntent, true\)' -or
+    $officialAdapter -notmatch 'document\.addEventListener\("input", markNativeViewerNavigationIntent, true\)') {
+    throw 'official viewer adapter must treat native PDF.js toolbar page controls as direct user navigation intent.'
+}
+
 if ($officialAdapter -notmatch 'function resetExplicitNavigationTracking\(\)' -or
     $officialAdapter -notmatch 'resetExplicitNavigationTracking\(\);[\s\S]*?window\.EditorAdapter\?\.clear\?\.\(\);' -or
     $officialAdapter -notmatch 'function rebuildPageOrder\([\s\S]*?resetExplicitNavigationTracking\(\);') {
