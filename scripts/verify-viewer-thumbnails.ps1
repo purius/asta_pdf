@@ -11,6 +11,7 @@ $officialPdfLibPath = Join-Path $root 'src\PdfMergeTool\Assets\PdfViewerOfficial
 $officialFontkitPath = Join-Path $root 'src\PdfMergeTool\Assets\PdfViewerOfficial\web\vendor\fontkit.umd.min.js'
 $officialViewerScriptPath = Join-Path $root 'src\PdfMergeTool\Assets\PdfViewerOfficial\web\viewer.mjs'
 $officialBuildPath = Join-Path $root 'src\PdfMergeTool\Assets\PdfViewerOfficial\build\pdf.mjs'
+$overlayGeometryVerificationPath = Join-Path $root 'scripts\verify-overlay-geometry.ps1'
 $mainWindowPath = Join-Path $root 'src\PdfMergeTool\MainWindow.xaml.cs'
 $projectPath = Join-Path $root 'src\PdfMergeTool\PdfMergeTool.csproj'
 $fontServicePath = Join-Path $root 'src\PdfMergeTool\Services\WindowsFontService.cs'
@@ -45,6 +46,12 @@ if (-not (Test-Path $officialFontkitPath)) {
 if (-not (Test-Path $officialBuildPath)) {
     throw 'official PDF.js build files must be packaged.'
 }
+
+if (-not (Test-Path $overlayGeometryVerificationPath)) {
+    throw 'overlay geometry verification script must exist.'
+}
+
+& $overlayGeometryVerificationPath
 
 $officialViewer = Get-Content -Raw $officialViewerPath
 $officialAdapter = Get-Content -Raw $officialAdapterPath
