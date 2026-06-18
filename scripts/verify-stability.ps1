@@ -10,6 +10,8 @@ $buildScriptPath = Join-Path $root 'scripts\build.ps1'
 $publishScriptPath = Join-Path $root 'scripts\publish.ps1'
 $releaseWorkflowPath = Join-Path $root '.github\workflows\release.yml'
 $releaseVerificationPath = Join-Path $root 'scripts\verify-latest-release.ps1'
+$officialViewerPlanPath = Join-Path $root 'docs\superpowers\plans\2026-06-18-pdfjs-official-viewer-editor.md'
+$officialViewerSpecPath = Join-Path $root 'docs\superpowers\specs\2026-06-18-pdfjs-official-viewer-editor-design.md'
 $fallback = Get-Content -Raw $fallbackPath
 $update = Get-Content -Raw $updatePath
 $mainWindow = Get-Content -Raw $mainWindowPath
@@ -18,6 +20,8 @@ $buildScript = Get-Content -Raw $buildScriptPath
 $publishScript = Get-Content -Raw $publishScriptPath
 $releaseWorkflow = Get-Content -Raw $releaseWorkflowPath
 $releaseVerification = if (Test-Path $releaseVerificationPath) { Get-Content -Raw $releaseVerificationPath } else { '' }
+$officialViewerPlan = Get-Content -Raw $officialViewerPlanPath
+$officialViewerSpec = Get-Content -Raw $officialViewerSpecPath
 
 if ($fallback -notmatch 'private const int MaxRenderCacheEntries') {
     throw 'PdfFallbackRenderService must cap per-session render cache entries.'
@@ -138,6 +142,20 @@ if ($releaseWorkflow -notmatch 'Verify published latest release' -or
     $releaseWorkflow -notmatch '-RetryCount 60' -or
     $releaseWorkflow -notmatch '-RetryDelaySeconds 10') {
     throw 'Release workflow must verify the published latest release and installer URL after creating the GitHub release.'
+}
+
+if ($officialViewerPlan -match '- \[ \]' -or
+    $officialViewerPlan -match 'Preserve the old custom viewer as rollback' -or
+    $officialViewerPlan -notmatch 'Status: shipped in v1\.0\.' -or
+    $officialViewerPlan -notmatch 'Legacy custom viewer removed') {
+    throw 'Official viewer implementation plan must reflect the shipped official viewer/editor state and removed legacy viewer.'
+}
+
+if ($officialViewerSpec -match 'remains temporarily as a rollback reference' -or
+    $officialViewerSpec -match 'without removing the old viewer assets' -or
+    $officialViewerSpec -notmatch 'Current State' -or
+    $officialViewerSpec -notmatch 'legacy custom viewer assets have been removed') {
+    throw 'Official viewer design spec must reflect the current shipped architecture, not the old rollback phase.'
 }
 
 Write-Output 'stability checks passed.'
