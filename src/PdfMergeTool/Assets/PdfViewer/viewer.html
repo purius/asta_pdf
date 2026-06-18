@@ -396,6 +396,9 @@
     let lastActiveThumb = null;
     let renderedStartIndex = 0;
     let renderedEndIndex = 0;
+    let isRenderingDocument = false;
+    let programmaticScrollTargetPage = null;
+    let scrollHandlingSuppressedUntil = 0;
     let scrollWindowSwitching = false;
     const windowInstanceId = crypto.randomUUID?.() ?? `${Date.now()}-${Math.random()}`;
 
@@ -1009,6 +1012,28 @@
       return { start, end };
     }
 
+    function suppressScrollHandling(durationMs = 180) {
+      scrollHandlingSuppressedUntil = Math.max(
+        scrollHandlingSuppressedUntil,
+        performance.now() + durationMs);
+    }
+
+    function beginProgrammaticScroll(pageNumber, durationMs = 220) {
+      programmaticScrollTargetPage = pageNumber;
+      suppressScrollHandling(durationMs);
+      window.setTimeout(() => {
+        if (programmaticScrollTargetPage === pageNumber) {
+          programmaticScrollTargetPage = null;
+        }
+      }, durationMs);
+    }
+
+    function shouldIgnoreScrollEvent() {
+      return isRenderingDocument ||
+        programmaticScrollTargetPage !== null ||
+        performance.now() < scrollHandlingSuppressedUntil;
+    }
+
     function attachThumbEvents(thumb, pageNumber) {
       thumb.addEventListener('dragstart', (event) => {
         const payload = buildPageTransferPayload(pageNumber);
@@ -1192,39 +1217,57 @@
       if (!hasDocument()) return;
       const targetPage = targetPageOverride ?? (keepPage ? activePage : pageOrder[0] ?? 1);
       const token = ++renderToken;
+      isRenderingDocument = true;
+      suppressScrollHandling(260);
       setStatus('렌더링 중...');
-      clearRenderedPages();
-      updateThumbGridSize();
-      await renderAllThumbnails(token);
-      const windowRange = getRenderWindow(targetPage);
-      renderedStartIndex = windowRange.start;
-      renderedEndIndex = windowRange.end;
-      if (fallbackDocument) {
-        pageCount.textContent = `총 ${getDocumentPageCount()} 페이지`;
-      } else
-      pageCount.textContent = pageOrder.length === pdfDocument.numPages
-        ? `총 ${pdfDocument.numPages} 페이지`
-        : `총 ${pageOrder.length} / 원본 ${pdfDocument.numPages} 페이지`;
-
-      if (pageOrder.length > renderWindowPageCount) {
-        setStatus(`${renderedStartIndex + 1}-${renderedEndIndex} / ${pageOrder.length} 페이지 표시 중`);
-      }
-
-      for (let index = renderedStartIndex; index < renderedEndIndex; index += 1) {
-        await renderPage(pageOrder[index], index, token);
+      try {
+        clearRenderedPages();
+        updateThumbGridSize();
+        await renderAllThumbnails(token);
         if (token !== renderToken) return;
-        if (index === renderedStartIndex) {
-          setLoadingState(false);
-          postViewerFirstPageRendered(pageOrder[index]);
+        const windowRange = getRenderWindow(targetPage);
+        renderedStartIndex = windowRange.start;
+        renderedEndIndex = windowRange.end;
+        if (fallbackDocument) {
+          pageCount.textContent = `총 ${getDocumentPageCount()} 페이지`;
+        } else
+        pageCount.textContent = pageOrder.length === pdfDocument.numPages
+          ? `총 ${pdfDocument.numPages} 페이지`
+          : `총 ${pageOrder.length} / 원본 ${pdfDocument.numPages} 페이지`;
+
+        if (pageOrder.length > renderWindowPageCount) {
+          setStatus(`${renderedStartIndex + 1}-${renderedEndIndex} / ${pageOrder.length} 페이지 표시 중`);
+        }
+
+        for (let index = renderedStartIndex; index < renderedEndIndex; index += 1) {
+          await renderPage(pageOrder[index], index, token);
+          if (token !== renderToken) return;
+          if (index === renderedStartIndex) {
+            setLoadingState(false);
+            postViewerFirstPageRendered(pageOrder[index]);
+          }
+        }
+        setLoadingState(false);
+
+        setActive(targetPage);
+        beginProgrammaticScroll(targetPage);
+        document.getElementById(`page-${targetPage}`)?.scrollIntoView({
+          behavior: 'auto',
+          block: 'start'
+        });
+      } finally {
+        if (token === renderToken) {
+          isRenderingDocument = false;
+          suppressScrollHandling(220);
+          window.requestAnimationFrame(() => {
+            window.requestAnimationFrame(() => {
+              if (token === renderToken) {
+                scrollWindowSwitching = false;
+              }
+            });
+          });
         }
       }
-      setLoadingState(false);
-
-      setActive(targetPage);
-      document.getElementById(`page-${targetPage}`)?.scrollIntoView({
-        behavior: 'auto',
-        block: 'start'
-      });
     }
 
     async function loadPdf(source, dirtyAfterLoad = false, sourcePath = '', options = {}) {
@@ -1332,15 +1375,16 @@
     async function goToPage(pageNumber, smooth = true) {
       if (!hasDocument()) return;
       const page = clamp(pageNumber, 1, getDocumentPageCount());
+      setActive(page);
       if (!document.getElementById(`page-${page}`)) {
         await renderDocument(true, page);
       }
 
+      beginProgrammaticScroll(page, smooth ? 520 : 220);
       document.getElementById(`page-${page}`)?.scrollIntoView({
         behavior: smooth ? 'smooth' : 'auto',
         block: 'start'
       });
-      setActive(page);
     }
 
     function goRelative(offset) {
@@ -1565,11 +1609,13 @@
 
     pages.addEventListener('scroll', () => {
       if (!hasDocument()) return;
+      if (shouldIgnoreScrollEvent()) return;
       let closest = activePage;
       let distance = Number.POSITIVE_INFINITY;
+      const pageViewportTop = pages.getBoundingClientRect().top;
       document.querySelectorAll('.page-wrap').forEach((node) => {
         const rect = node.getBoundingClientRect();
-        const diff = Math.abs(rect.top - pages.getBoundingClientRect().top - 12);
+        const diff = Math.abs(rect.top - pageViewportTop - 12);
         if (diff < distance) {
           distance = diff;
           closest = Number(node.id.replace('page-', ''));
@@ -1590,9 +1636,15 @@
 
         if (targetPage !== null) {
           scrollWindowSwitching = true;
+          suppressScrollHandling(220);
           renderDocument(true, targetPage)
             .finally(() => {
-              scrollWindowSwitching = false;
+              suppressScrollHandling(220);
+              window.requestAnimationFrame(() => {
+                window.requestAnimationFrame(() => {
+                  scrollWindowSwitching = false;
+                });
+              });
             });
         }
       }

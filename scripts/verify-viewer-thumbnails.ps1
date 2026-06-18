@@ -29,6 +29,22 @@ if ($viewer -notmatch 'aspect-ratio:\s+var\(--thumb-aspect-ratio') {
     throw 'thumbnail media must reserve a stable aspect ratio before async rendering completes.'
 }
 
+if ($viewer -notmatch 'let isRenderingDocument = false') {
+    throw 'viewer.html must suppress scroll synchronization while the main render window is rebuilding.'
+}
+
+if ($viewer -notmatch 'let programmaticScrollTargetPage = null') {
+    throw 'viewer.html must distinguish programmatic page jumps from user scrolling.'
+}
+
+if ($viewer -notmatch 'function shouldIgnoreScrollEvent\(\)') {
+    throw 'viewer.html must guard scroll events during programmatic navigation.'
+}
+
+if ($viewer -notmatch 'beginProgrammaticScroll\(targetPage') {
+    throw 'renderDocument must mark its target scroll as programmatic before scrollIntoView.'
+}
+
 if ($viewer -notmatch 'for \(let index = 0; index < pageOrder\.length; index \+= 1\)') {
     throw 'thumbnail rendering must iterate over every page in pageOrder.'
 }
