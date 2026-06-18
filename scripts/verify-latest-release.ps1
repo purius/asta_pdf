@@ -1,6 +1,8 @@
 param(
     [string]$ExpectedVersion,
-    [switch]$SkipDownloadHeadCheck
+    [switch]$SkipDownloadHeadCheck,
+    [int]$RetryCount = 1,
+    [int]$RetryDelaySeconds = 10
 )
 
 Set-StrictMode -Version Latest
@@ -44,39 +46,64 @@ function Assert-HeadOk {
     }
 }
 
-if ([string]::IsNullOrWhiteSpace($ExpectedVersion)) {
-    $ExpectedVersion = Get-ProjectVersion
-}
-
 $headers = @{
     'User-Agent' = 'PdfMergeTool-release-verifier'
     'Accept' = 'application/vnd.github+json'
 }
 
-$release = Invoke-RestMethod -Uri $latestReleaseApiUrl -Headers $headers
-$latestTag = [string]$release.tag_name
-$latestVersion = Normalize-VersionTag $latestTag
-$expectedNormalized = Normalize-VersionTag $ExpectedVersion
-
-if ($latestVersion -ne $expectedNormalized) {
-    throw "GitHub latest release is $latestTag, but project version is $ExpectedVersion."
+if ([string]::IsNullOrWhiteSpace($ExpectedVersion)) {
+    $ExpectedVersion = Get-ProjectVersion
 }
 
-$installerAsset = @($release.assets) |
-    Where-Object { $_.name -ieq $installerAssetName } |
-    Select-Object -First 1
-
-if (-not $installerAsset) {
-    throw "Latest release $latestTag does not include $installerAssetName."
+if ($RetryCount -lt 1) {
+    throw 'RetryCount must be at least 1.'
 }
 
-$downloadUrl = [string]$installerAsset.browser_download_url
-if ([string]::IsNullOrWhiteSpace($downloadUrl)) {
-    throw "Latest release $latestTag has no browser_download_url for $installerAssetName."
+if ($RetryDelaySeconds -lt 0) {
+    throw 'RetryDelaySeconds must be zero or greater.'
 }
 
-if (-not $SkipDownloadHeadCheck) {
-    Assert-HeadOk $downloadUrl
+$lastError = $null
+for ($attempt = 1; $attempt -le $RetryCount; $attempt++) {
+    try {
+        $release = Invoke-RestMethod -Uri $latestReleaseApiUrl -Headers $headers
+        $latestTag = [string]$release.tag_name
+        $latestVersion = Normalize-VersionTag $latestTag
+        $expectedNormalized = Normalize-VersionTag $ExpectedVersion
+
+        if ($latestVersion -ne $expectedNormalized) {
+            throw "GitHub latest release is $latestTag, but project version is $ExpectedVersion."
+        }
+
+        $installerAsset = @($release.assets) |
+            Where-Object { $_.name -ieq $installerAssetName } |
+            Select-Object -First 1
+
+        if (-not $installerAsset) {
+            throw "Latest release $latestTag does not include $installerAssetName."
+        }
+
+        $downloadUrl = [string]$installerAsset.browser_download_url
+        if ([string]::IsNullOrWhiteSpace($downloadUrl)) {
+            throw "Latest release $latestTag has no browser_download_url for $installerAssetName."
+        }
+
+        if (-not $SkipDownloadHeadCheck) {
+            Assert-HeadOk $downloadUrl
+        }
+
+        Write-Output "latest release verified: $latestTag $downloadUrl"
+        exit 0
+    }
+    catch {
+        $lastError = $_
+        if ($attempt -eq $RetryCount) {
+            throw
+        }
+
+        Write-Output "latest release verification attempt $attempt of $RetryCount failed: $($_.Exception.Message)"
+        Start-Sleep -Seconds $RetryDelaySeconds
+    }
 }
 
-Write-Output "latest release verified: $latestTag $downloadUrl"
+throw $lastError

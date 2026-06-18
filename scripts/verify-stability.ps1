@@ -125,8 +125,18 @@ if (-not (Test-Path $releaseVerificationPath) -or
     throw 'Latest release verification must confirm the project version, GitHub latest release metadata, and installer download URL.'
 }
 
+if ($releaseVerification -notmatch '\[int\]\$RetryCount' -or
+    $releaseVerification -notmatch '\[int\]\$RetryDelaySeconds' -or
+    $releaseVerification -notmatch 'for \(\$attempt = 1; \$attempt -le \$RetryCount; \$attempt\+\+\)' -or
+    $releaseVerification -notmatch 'Start-Sleep -Seconds \$RetryDelaySeconds' -or
+    $releaseVerification -notmatch '\$attempt -eq \$RetryCount') {
+    throw 'Latest release verification must retry while GitHub release metadata and asset URLs settle.'
+}
+
 if ($releaseWorkflow -notmatch 'Verify published latest release' -or
-    $releaseWorkflow -notmatch 'verify-latest-release\.ps1 -ExpectedVersion \$\{\{ github\.ref_name \}\}') {
+    $releaseWorkflow -notmatch 'verify-latest-release\.ps1 -ExpectedVersion \$\{\{ github\.ref_name \}\}' -or
+    $releaseWorkflow -notmatch '-RetryCount 60' -or
+    $releaseWorkflow -notmatch '-RetryDelaySeconds 10') {
     throw 'Release workflow must verify the published latest release and installer URL after creating the GitHub release.'
 }
 

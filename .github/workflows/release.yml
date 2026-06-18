@@ -44,4 +44,4 @@ jobs:
 
       - name: Verify published latest release
         shell: pwsh
-        run: .\scripts\verify-latest-release.ps1 -ExpectedVersion ${{ github.ref_name }}
+        run: .\scripts\verify-latest-release.ps1 -ExpectedVersion ${{ github.ref_name }} -RetryCount 60 -RetryDelaySeconds 10
