@@ -9,6 +9,7 @@ internal static class UpdateService
 {
     private const string LatestReleaseApiUrl = "https://api.github.com/repos/purius/asta_pdf/releases/latest";
     private const string InstallerAssetName = "PdfMergeToolSetup.exe";
+    private static readonly HttpClient HttpClient = CreateHttpClient();
 
     public static string CurrentVersionText
     {
@@ -26,11 +27,7 @@ internal static class UpdateService
 
     public static async Task<UpdateCheckResult> CheckForUpdatesAsync(CancellationToken cancellationToken = default)
     {
-        using var httpClient = new HttpClient();
-        httpClient.DefaultRequestHeaders.UserAgent.ParseAdd("PdfMergeTool");
-        httpClient.DefaultRequestHeaders.Accept.ParseAdd("application/vnd.github+json");
-
-        using var response = await httpClient.GetAsync(LatestReleaseApiUrl, cancellationToken);
+        using var response = await HttpClient.GetAsync(LatestReleaseApiUrl, cancellationToken);
         response.EnsureSuccessStatusCode();
 
         await using var stream = await response.Content.ReadAsStreamAsync(cancellationToken);
@@ -59,6 +56,17 @@ internal static class UpdateService
         {
             UseShellExecute = true
         });
+    }
+
+    private static HttpClient CreateHttpClient()
+    {
+        var httpClient = new HttpClient
+        {
+            Timeout = TimeSpan.FromSeconds(10)
+        };
+        httpClient.DefaultRequestHeaders.UserAgent.ParseAdd("PdfMergeTool");
+        httpClient.DefaultRequestHeaders.Accept.ParseAdd("application/vnd.github+json");
+        return httpClient;
     }
 
     private static Uri? FindInstallerUrl(JsonElement root)

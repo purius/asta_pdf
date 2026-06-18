@@ -10,6 +10,7 @@ namespace PdfMergeTool.Services;
 public sealed class PdfFallbackRenderService : IDisposable
 {
     private const int DefaultLargePageThreshold = 180;
+    private const int MaxRenderCacheEntries = 96;
     private const long DefaultLargeFileThresholdBytes = 80L * 1024 * 1024;
     private readonly ConcurrentDictionary<string, PdfFallbackSession> _sessions = new(StringComparer.OrdinalIgnoreCase);
 
@@ -98,22 +99,27 @@ public sealed class PdfFallbackRenderService : IDisposable
                 return new PdfFallbackRenderedPage(pageNumber, cachedPath, pageInfo.Width, pageInfo.Height);
             }
 
-            var renderSize = CalculateRenderSize(pageInfo, width, normalizedRotation);
-            var renderFlags = PdfRenderFlags.Annotations |
-                              PdfRenderFlags.LcdText |
-                              PdfRenderFlags.CorrectFromDpi;
-            using var image = session.Document.Render(
-                pageIndex,
-                renderSize.Width,
-                renderSize.Height,
-                96,
-                96,
-                ToPdfRotation(normalizedRotation),
-                renderFlags);
-            using var bitmap = new Bitmap(image);
             var outputPath = Path.Combine(session.CacheDirectory, $"{cacheKey}.png");
-            bitmap.Save(outputPath, ImageFormat.Png);
+            await Task.Run(() =>
+            {
+                var renderSize = CalculateRenderSize(pageInfo, width, normalizedRotation);
+                var renderFlags = PdfRenderFlags.Annotations |
+                                  PdfRenderFlags.LcdText |
+                                  PdfRenderFlags.CorrectFromDpi;
+                using var image = session.Document.Render(
+                    pageIndex,
+                    renderSize.Width,
+                    renderSize.Height,
+                    96,
+                    96,
+                    ToPdfRotation(normalizedRotation),
+                    renderFlags);
+                using var bitmap = new Bitmap(image);
+                bitmap.Save(outputPath, ImageFormat.Png);
+            }, cancellationToken);
+
             session.RenderCache[cacheKey] = outputPath;
+            TrimRenderCache(session);
             return new PdfFallbackRenderedPage(pageNumber, outputPath, pageInfo.Width, pageInfo.Height);
         }
         finally
@@ -137,43 +143,50 @@ public sealed class PdfFallbackRenderService : IDisposable
         }
 
         var pages = new List<PdfImagePage>(pageOrder.Count);
-        foreach (var pageNumber in pageOrder)
+        await session.RenderGate.WaitAsync(cancellationToken);
+        try
         {
-            cancellationToken.ThrowIfCancellationRequested();
-
-            var pageIndex = pageNumber - 1;
-            if (pageIndex < 0 || pageIndex >= session.PageInfos.Count)
+            foreach (var pageNumber in pageOrder)
             {
-                continue;
+                cancellationToken.ThrowIfCancellationRequested();
+
+                var pageIndex = pageNumber - 1;
+                if (pageIndex < 0 || pageIndex >= session.PageInfos.Count)
+                {
+                    continue;
+                }
+
+                var rotation = rotations.TryGetValue(pageNumber, out var customRotation)
+                    ? NormalizeRotation(customRotation)
+                    : 0;
+                var pageInfo = session.PageInfos[pageIndex];
+                var renderedPage = await Task.Run(() =>
+                {
+                    var renderSize = CalculateBoundedRenderSize(pageInfo, maxWidth, maxHeight, rotation);
+                    var renderFlags = PdfRenderFlags.Annotations |
+                                      PdfRenderFlags.LcdText |
+                                      PdfRenderFlags.CorrectFromDpi |
+                                      PdfRenderFlags.ForPrinting;
+                    using var image = session.Document.Render(
+                        pageIndex,
+                        renderSize.Width,
+                        renderSize.Height,
+                        96,
+                        96,
+                        ToPdfRotation(rotation),
+                        renderFlags);
+                    using var bitmap = new Bitmap(image);
+                    using var stream = new MemoryStream();
+                    SaveJpeg(bitmap, stream, jpegQuality);
+                    return new PdfImagePage(stream.ToArray(), renderSize.Width, renderSize.Height);
+                }, cancellationToken);
+
+                pages.Add(renderedPage);
             }
-
-            var rotation = rotations.TryGetValue(pageNumber, out var customRotation)
-                ? NormalizeRotation(customRotation)
-                : 0;
-            var pageInfo = session.PageInfos[pageIndex];
-            var renderSize = CalculateBoundedRenderSize(pageInfo, maxWidth, maxHeight, rotation);
-            var renderFlags = PdfRenderFlags.Annotations |
-                              PdfRenderFlags.LcdText |
-                              PdfRenderFlags.CorrectFromDpi |
-                              PdfRenderFlags.ForPrinting;
-
-            var jpegBytes = await Task.Run(() =>
-            {
-                using var image = session.Document.Render(
-                    pageIndex,
-                    renderSize.Width,
-                    renderSize.Height,
-                    96,
-                    96,
-                    ToPdfRotation(rotation),
-                    renderFlags);
-                using var bitmap = new Bitmap(image);
-                using var stream = new MemoryStream();
-                SaveJpeg(bitmap, stream, jpegQuality);
-                return stream.ToArray();
-            }, cancellationToken);
-
-            pages.Add(new PdfImagePage(jpegBytes, renderSize.Width, renderSize.Height));
+        }
+        finally
+        {
+            session.RenderGate.Release();
         }
 
         return pages;
@@ -277,6 +290,50 @@ public sealed class PdfFallbackRenderService : IDisposable
             {
                 // Best effort cleanup only.
             }
+        }
+    }
+
+    private static void TrimRenderCache(PdfFallbackSession session)
+    {
+        if (session.RenderCache.Count <= MaxRenderCacheEntries)
+        {
+            return;
+        }
+
+        var staleEntries = session.RenderCache
+            .Select(entry => new
+            {
+                entry.Key,
+                Path = entry.Value,
+                LastWriteTime = File.Exists(entry.Value)
+                    ? File.GetLastWriteTimeUtc(entry.Value)
+                    : DateTime.MinValue
+            })
+            .OrderBy(entry => entry.LastWriteTime)
+            .Take(Math.Max(0, session.RenderCache.Count - MaxRenderCacheEntries))
+            .ToList();
+
+        foreach (var entry in staleEntries)
+        {
+            if (session.RenderCache.TryRemove(entry.Key, out var path))
+            {
+                TryDeleteFile(path);
+            }
+        }
+    }
+
+    private static void TryDeleteFile(string path)
+    {
+        try
+        {
+            if (File.Exists(path))
+            {
+                File.Delete(path);
+            }
+        }
+        catch
+        {
+            // Best effort cleanup only.
         }
     }
 
