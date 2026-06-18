@@ -38,6 +38,39 @@ function Get-InnoCompiler {
     throw 'Inno Setup compiler ISCC.exe was not found. Install Inno Setup 6 and run this script again.'
 }
 
+function Invoke-InnoCompilerWithRetry {
+    param(
+        [Parameter(Mandatory = $true)]
+        [string]$CompilerPath,
+        [Parameter(Mandatory = $true)]
+        [string[]]$CompilerArgs,
+        [Parameter(Mandatory = $true)]
+        [string]$OutputPath
+    )
+
+    $maxAttempts = 3
+    for ($attempt = 1; $attempt -le $maxAttempts; $attempt++) {
+        if (Test-Path $OutputPath) {
+            Remove-Item -LiteralPath $OutputPath -Force
+        }
+
+        & $CompilerPath @CompilerArgs
+        if ($LASTEXITCODE -eq 0 -and (Test-Path $OutputPath)) {
+            return
+        }
+
+        if ($attempt -lt $maxAttempts) {
+            Write-Warning "Inno Setup failed on attempt $attempt of $maxAttempts. Retrying after transient file handles settle..."
+            Start-Sleep -Seconds (2 * $attempt)
+            continue
+        }
+
+        if ($LASTEXITCODE -ne 0) {
+            throw "Inno Setup failed with exit code $LASTEXITCODE after $maxAttempts attempts."
+        }
+    }
+}
+
 $version = ([xml](Get-Content $project)).Project.PropertyGroup.Version
 if ([string]::IsNullOrWhiteSpace($version)) {
     throw "Missing Version in $project"
@@ -50,12 +83,16 @@ if (Test-Path $setupExe) {
 }
 
 $iscc = Get-InnoCompiler
-& $iscc `
-    "/DRootDir=$root" `
-    "/DSourceDir=$(Join-Path $dist 'PdfMergeTool')" `
-    "/DOutputDir=$dist" `
-    "/DAppVersion=$version" `
-    $iss
+Invoke-InnoCompilerWithRetry `
+    -CompilerPath $iscc `
+    -CompilerArgs @(
+        "/DRootDir=$root",
+        "/DSourceDir=$(Join-Path $dist 'PdfMergeTool')",
+        "/DOutputDir=$dist",
+        "/DAppVersion=$version",
+        $iss
+    ) `
+    -OutputPath $setupExe
 
 if (-not (Test-Path $setupExe)) {
     throw "Installer build failed. Missing $setupExe"
