@@ -264,6 +264,9 @@
     toolbar?.querySelectorAll("button[data-mode]").forEach(button => {
       button.classList.toggle("active", button.dataset.mode === mode);
     });
+    if (mode === "replaceText") {
+      setTimeout(() => addSelectedTextReplacementEdit(), 0);
+    }
   }
 
   function setFonts(fonts) {
@@ -453,7 +456,11 @@
     const pageRect = pageElement.getBoundingClientRect();
     const textRect = textElement.getBoundingClientRect();
     const metrics = getTextReplacementMetrics(textElement, textRect);
+    createTextReplacementEdit(pageElement, textRect, originalText, replacementText, metrics);
+  }
 
+  function createTextReplacementEdit(pageElement, textRect, originalText, replacementText, metrics) {
+    const pageRect = pageElement.getBoundingClientRect();
     recordHistory();
     addEdit({
       type: "textReplace",
@@ -473,6 +480,111 @@
       color: state.color,
       fillColor: "#ffffff"
     });
+  }
+
+  function addSelectedTextReplacementEdit() {
+    const target = getSelectedTextReplacementTarget();
+    if (!target) return false;
+
+    const replacementText = window.prompt("Replacement text", target.originalText);
+    if (replacementText === null) return true;
+
+    createTextReplacementEdit(
+      target.pageElement,
+      target.textRect,
+      target.originalText,
+      replacementText,
+      target.metrics
+    );
+    window.getSelection()?.removeAllRanges();
+    return true;
+  }
+
+  function getSelectedTextReplacementTarget() {
+    const selection = window.getSelection?.();
+    if (!selection || selection.isCollapsed || selection.rangeCount === 0) return null;
+
+    const originalText = selection.toString().trim();
+    if (!originalText) return null;
+
+    const range = selection.getRangeAt(0);
+    const clientRects = [...range.getClientRects()]
+      .filter(rect => rect.width > 0 && rect.height > 0);
+    if (clientRects.length === 0) return null;
+
+    const pageElement = getPageElementForSelection(range, clientRects[0]);
+    if (!pageElement) return null;
+
+    const pageRect = pageElement.getBoundingClientRect();
+    const selectedRects = clientRects.filter(rect => {
+      const centerX = rect.left + rect.width / 2;
+      const centerY = rect.top + rect.height / 2;
+      const element = document.elementFromPoint(centerX, centerY);
+      return pageElement.contains(element);
+    });
+
+    if (selectedRects.length !== clientRects.length) {
+      postMessage({
+        type: "viewerDiagnostic",
+        level: "info",
+        message: "Selected text replacement is limited to one PDF page at a time."
+      });
+      return null;
+    }
+
+    const union = selectedRects.reduce((bounds, rect) => ({
+      left: Math.min(bounds.left, rect.left),
+      top: Math.min(bounds.top, rect.top),
+      right: Math.max(bounds.right, rect.right),
+      bottom: Math.max(bounds.bottom, rect.bottom)
+    }), {
+      left: selectedRects[0].left,
+      top: selectedRects[0].top,
+      right: selectedRects[0].right,
+      bottom: selectedRects[0].bottom
+    });
+
+    const textRect = {
+      left: union.left,
+      top: union.top,
+      width: union.right - union.left,
+      height: union.bottom - union.top
+    };
+    const textElement = getSelectionTextElement(range, selectedRects[0]) ?? pageElement.querySelector(".textLayer span, .textLayer [role='presentation'], .textLayer [dir]");
+    const metrics = getTextReplacementMetrics(textElement ?? pageElement, textRect);
+    metrics.whiteoutPadding = Math.max(metrics.whiteoutPadding, 2);
+
+    return {
+      pageElement,
+      textRect,
+      originalText,
+      metrics
+    };
+  }
+
+  function getPageElementForSelection(range, firstRect) {
+    const commonElement = getElementFromNode(range.commonAncestorContainer);
+    const commonPage = commonElement?.closest?.(".page");
+    if (commonPage) return commonPage;
+
+    const centerX = firstRect.left + firstRect.width / 2;
+    const centerY = firstRect.top + firstRect.height / 2;
+    return document.elementFromPoint(centerX, centerY)?.closest?.(".page") ?? null;
+  }
+
+  function getSelectionTextElement(range, firstRect) {
+    const commonElement = getElementFromNode(range.commonAncestorContainer);
+    const textElement = commonElement?.closest?.(".textLayer span, .textLayer [role='presentation'], .textLayer [dir]");
+    if (textElement) return textElement;
+
+    const centerX = firstRect.left + firstRect.width / 2;
+    const centerY = firstRect.top + firstRect.height / 2;
+    return document.elementFromPoint(centerX, centerY)?.closest?.(".textLayer span, .textLayer [role='presentation'], .textLayer [dir]") ?? null;
+  }
+
+  function getElementFromNode(node) {
+    if (!node) return null;
+    return node.nodeType === Node.ELEMENT_NODE ? node : node.parentElement;
   }
 
   function getTextReplacementMetrics(textElement, textRect) {

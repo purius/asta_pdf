@@ -145,6 +145,10 @@ if ($officialEditorAdapter -notmatch 'function getTextReplacementMetrics\(' -or 
     throw 'editor adapter must preserve text-layer replacement metrics for stable visual text edits.'
 }
 
+if ($officialEditorAdapter -notmatch 'function getSelectedTextReplacementTarget\(' -or $officialEditorAdapter -notmatch 'getRangeAt\(0\)' -or $officialEditorAdapter -notmatch 'getClientRects\(\)' -or $officialEditorAdapter -notmatch 'addSelectedTextReplacementEdit\(\)') {
+    throw 'editor adapter must support replacing a selected PDF text range, not only a clicked text span.'
+}
+
 if ($officialEditorAdapter -notmatch 'asta-editor-resize-handle' -or $officialEditorAdapter -notmatch 'function startResize\(') {
     throw 'editor adapter must support resizing selected overlay objects.'
 }
