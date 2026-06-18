@@ -48,6 +48,13 @@
     return Math.min(Math.max(numeric, 0.05), 1);
   }
 
+  function editRotation(pdfLib, edit) {
+    const numeric = Number(edit?.rotate);
+    if (!Number.isFinite(numeric)) return undefined;
+    const degrees = Math.min(Math.max(numeric, -180), 180);
+    return degrees === 0 ? undefined : pdfLib.degrees(degrees);
+  }
+
   async function resolveFont(pdfDoc, pdfLib, edit, fonts) {
     const fontName = edit.fontName || "default";
     const fontSource = fonts?.[fontName] ?? edit.fontBytes ?? edit.fontBase64;
@@ -150,7 +157,8 @@
       width: width + whiteoutPadding * 2,
       height: height + whiteoutPadding * 2,
       color: colorFromArray(pdfLib, edit.fillColor, [1, 1, 1]),
-      opacity: editOpacity(edit, 1)
+      opacity: editOpacity(edit, 1),
+      rotate: editRotation(pdfLib, edit)
     });
 
     const color = colorFromArray(pdfLib, edit.color, [0, 0, 0]);
@@ -162,7 +170,8 @@
         size,
         font,
         color,
-        opacity: editOpacity(edit, 1)
+        opacity: editOpacity(edit, 1),
+        rotate: editRotation(pdfLib, edit)
       });
     });
   }
@@ -184,7 +193,7 @@
         font,
         color,
         opacity: editOpacity(edit, 1),
-        rotate: edit.rotate ? pdfLib.degrees(Number(edit.rotate) || 0) : undefined
+        rotate: editRotation(pdfLib, edit)
       });
     });
   }
@@ -222,7 +231,8 @@
           width,
           height,
           color: colorFromArray(pdfLib, edit.fillColor, [0.98, 0.8, 0.08]),
-          opacity: editOpacity(edit, 0.38)
+          opacity: editOpacity(edit, 0.38),
+          rotate: editRotation(pdfLib, edit)
         });
       } else if (edit.type === "whiteout") {
         const height = Number(edit.height) || 0;
@@ -234,7 +244,8 @@
           width,
           height,
           color: colorFromArray(pdfLib, isRedaction ? [0, 0, 0] : edit.fillColor, isRedaction ? [0, 0, 0] : [1, 1, 1]),
-          opacity: isRedaction ? 1 : editOpacity(edit, 1)
+          opacity: isRedaction ? 1 : editOpacity(edit, 1),
+          rotate: editRotation(pdfLib, edit)
         });
       } else if (edit.type === "rectangle") {
         const height = Number(edit.height) || 0;
@@ -247,7 +258,8 @@
           borderColor: colorFromArray(pdfLib, edit.borderColor, [0, 0, 0]),
           borderWidth: Number(edit.borderWidth) || DEFAULT_STROKE_WIDTH,
           color: edit.fillColor ? colorFromArray(pdfLib, edit.fillColor, [1, 1, 1]) : undefined,
-          opacity: editOpacity(edit, 1)
+          opacity: editOpacity(edit, 1),
+          rotate: editRotation(pdfLib, edit)
         };
         if (edit.shape === "ellipse") {
           page.drawEllipse({
@@ -258,7 +270,8 @@
             borderColor: options.borderColor,
             borderWidth: options.borderWidth,
             color: options.color,
-            opacity: options.opacity
+            opacity: options.opacity,
+            rotate: editRotation(pdfLib, edit)
           });
         } else {
           page.drawRectangle(options);
@@ -287,7 +300,8 @@
           y: pageHeight - yFromTop - height,
           width,
           height,
-          opacity: editOpacity(edit, 1)
+          opacity: editOpacity(edit, 1),
+          rotate: editRotation(pdfLib, edit)
         });
       } else if (edit.type === "stamp") {
         const width = Number(edit.width) || 0;
@@ -306,7 +320,8 @@
           height,
           borderColor,
           borderWidth,
-          opacity: editOpacity(edit, 1)
+          opacity: editOpacity(edit, 1),
+          rotate: editRotation(pdfLib, edit)
         });
         page.drawText(text, {
           x: x + Math.max((width - textWidth) / 2, borderWidth + 2),
@@ -314,7 +329,8 @@
           size,
           font,
           color,
-          opacity: editOpacity(edit, 1)
+          opacity: editOpacity(edit, 1),
+          rotate: editRotation(pdfLib, edit)
         });
       }
     }

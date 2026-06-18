@@ -205,6 +205,14 @@ if ($officialEditorAdapter -notmatch 'data-role="opacity"' -or $officialEditorAd
     throw 'editor adapter must expose and persist per-object opacity controls.'
 }
 
+if ($officialEditorAdapter -notmatch 'data-role="rotation"' -or $officialEditorAdapter -notmatch 'function normalizeRotation\(' -or $officialEditorAdapter -notmatch 'edit\.rotate = properties\.rotate') {
+    throw 'editor adapter must expose and persist per-object rotation controls.'
+}
+
+if ($officialEditorAdapter -notmatch 'rotate:\s*normalizeRotation\(edit\.rotate, 0\)') {
+    throw 'editor adapter must export normalized rotation for rotatable overlay edits.'
+}
+
 $lineArrowExportBlock = [regex]::Match($officialEditorAdapter, 'if \(edit\.type === "line" \|\| edit\.type === "arrow"\) \{[\s\S]*?(?=if \(edit\.type === "ink"\))').Value
 
 if (-not $lineArrowExportBlock -or $lineArrowExportBlock -notmatch 'borderWidth:\s*\(edit\.borderWidth \|\| 2\) \* Math\.max\(scaleX, scaleY\)') {
@@ -285,6 +293,10 @@ if ($officialPdfLibAdapter -notmatch 'sort\(\(left, right\) => \(Number\(left\.z
 
 if ($officialPdfLibAdapter -notmatch 'function editOpacity\(' -or $officialPdfLibAdapter -notmatch 'page\.drawImage\(image,\s*\{[\s\S]*?opacity:\s*editOpacity\(edit, 1\)' -or $officialPdfLibAdapter -notmatch 'async function drawTextOverlay\([\s\S]*?opacity:\s*editOpacity\(edit, 1\)') {
     throw 'pdf-lib adapter must persist opacity for text and image overlay edits.'
+}
+
+if ($officialPdfLibAdapter -notmatch 'function editRotation\(' -or $officialPdfLibAdapter -notmatch 'page\.drawImage\(image,\s*\{[\s\S]*?rotate:\s*editRotation\(pdfLib, edit\)' -or $officialPdfLibAdapter -notmatch 'page\.drawRectangle\(\{[\s\S]*?rotate:\s*editRotation\(pdfLib, edit\)') {
+    throw 'pdf-lib adapter must persist rotation for rotatable overlay edits.'
 }
 
 if ($officialPdfLibAdapter -notmatch 'edit\.type === "textHighlight"') {

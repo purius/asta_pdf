@@ -282,6 +282,7 @@
       <input data-role="strokeWidth" type="number" min="1" max="24" value="2" title="Line or border width" />
       <input data-role="fillColor" type="color" value="#ffffff" title="Fill color" />
       <input data-role="opacity" type="number" min="5" max="100" step="5" value="100" title="Opacity percent" />
+      <input data-role="rotation" type="number" min="-180" max="180" step="5" value="0" title="Rotation degrees" />
       <button type="button" data-action="copy" title="Copy selected">Copy</button>
       <button type="button" data-action="paste" title="Paste copied">Paste</button>
       <button type="button" data-action="duplicate" title="Duplicate selected">Duplicate</button>
@@ -334,6 +335,9 @@
       applySelectedProperties();
     });
     toolbar.querySelector("[data-role='opacity']").addEventListener("change", () => {
+      applySelectedProperties();
+    });
+    toolbar.querySelector("[data-role='rotation']").addEventListener("change", () => {
       applySelectedProperties();
     });
     setFonts([]);
@@ -1055,6 +1059,8 @@
     element.style.width = `${edit.width}px`;
     element.style.height = `${edit.height}px`;
     element.style.zIndex = String(ensureLayerIndex(edit));
+    element.style.transform = `rotate(${normalizeRotation(edit.rotate, 0)}deg)`;
+    element.style.transformOrigin = "center center";
     if (edit.type === "text" || edit.type === "textReplace") {
       setTextElementContent(element, edit.text ?? "");
       element.style.fontFamily = `"${edit.fontName || state.fontName}", sans-serif`;
@@ -1369,6 +1375,7 @@
     const strokeWidthInput = toolbar.querySelector("[data-role='strokeWidth']");
     const fillColorInput = toolbar.querySelector("[data-role='fillColor']");
     const opacityInput = toolbar.querySelector("[data-role='opacity']");
+    const rotationInput = toolbar.querySelector("[data-role='rotation']");
 
     if (edit.type === "text" || edit.type === "textReplace" || edit.type === "stamp") {
       fontInput.value = edit.fontName || state.fontName;
@@ -1380,6 +1387,7 @@
     strokeWidthInput.value = edit.borderWidth || (edit.type === "stamp" ? 3 : 2);
     fillColorInput.value = edit.fillColor || "#ffffff";
     opacityInput.value = Math.round(getEditOpacity(edit) * 100);
+    rotationInput.value = normalizeRotation(edit.rotate, 0);
   }
 
   function getToolbarProperties() {
@@ -1389,7 +1397,8 @@
       color: toolbar.querySelector("[data-role='color']").value || state.color,
       strokeWidth: Math.max(Number(toolbar.querySelector("[data-role='strokeWidth']").value) || 2, 1),
       fillColor: toolbar.querySelector("[data-role='fillColor']").value || "#ffffff",
-      opacity: normalizeOpacity(toolbar.querySelector("[data-role='opacity']").value)
+      opacity: normalizeOpacity(toolbar.querySelector("[data-role='opacity']").value),
+      rotate: normalizeRotation(toolbar.querySelector("[data-role='rotation']").value, 0)
     };
   }
 
@@ -1398,6 +1407,12 @@
     if (!Number.isFinite(numeric)) return fallback;
     const normalized = numeric > 1 ? numeric / 100 : numeric;
     return Math.min(Math.max(normalized, 0.05), 1);
+  }
+
+  function normalizeRotation(value, fallback = 0) {
+    const numeric = Number(value);
+    if (!Number.isFinite(numeric)) return fallback;
+    return Math.min(Math.max(numeric, -180), 180);
   }
 
   function getEditOpacity(edit) {
@@ -1414,6 +1429,7 @@
     if (!edit) return;
     recordHistory();
     edit.opacity = properties.opacity;
+    edit.rotate = properties.rotate;
     if (edit.type === "text" || edit.type === "textReplace") {
       edit.fontName = properties.fontName;
       edit.size = properties.size;
@@ -1669,7 +1685,8 @@
           whiteoutPadding: (edit.whiteoutPadding || 0) * Math.max(scaleX, scaleY),
           color: toRgbArray(edit.color),
           fillColor: toRgbArray(edit.fillColor || "#ffffff"),
-          borderWidth: (edit.borderWidth || 0) * scaleX
+          borderWidth: (edit.borderWidth || 0) * scaleX,
+          rotate: normalizeRotation(edit.rotate, 0)
         };
       }
       if (edit.type === "line" || edit.type === "arrow") {
@@ -1739,7 +1756,8 @@
           height: edit.height * scaleY,
           imageDataUrl: edit.imageDataUrl,
           imageMimeType: edit.imageMimeType,
-          opacity
+          opacity,
+          rotate: normalizeRotation(edit.rotate, 0)
         };
       }
       if (edit.type === "stamp") {
@@ -1757,7 +1775,8 @@
           borderWidth: (edit.borderWidth || 3) * Math.max(scaleX, scaleY),
           fontName: edit.fontName || state.fontName,
           size: (edit.size || state.textSize) * scaleY,
-          opacity
+          opacity,
+          rotate: normalizeRotation(edit.rotate, 0)
         };
       }
       return {
