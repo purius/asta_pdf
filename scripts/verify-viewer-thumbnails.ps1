@@ -254,6 +254,17 @@ if ($officialAdapter -notmatch 'function goToPageOrderBoundary\(' -or
     throw 'official viewer first/last commands must navigate to the first/last page in app pageOrder.'
 }
 
+if ($officialAdapter -notmatch 'function initializeThumbnailReorder\(' -or
+    $officialAdapter -notmatch 'function reorderPageByThumbnailDrop\(' -or
+    $officialAdapter -notmatch 'draggable = "true"' -or
+    $officialAdapter -notmatch 'dragstart' -or
+    $officialAdapter -notmatch 'dragover' -or
+    $officialAdapter -notmatch 'drop' -or
+    $officialAdapter -notmatch 'pageStateDirty = true' -or
+    $officialAdapter -notmatch 'goToPage\(draggedPage\)') {
+    throw 'official viewer thumbnails must support drag-and-drop page reordering through pageOrder.'
+}
+
 if ($officialEditorAdapter -notmatch 'type:\s*"editorStateChanged"') {
     throw 'editor adapter must notify WPF when overlay edits make the document dirty.'
 }
