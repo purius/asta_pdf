@@ -1318,12 +1318,21 @@
       ? edit.points.map(point => ({ x: Number(point.x) || 0, y: Number(point.y) || 0 }))
       : null;
     const pointerId = event.pointerId;
-    recordHistory();
+    let historyRecorded = false;
+    let changed = false;
+    const recordDragHistory = () => {
+      if (historyRecorded) return;
+      recordHistory();
+      historyRecorded = true;
+    };
     event.currentTarget.setPointerCapture(pointerId);
 
     function move(moveEvent) {
       const deltaX = moveEvent.clientX - startX;
       const deltaY = moveEvent.clientY - startY;
+      if (Math.abs(deltaX) < 1 && Math.abs(deltaY) < 1) return;
+      recordDragHistory();
+      changed = true;
       if (initialPoints) {
         edit.points = initialPoints.map(point => ({
           x: Math.max(0, point.x + deltaX),
@@ -1340,6 +1349,7 @@
       event.currentTarget.releasePointerCapture(pointerId);
       window.removeEventListener("pointermove", move);
       window.removeEventListener("pointerup", up);
+      if (!changed) return;
       state.dirty = true;
       postDirty();
     }
@@ -1360,12 +1370,23 @@
     const initialHeight = Number(edit.height) || 1;
     const pointerId = event.pointerId;
     const target = event.currentTarget;
-    recordHistory();
+    let historyRecorded = false;
+    let changed = false;
+    const recordResizeHistory = () => {
+      if (historyRecorded) return;
+      recordHistory();
+      historyRecorded = true;
+    };
     target.setPointerCapture(pointerId);
 
     function move(moveEvent) {
-      edit.width = Math.max(20, initialWidth + moveEvent.clientX - startX);
-      edit.height = Math.max(edit.type === "line" || edit.type === "arrow" ? 20 : 16, initialHeight + moveEvent.clientY - startY);
+      const nextWidth = Math.max(20, initialWidth + moveEvent.clientX - startX);
+      const nextHeight = Math.max(edit.type === "line" || edit.type === "arrow" ? 20 : 16, initialHeight + moveEvent.clientY - startY);
+      if (nextWidth === edit.width && nextHeight === edit.height) return;
+      recordResizeHistory();
+      changed = true;
+      edit.width = nextWidth;
+      edit.height = nextHeight;
       renderEdit(edit);
     }
 
@@ -1373,6 +1394,7 @@
       target.releasePointerCapture(pointerId);
       window.removeEventListener("pointermove", move);
       window.removeEventListener("pointerup", up);
+      if (!changed) return;
       state.dirty = true;
       postDirty();
     }

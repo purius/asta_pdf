@@ -292,6 +292,28 @@ if ($officialEditorAdapter -notmatch 'asta-editor-resize-handle' -or $officialEd
     throw 'editor adapter must support resizing selected overlay objects.'
 }
 
+$startDragBlock = [regex]::Match($officialEditorAdapter, 'function startDrag\(event, editId\) \{[\s\S]*?\n  \}').Value
+
+if (-not $startDragBlock -or
+    $startDragBlock -notmatch 'let historyRecorded = false;' -or
+    $startDragBlock -notmatch 'let changed = false;' -or
+    $startDragBlock -notmatch 'const recordDragHistory = \(\) => \{[\s\S]*?recordHistory\(\);[\s\S]*?\};' -or
+    $startDragBlock -notmatch 'recordDragHistory\(\);[\s\S]*?changed = true;' -or
+    $startDragBlock -notmatch 'if \(!changed\) return;[\s\S]*?state\.dirty = true;') {
+    throw 'dragging an overlay edit must record history and dirty state only after the edit actually moves.'
+}
+
+$startResizeBlock = [regex]::Match($officialEditorAdapter, 'function startResize\(event, editId\) \{[\s\S]*?\n  \}').Value
+
+if (-not $startResizeBlock -or
+    $startResizeBlock -notmatch 'let historyRecorded = false;' -or
+    $startResizeBlock -notmatch 'let changed = false;' -or
+    $startResizeBlock -notmatch 'const recordResizeHistory = \(\) => \{[\s\S]*?recordHistory\(\);[\s\S]*?\};' -or
+    $startResizeBlock -notmatch 'recordResizeHistory\(\);[\s\S]*?changed = true;' -or
+    $startResizeBlock -notmatch 'if \(!changed\) return;[\s\S]*?state\.dirty = true;') {
+    throw 'resizing an overlay edit must record history and dirty state only after the edit size actually changes.'
+}
+
 if ($officialEditorAdapter -notmatch 'function undo\(\)' -or $officialEditorAdapter -notmatch 'function redo\(\)') {
     throw 'editor adapter must support undo and redo for overlay edits.'
 }
