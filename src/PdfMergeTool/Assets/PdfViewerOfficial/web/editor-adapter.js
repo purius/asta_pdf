@@ -182,7 +182,8 @@
         min-height: 20px;
       }
       .asta-editor-line svg,
-      .asta-editor-arrow svg {
+      .asta-editor-arrow svg,
+      .asta-editor-ink svg {
         position: absolute;
         inset: 0;
         width: 100%;
@@ -223,6 +224,14 @@
         user-select: text;
         background: rgba(37, 99, 235, 0.08);
       }
+      .asta-editor-ink {
+        min-width: 4px;
+        min-height: 4px;
+        background: transparent;
+      }
+      .asta-editor-highlight {
+        mix-blend-mode: multiply;
+      }
       .asta-editor-crosshair .asta-editor-layer {
         cursor: crosshair;
       }
@@ -243,6 +252,8 @@
       <button type="button" data-mode="ellipse" title="Add ellipse">Ellipse</button>
       <button type="button" data-mode="line" title="Add line">Line</button>
       <button type="button" data-mode="arrow" title="Add arrow">Arrow</button>
+      <button type="button" data-mode="pen" title="Draw freehand pen">Pen</button>
+      <button type="button" data-mode="highlight" title="Draw highlight">Highlight</button>
       <button type="button" data-mode="image" title="Add image">Image</button>
       <button type="button" data-mode="stamp" title="Add stamp">Stamp</button>
       <button type="button" data-mode="signature" title="Add signature image">Sign</button>
@@ -416,6 +427,8 @@
         borderColor: state.color,
         borderWidth: 2
       });
+    } else if (state.mode === "pen" || state.mode === "highlight") {
+      startInk(event, pageElement);
     } else if (state.mode === "image" || state.mode === "signature") {
       addImageEdit(state.mode, pageElement, point);
     } else if (state.mode === "stamp") {
@@ -664,6 +677,9 @@
     const pageElement = document.querySelector(`.page[data-page-number="${edit.page}"]`);
     const layer = ensureLayer(pageElement);
     if (!layer) return;
+    if (edit.type === "ink") {
+      normalizeInkBounds(edit);
+    }
     let element = layer.querySelector(`[data-edit-id="${edit.id}"]`);
     if (!element) {
       element = document.createElement("div");
@@ -677,6 +693,7 @@
       layer.appendChild(element);
     }
     element.classList.toggle("asta-editor-text-replace", edit.type === "textReplace");
+    element.classList.toggle("asta-editor-highlight", edit.type === "ink" && edit.tool === "highlight");
     element.style.left = `${edit.x}px`;
     element.style.top = `${edit.y}px`;
     element.style.width = `${edit.width}px`;
@@ -708,6 +725,8 @@
     } else if (edit.type === "arrow") {
       renderLineSvg(element, edit, true);
       ensureResizeHandle(element, edit.id);
+    } else if (edit.type === "ink") {
+      renderInkElement(element, edit);
     } else if (edit.type === "image" || edit.type === "signature") {
       renderImageElement(element, edit);
       ensureResizeHandle(element, edit.id);
@@ -720,6 +739,28 @@
       ensureResizeHandle(element, edit.id);
     }
     element.classList.toggle("selected", state.selectedId === edit.id);
+  }
+
+  function normalizeInkBounds(edit) {
+    const points = Array.isArray(edit.points) ? edit.points : [];
+    if (points.length === 0) return;
+    const strokeWidth = Math.max(Number(edit.borderWidth) || 2, 1);
+    const padding = Math.max(strokeWidth * 2, 4);
+    const bounds = points.reduce((current, point) => ({
+      left: Math.min(current.left, Number(point.x) || 0),
+      top: Math.min(current.top, Number(point.y) || 0),
+      right: Math.max(current.right, Number(point.x) || 0),
+      bottom: Math.max(current.bottom, Number(point.y) || 0)
+    }), {
+      left: Number(points[0].x) || 0,
+      top: Number(points[0].y) || 0,
+      right: Number(points[0].x) || 0,
+      bottom: Number(points[0].y) || 0
+    });
+    edit.x = bounds.left - padding;
+    edit.y = bounds.top - padding;
+    edit.width = Math.max(bounds.right - bounds.left + padding * 2, padding * 2);
+    edit.height = Math.max(bounds.bottom - bounds.top + padding * 2, padding * 2);
   }
 
   function ensureResizeHandle(element, editId) {
@@ -790,6 +831,81 @@
     element.prepend(svg);
   }
 
+  function renderInkElement(element, edit) {
+    element.style.border = "0";
+    element.style.background = "transparent";
+    element.querySelector(":scope > svg")?.remove();
+    const points = Array.isArray(edit.points) ? edit.points : [];
+    if (points.length === 0) return;
+
+    const width = Math.max(Number(edit.width) || 1, 1);
+    const height = Math.max(Number(edit.height) || 1, 1);
+    const strokeWidth = Math.max(Number(edit.borderWidth) || 2, 1);
+    const svg = document.createElementNS("http://www.w3.org/2000/svg", "svg");
+    svg.setAttribute("viewBox", `0 0 ${width} ${height}`);
+    svg.setAttribute("preserveAspectRatio", "none");
+
+    const polyline = document.createElementNS("http://www.w3.org/2000/svg", "polyline");
+    polyline.setAttribute("points", points.map(point =>
+      `${(Number(point.x) || 0) - edit.x},${(Number(point.y) || 0) - edit.y}`
+    ).join(" "));
+    polyline.setAttribute("stroke", edit.borderColor || (edit.tool === "highlight" ? "#facc15" : state.color));
+    polyline.setAttribute("stroke-width", String(strokeWidth));
+    polyline.setAttribute("stroke-linecap", "round");
+    polyline.setAttribute("stroke-linejoin", "round");
+    polyline.setAttribute("fill", "none");
+    polyline.setAttribute("opacity", String(edit.opacity ?? 1));
+    svg.appendChild(polyline);
+    element.prepend(svg);
+  }
+
+  function startInk(event, pageElement) {
+    event.preventDefault();
+    event.stopPropagation();
+    const layer = ensureLayer(pageElement);
+    const firstPoint = pagePoint(event, pageElement);
+    const isHighlight = state.mode === "highlight";
+    recordHistory();
+    const edit = {
+      type: "ink",
+      tool: isHighlight ? "highlight" : "pen",
+      page: getPageNumber(pageElement),
+      points: [firstPoint],
+      x: firstPoint.x,
+      y: firstPoint.y,
+      width: 1,
+      height: 1,
+      borderColor: isHighlight ? "#facc15" : state.color,
+      borderWidth: isHighlight ? 12 : 2,
+      opacity: isHighlight ? 0.38 : 1
+    };
+    addEdit(edit);
+
+    const pointerId = event.pointerId;
+    layer.setPointerCapture(pointerId);
+    const appendPoint = moveEvent => {
+      const point = pagePoint(moveEvent, pageElement);
+      const previous = edit.points[edit.points.length - 1];
+      if (Math.hypot(point.x - previous.x, point.y - previous.y) < 1) return;
+      edit.points.push(point);
+      renderEdit(edit);
+    };
+    const finish = upEvent => {
+      if (edit.points.length === 1) {
+        edit.points.push({ x: edit.points[0].x + 0.5, y: edit.points[0].y + 0.5 });
+      }
+      layer.releasePointerCapture(pointerId);
+      layer.removeEventListener("pointermove", appendPoint);
+      layer.removeEventListener("pointerup", finish);
+      renderEdit(edit);
+      state.dirty = true;
+      postDirty();
+    };
+
+    layer.addEventListener("pointermove", appendPoint);
+    layer.addEventListener("pointerup", finish, { once: true });
+  }
+
   function startDrag(event, editId) {
     if (event.target.closest?.(".asta-editor-text-content")?.isContentEditable) return;
     event.preventDefault();
@@ -801,13 +917,25 @@
     const startY = event.clientY;
     const initialX = edit.x;
     const initialY = edit.y;
+    const initialPoints = Array.isArray(edit.points)
+      ? edit.points.map(point => ({ x: Number(point.x) || 0, y: Number(point.y) || 0 }))
+      : null;
     const pointerId = event.pointerId;
     recordHistory();
     event.currentTarget.setPointerCapture(pointerId);
 
     function move(moveEvent) {
-      edit.x = Math.max(0, initialX + moveEvent.clientX - startX);
-      edit.y = Math.max(0, initialY + moveEvent.clientY - startY);
+      const deltaX = moveEvent.clientX - startX;
+      const deltaY = moveEvent.clientY - startY;
+      if (initialPoints) {
+        edit.points = initialPoints.map(point => ({
+          x: Math.max(0, point.x + deltaX),
+          y: Math.max(0, point.y + deltaY)
+        }));
+      } else {
+        edit.x = Math.max(0, initialX + deltaX);
+        edit.y = Math.max(0, initialY + deltaY);
+      }
       renderEdit(edit);
     }
 
@@ -920,7 +1048,7 @@
       edit.borderColor = properties.color;
       edit.borderWidth = properties.strokeWidth;
       edit.fillColor = properties.fillColor;
-    } else if (edit.type === "line" || edit.type === "arrow") {
+    } else if (edit.type === "line" || edit.type === "arrow" || edit.type === "ink") {
       edit.borderColor = properties.color;
       edit.borderWidth = properties.strokeWidth;
     }
@@ -1085,6 +1213,20 @@
           height: edit.height * scaleY,
           borderColor: toRgbArray(edit.borderColor),
           borderWidth: (edit.borderWidth || 2) * scaleX
+        };
+      }
+      if (edit.type === "ink") {
+        return {
+          type: "ink",
+          tool: edit.tool || "pen",
+          page: edit.page,
+          points: (Array.isArray(edit.points) ? edit.points : []).map(point => ({
+            x: (Number(point.x) || 0) * scaleX,
+            y: (Number(point.y) || 0) * scaleY
+          })),
+          borderColor: toRgbArray(edit.borderColor || state.color),
+          borderWidth: (edit.borderWidth || 2) * Math.max(scaleX, scaleY),
+          opacity: edit.opacity ?? 1
         };
       }
       if (edit.type === "image" || edit.type === "signature") {

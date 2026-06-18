@@ -137,6 +137,10 @@ if ($officialEditorAdapter -notmatch 'data-mode="image"' -or $officialEditorAdap
     throw 'editor adapter must expose image, stamp, and signature overlay controls.'
 }
 
+if ($officialEditorAdapter -notmatch 'data-mode="pen"' -or $officialEditorAdapter -notmatch 'data-mode="highlight"' -or $officialEditorAdapter -notmatch 'function startInk\(' -or $officialEditorAdapter -notmatch 'function renderInkElement\(') {
+    throw 'editor adapter must expose freehand pen and highlight annotation tools.'
+}
+
 if ($officialEditorAdapter -notmatch 'data-mode="replaceText"' -or $officialEditorAdapter -notmatch 'function findTextLayerElementAt\(') {
     throw 'editor adapter must expose a PDF text-layer replacement tool.'
 }
@@ -193,6 +197,10 @@ if ($officialPdfLibAdapter -notmatch 'function embedImage\(' -or $officialPdfLib
     throw 'pdf-lib adapter must persist image and signature overlay edits.'
 }
 
+if ($officialPdfLibAdapter -notmatch 'function drawInkPath\(' -or $officialPdfLibAdapter -notmatch 'edit\.type === "ink"') {
+    throw 'pdf-lib adapter must persist freehand pen and highlight annotations.'
+}
+
 if ($officialPdfLibAdapter -notmatch 'edit\.type === "stamp"') {
     throw 'pdf-lib adapter must persist stamp overlay edits.'
 }
@@ -237,7 +245,7 @@ if ($mainWindow -notmatch 'WindowsFontService\.ReadFontBase64') {
     throw 'MainWindow must embed only the Windows fonts used by overlay text edits.'
 }
 
-if ($mainWindow -notmatch 'OnEditorTextClick' -or $mainWindow -notmatch 'editorReplaceText' -or $mainWindow -notmatch 'editorSignature') {
+if ($mainWindow -notmatch 'OnEditorTextClick' -or $mainWindow -notmatch 'editorReplaceText' -or $mainWindow -notmatch 'editorSignature' -or $mainWindow -notmatch 'editorHighlight' -or $mainWindow -notmatch 'editorPen') {
     throw 'MainWindow must expose WPF toolbar commands for PDF editor tools.'
 }
 

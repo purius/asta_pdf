@@ -2248,6 +2248,10 @@ public partial class MainWindow : Window
 
     private void OnEditorArrowClick(object sender, RoutedEventArgs e) => SendViewerCommand("editorArrow");
 
+    private void OnEditorPenClick(object sender, RoutedEventArgs e) => SendViewerCommand("editorPen");
+
+    private void OnEditorHighlightClick(object sender, RoutedEventArgs e) => SendViewerCommand("editorHighlight");
+
     private void OnEditorImageClick(object sender, RoutedEventArgs e) => SendViewerCommand("editorImage");
 
     private void OnEditorStampClick(object sender, RoutedEventArgs e) => SendViewerCommand("editorStamp");

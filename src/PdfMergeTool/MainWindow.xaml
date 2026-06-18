@@ -557,6 +557,16 @@
                                     <TextBlock Text="Arrow" />
                                 </Button>
                                 <Button Style="{StaticResource ToolbarTextButtonStyle}"
+                                        ToolTip="펜 그리기"
+                                        Click="OnEditorPenClick">
+                                    <TextBlock Text="Pen" />
+                                </Button>
+                                <Button Style="{StaticResource ToolbarTextButtonStyle}"
+                                        ToolTip="형광펜 표시"
+                                        Click="OnEditorHighlightClick">
+                                    <TextBlock Text="Highlight" />
+                                </Button>
+                                <Button Style="{StaticResource ToolbarTextButtonStyle}"
                                         ToolTip="이미지 추가"
                                         Click="OnEditorImageClick">
                                     <TextBlock Text="Image" />

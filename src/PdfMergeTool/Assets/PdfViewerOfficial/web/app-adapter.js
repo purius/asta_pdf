@@ -236,6 +236,12 @@ const AppBridge = (() => {
       case "editorArrow":
         window.EditorAdapter?.setMode?.("arrow");
         break;
+      case "editorPen":
+        window.EditorAdapter?.setMode?.("pen");
+        break;
+      case "editorHighlight":
+        window.EditorAdapter?.setMode?.("highlight");
+        break;
       case "editorImage":
         window.EditorAdapter?.setMode?.("image");
         break;

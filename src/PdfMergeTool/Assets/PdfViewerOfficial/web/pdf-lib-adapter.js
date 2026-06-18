@@ -98,6 +98,32 @@
     }
   }
 
+  function drawInkPath(page, pdfLib, edit, pageHeight) {
+    const points = Array.isArray(edit.points) ? edit.points : [];
+    if (points.length < 2) return;
+    const color = colorFromArray(pdfLib, edit.borderColor, edit.tool === "highlight" ? [0.98, 0.8, 0.08] : [0, 0, 0]);
+    const thickness = Math.max(Number(edit.borderWidth) || (edit.tool === "highlight" ? 12 : 2), 1);
+    const opacity = edit.opacity === undefined ? (edit.tool === "highlight" ? 0.38 : 1) : Number(edit.opacity);
+
+    for (let index = 1; index < points.length; index += 1) {
+      const previous = points[index - 1];
+      const current = points[index];
+      page.drawLine({
+        start: {
+          x: Number(previous.x) || 0,
+          y: pageHeight - (Number(previous.y) || 0)
+        },
+        end: {
+          x: Number(current.x) || 0,
+          y: pageHeight - (Number(current.y) || 0)
+        },
+        color,
+        thickness,
+        opacity
+      });
+    }
+  }
+
   async function drawTextReplacement(pdfDoc, page, pdfLib, edit, pageHeight, fonts) {
     const x = Number(edit.x) || 0;
     const yFromTop = Number(edit.y) || 0;
@@ -201,6 +227,8 @@
         });
       } else if (edit.type === "arrow") {
         drawArrow(page, pdfLib, edit, pageHeight);
+      } else if (edit.type === "ink") {
+        drawInkPath(page, pdfLib, edit, pageHeight);
       } else if (edit.type === "image" || edit.type === "signature") {
         const width = Number(edit.width) || 0;
         const height = Number(edit.height) || 0;
