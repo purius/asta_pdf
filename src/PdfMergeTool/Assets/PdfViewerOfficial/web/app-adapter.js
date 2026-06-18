@@ -5,6 +5,8 @@ const AppBridge = (() => {
   let firstPageRendered = false;
   let pageStateDirty = false;
   let thumbnailScale = 1;
+  let explicitNavigationTarget = null;
+  let explicitNavigationExpiresAt = 0;
 
   function postMessage(message) {
     window.chrome?.webview?.postMessage(message);
@@ -74,7 +76,9 @@ const AppBridge = (() => {
     const app = getApp();
     if (!app) return;
     const totalPages = getTotalPages();
-    app.page = Math.min(Math.max(pageNumber, 1), Math.max(totalPages, 1));
+    const targetPage = Math.min(Math.max(pageNumber, 1), Math.max(totalPages, 1));
+    beginExplicitPageNavigation(targetPage);
+    app.page = targetPage;
   }
 
   function goRelative(delta) {
@@ -107,6 +111,49 @@ const AppBridge = (() => {
     thumbnailScale = Math.min(Math.max(nextScale, 0.75), 1.8);
     const thumbnailsView = document.getElementById("thumbnailsView");
     thumbnailsView?.style.setProperty("--thumbnail-width", `${Math.round(126 * thumbnailScale)}px`);
+  }
+
+  function beginExplicitPageNavigation(pageNumber) {
+    explicitNavigationTarget = Number(pageNumber) || null;
+    explicitNavigationExpiresAt = Date.now() + 900;
+  }
+
+  function shouldAcceptPageChange(pageNumber) {
+    if (!explicitNavigationTarget) {
+      return true;
+    }
+
+    if (Date.now() > explicitNavigationExpiresAt) {
+      explicitNavigationTarget = null;
+      explicitNavigationExpiresAt = 0;
+      return true;
+    }
+
+    if (Number(pageNumber) === explicitNavigationTarget) {
+      explicitNavigationTarget = null;
+      explicitNavigationExpiresAt = 0;
+      return true;
+    }
+
+    return false;
+  }
+
+  function findNavigationTargetPage(element) {
+    const thumbnail = element?.closest?.("#thumbnailsView .thumbnail[page-number], #thumbnailView .thumbnail[page-number]");
+    if (thumbnail) {
+      return Number(thumbnail.getAttribute("page-number"));
+    }
+
+    const link = element?.closest?.("a[href*='#page=']");
+    const match = /[#&]page=(\d+)/.exec(link?.getAttribute("href") || "");
+    return match ? Number(match[1]) : null;
+  }
+
+  function captureExplicitNavigationIntent(event) {
+    const targetPage = findNavigationTargetPage(event.target);
+    if (targetPage) {
+      beginExplicitPageNavigation(targetPage);
+    }
   }
 
   function applyPageStatePresentation() {
@@ -345,6 +392,10 @@ const AppBridge = (() => {
 
     eventBus?._on("pagechanging", event => {
       const activePage = event.pageNumber ?? app.page ?? 1;
+      if (!shouldAcceptPageChange(activePage)) {
+        return;
+      }
+
       selectedPages = new Set([activePage]);
       postMessage({
         type: "activePageChanged",
@@ -354,6 +405,8 @@ const AppBridge = (() => {
     });
 
     window.chrome?.webview?.addEventListener("message", handleHostMessage);
+    document.addEventListener("pointerdown", captureExplicitNavigationIntent, true);
+    document.addEventListener("click", captureExplicitNavigationIntent, true);
     postMessage({ type: "viewerReady" });
   }
 

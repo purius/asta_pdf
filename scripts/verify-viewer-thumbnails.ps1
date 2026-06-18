@@ -136,6 +136,18 @@ if ($officialAdapter -notmatch 'type:\s*"activePageChanged"[\s\S]*selectedPages:
     throw 'official viewer pagechanging events must publish active page and selection without rebuilding page order state.'
 }
 
+if ($officialAdapter -notmatch 'function beginExplicitPageNavigation\(' -or
+    $officialAdapter -notmatch 'function shouldAcceptPageChange\(' -or
+    $officialAdapter -notmatch 'if \(!shouldAcceptPageChange\(activePage\)\) \{[\s\S]*?return;[\s\S]*?\}') {
+    throw 'official viewer adapter must ignore transient pagechanging events that do not match the latest explicit navigation target.'
+}
+
+if ($officialAdapter -notmatch 'captureExplicitNavigationIntent' -or
+    $officialAdapter -notmatch '#thumbnailsView|#thumbnailView' -or
+    $officialAdapter -notmatch 'page-number') {
+    throw 'official viewer adapter must capture rapid thumbnail clicks as explicit navigation targets.'
+}
+
 if ($officialEditorAdapter -notmatch 'type:\s*"editorStateChanged"') {
     throw 'editor adapter must notify WPF when overlay edits make the document dirty.'
 }
