@@ -5,6 +5,9 @@ $root = Split-Path -Parent $PSScriptRoot
 $viewerPath = Join-Path $root 'src\PdfMergeTool\Assets\PdfViewer\viewer.html'
 $officialViewerPath = Join-Path $root 'src\PdfMergeTool\Assets\PdfViewerOfficial\web\viewer.html'
 $officialAdapterPath = Join-Path $root 'src\PdfMergeTool\Assets\PdfViewerOfficial\web\app-adapter.js'
+$officialPdfLibAdapterPath = Join-Path $root 'src\PdfMergeTool\Assets\PdfViewerOfficial\web\pdf-lib-adapter.js'
+$officialPdfLibPath = Join-Path $root 'src\PdfMergeTool\Assets\PdfViewerOfficial\web\vendor\pdf-lib.min.js'
+$officialFontkitPath = Join-Path $root 'src\PdfMergeTool\Assets\PdfViewerOfficial\web\vendor\fontkit.umd.min.js'
 $officialViewerScriptPath = Join-Path $root 'src\PdfMergeTool\Assets\PdfViewerOfficial\web\viewer.mjs'
 $officialBuildPath = Join-Path $root 'src\PdfMergeTool\Assets\PdfViewerOfficial\build\pdf.mjs'
 $mainWindowPath = Join-Path $root 'src\PdfMergeTool\MainWindow.xaml.cs'
@@ -21,20 +24,69 @@ if (-not (Test-Path $officialAdapterPath)) {
     throw 'official viewer adapter must be packaged.'
 }
 
+if (-not (Test-Path $officialPdfLibAdapterPath)) {
+    throw 'official pdf-lib editor adapter must be packaged.'
+}
+
+if (-not (Test-Path $officialPdfLibPath)) {
+    throw 'pdf-lib browser bundle must be packaged.'
+}
+
+if (-not (Test-Path $officialFontkitPath)) {
+    throw 'fontkit browser bundle must be packaged for custom Windows font embedding.'
+}
+
 if (-not (Test-Path $officialBuildPath)) {
     throw 'official PDF.js build files must be packaged.'
 }
 
 $officialViewer = Get-Content -Raw $officialViewerPath
 $officialAdapter = Get-Content -Raw $officialAdapterPath
+$officialPdfLibAdapter = Get-Content -Raw $officialPdfLibAdapterPath
 $officialViewerScript = Get-Content -Raw $officialViewerScriptPath
 
 if ($officialViewer -notmatch 'app-adapter\.js') {
     throw 'official viewer.html must load the app adapter.'
 }
 
+if ($officialViewer -notmatch 'vendor/pdf-lib\.min\.js') {
+    throw 'official viewer.html must load pdf-lib.'
+}
+
+if ($officialViewer -notmatch 'vendor/fontkit\.umd\.min\.js') {
+    throw 'official viewer.html must load fontkit for custom font embedding.'
+}
+
+if ($officialViewer -notmatch 'pdf-lib-adapter\.js') {
+    throw 'official viewer.html must load the pdf-lib editor adapter.'
+}
+
 if ($officialAdapter -notmatch 'window\.PDFViewerApplication') {
     throw 'official viewer adapter must use the PDF.js viewer application API.'
+}
+
+if ($officialAdapter -notmatch 'type:\s*"viewerDiagnostic"') {
+    throw 'official viewer adapter diagnostics must match the WPF viewerDiagnostic message contract.'
+}
+
+if ($officialAdapter -notmatch 'rotations:\s*pageRotations') {
+    throw 'official viewer adapter must publish rotations using the existing WPF message field.'
+}
+
+if ($officialAdapter -notmatch 'exportOverlayPdf') {
+    throw 'official viewer adapter must expose a host-callable pdf-lib export path.'
+}
+
+if ($officialPdfLibAdapter -notmatch 'PDFLib\.PDFDocument\.load') {
+    throw 'pdf-lib adapter must load the source PDF through pdf-lib.'
+}
+
+if ($officialPdfLibAdapter -notmatch 'pdfDoc\.registerFontkit') {
+    throw 'pdf-lib adapter must register fontkit before embedding custom fonts.'
+}
+
+if ($officialPdfLibAdapter -notmatch 'pdfDoc\.embedFont') {
+    throw 'pdf-lib adapter must embed fonts for text overlay edits.'
 }
 
 if ($officialViewerScript -notmatch 'defaultOptions\.defaultUrl\s*=\s*\{[\s\S]*?value:\s*""') {

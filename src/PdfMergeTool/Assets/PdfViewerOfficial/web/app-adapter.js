@@ -9,7 +9,7 @@ const AppBridge = (() => {
   }
 
   function postDiagnostic(level, message, details = {}) {
-    postMessage({ type: "diagnostic", level, message, details });
+    postMessage({ type: "viewerDiagnostic", level, message, details });
   }
 
   function getApp() {
@@ -32,7 +32,7 @@ const AppBridge = (() => {
     postMessage({
       type: "pageOrderChanged",
       pageOrder,
-      pageRotations,
+      rotations: pageRotations,
       selectedPages: [...selectedPages],
       activePage,
       isDirty: false
@@ -105,6 +105,19 @@ const AppBridge = (() => {
     goToPage(pageOrder[0]);
   }
 
+  async function exportOverlayPdf(data) {
+    if (!window.PdfLibAdapter?.createOverlayPdf) {
+      throw new Error("PDF editor save adapter is not loaded.");
+    }
+
+    const pdfBase64 = await window.PdfLibAdapter.createOverlayPdf(data);
+    postMessage({
+      type: "overlayPdfExported",
+      requestId: data.requestId ?? null,
+      pdfBase64
+    });
+  }
+
   function handleCommand(command) {
     switch (command) {
       case "nextPage":
@@ -160,6 +173,8 @@ const AppBridge = (() => {
         await openPdf(source);
       } else if (data.type === "command") {
         handleCommand(data.command);
+      } else if (data.type === "exportOverlayPdf") {
+        await exportOverlayPdf(data);
       }
     } catch (error) {
       postDiagnostic("error", error?.message ?? String(error), { type: data.type });

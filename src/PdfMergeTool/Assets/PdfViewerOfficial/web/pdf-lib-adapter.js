@@ -1,0 +1,111 @@
+(() => {
+  const DEFAULT_TEXT_SIZE = 12;
+  const DEFAULT_STROKE_WIDTH = 1;
+
+  function getPdfLib() {
+    const pdfLib = window.PDFLib;
+    if (!pdfLib?.PDFDocument) {
+      throw new Error("pdf-lib is not loaded.");
+    }
+    return pdfLib;
+  }
+
+  function getFontkit() {
+    return window.fontkit ?? window.Fontkit ?? null;
+  }
+
+  function base64ToBytes(base64) {
+    const normalized = String(base64 ?? "").replace(/^data:application\/pdf;base64,/, "");
+    const binary = atob(normalized);
+    const bytes = new Uint8Array(binary.length);
+    for (let index = 0; index < binary.length; index += 1) {
+      bytes[index] = binary.charCodeAt(index);
+    }
+    return bytes;
+  }
+
+  function bytesToBase64(bytes) {
+    const chunkSize = 0x8000;
+    const chunks = [];
+    for (let index = 0; index < bytes.length; index += chunkSize) {
+      chunks.push(String.fromCharCode(...bytes.subarray(index, index + chunkSize)));
+    }
+    return btoa(chunks.join(""));
+  }
+
+  function colorFromArray(pdfLib, color, fallback) {
+    const [r, g, b] = Array.isArray(color) ? color : fallback;
+    return pdfLib.rgb(
+      Math.min(Math.max(Number(r) || 0, 0), 1),
+      Math.min(Math.max(Number(g) || 0, 0), 1),
+      Math.min(Math.max(Number(b) || 0, 0), 1)
+    );
+  }
+
+  async function resolveFont(pdfDoc, pdfLib, edit, fonts) {
+    const fontName = edit.fontName || "default";
+    const fontSource = fonts?.[fontName] ?? edit.fontBytes ?? edit.fontBase64;
+
+    if (fontSource) {
+      const fontkit = getFontkit();
+      if (!fontkit) {
+        throw new Error("fontkit is required to embed custom Windows fonts.");
+      }
+      pdfDoc.registerFontkit(fontkit);
+      const fontBytes = typeof fontSource === "string" ? base64ToBytes(fontSource) : fontSource;
+      return pdfDoc.embedFont(fontBytes, { subset: true });
+    }
+
+    return pdfDoc.embedFont(pdfLib.StandardFonts.Helvetica);
+  }
+
+  async function createOverlayPdf(options) {
+    const pdfLib = getPdfLib();
+    const sourceBytes = options.sourceBytes ?? base64ToBytes(options.sourceBase64);
+    const pdfDoc = await pdfLib.PDFDocument.load(sourceBytes);
+    const edits = Array.isArray(options.edits) ? options.edits : [];
+    const fonts = options.fonts ?? {};
+
+    for (const edit of edits) {
+      const pageIndex = Math.max((Number(edit.page) || 1) - 1, 0);
+      const page = pdfDoc.getPage(pageIndex);
+      const pageHeight = page.getHeight();
+      const x = Number(edit.x) || 0;
+      const yFromTop = Number(edit.y) || 0;
+
+      if (edit.type === "text") {
+        const font = await resolveFont(pdfDoc, pdfLib, edit, fonts);
+        const size = Number(edit.size) || DEFAULT_TEXT_SIZE;
+        page.drawText(String(edit.text ?? ""), {
+          x,
+          y: pageHeight - yFromTop - size,
+          size,
+          font,
+          color: colorFromArray(pdfLib, edit.color, [0, 0, 0]),
+          rotate: edit.rotate ? pdfLib.degrees(Number(edit.rotate) || 0) : undefined
+        });
+      } else if (edit.type === "rectangle") {
+        const height = Number(edit.height) || 0;
+        page.drawRectangle({
+          x,
+          y: pageHeight - yFromTop - height,
+          width: Number(edit.width) || 0,
+          height,
+          borderColor: colorFromArray(pdfLib, edit.borderColor, [0, 0, 0]),
+          borderWidth: Number(edit.borderWidth) || DEFAULT_STROKE_WIDTH,
+          color: edit.fillColor ? colorFromArray(pdfLib, edit.fillColor, [1, 1, 1]) : undefined,
+          opacity: edit.opacity === undefined ? undefined : Number(edit.opacity)
+        });
+      }
+    }
+
+    const savedBytes = await pdfDoc.save({ useObjectStreams: false });
+    return bytesToBase64(savedBytes);
+  }
+
+  window.PdfLibAdapter = {
+    hasPdfLib: () => Boolean(window.PDFLib?.PDFDocument),
+    hasFontkit: () => Boolean(getFontkit()),
+    createOverlayPdf
+  };
+})();
