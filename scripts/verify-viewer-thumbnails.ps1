@@ -151,12 +151,41 @@ if ($officialAdapter -notmatch 'explicitNavigationSettledUntil' -or
     throw 'official viewer adapter must keep suppressing stale pagechanging events briefly after accepting an explicit navigation target.'
 }
 
+$userPageChangeIntentBlock = [regex]::Match(
+    $officialAdapter,
+    'function hasRecentUserPageChangeIntent\(\) \{[\s\S]*?\n  \}').Value
+if (-not $userPageChangeIntentBlock -or
+    $userPageChangeIntentBlock -notmatch 'Date\.now\(\) - lastUserPageChangeIntentAt <= 1200') {
+    throw 'official viewer adapter must distinguish direct user scroll/key page changes from stale programmatic pagechanging events.'
+}
+
 $shouldAcceptPageChangeBlock = [regex]::Match(
     $officialAdapter,
-    'function shouldAcceptPageChange\(pageNumber\) \{[\s\S]*?\n  \}').Value
+    'function shouldAcceptPageChange\(pageNumber\) \{[\s\S]*?\n  function findNavigationTargetPage').Value
 if (-not $shouldAcceptPageChangeBlock -or
     $shouldAcceptPageChangeBlock -notmatch 'if \(lastAcceptedExplicitNavigationPage && Date\.now\(\) > explicitNavigationSettledUntil\) \{[\s\S]*?explicitNavigationSettledUntil = 0;[\s\S]*?lastAcceptedExplicitNavigationPage = null;[\s\S]*?\}') {
     throw 'official viewer adapter must clear accepted explicit navigation state after the settle window expires.'
+}
+
+if ($officialAdapter -notmatch 'protectedExplicitNavigationPage' -or
+    -not $shouldAcceptPageChangeBlock -or
+    $shouldAcceptPageChangeBlock -notmatch 'if \(\s*protectedExplicitNavigationPage &&[\s\S]*?Number\(pageNumber\) !== protectedExplicitNavigationPage &&[\s\S]*?!hasRecentUserPageChangeIntent\(\)[\s\S]*?\) \{[\s\S]*?return false;[\s\S]*?\}') {
+    throw 'official viewer adapter must keep rejecting stale non-target pagechanging events after explicit navigation until the user scrolls or keys navigation.'
+}
+
+$beginExplicitPageNavigationBlock = [regex]::Match(
+    $officialAdapter,
+    'function beginExplicitPageNavigation\(pageNumber\) \{[\s\S]*?\n  \}').Value
+if (-not $beginExplicitPageNavigationBlock -or
+    $beginExplicitPageNavigationBlock -notmatch 'protectedExplicitNavigationPage = null;') {
+    throw 'starting a new explicit page navigation must clear the previous protected page so rapid thumbnail clicks can reach the newest target.'
+}
+
+if ($officialAdapter -notmatch 'function markUserPageChangeIntent\(' -or
+    $officialAdapter -notmatch 'document\.addEventListener\("wheel", markUserPageChangeIntent, \{ passive: true \}\)' -or
+    $officialAdapter -notmatch 'document\.addEventListener\("touchstart", markUserPageChangeIntent, \{ passive: true \}\)' -or
+    $officialAdapter -notmatch 'document\.addEventListener\("keydown", markKeyboardPageChangeIntent, true\)') {
+    throw 'official viewer adapter must record real user scroll and keyboard navigation before accepting non-target pagechanging events.'
 }
 
 if ($officialAdapter -notmatch 'function resetExplicitNavigationTracking\(\)' -or

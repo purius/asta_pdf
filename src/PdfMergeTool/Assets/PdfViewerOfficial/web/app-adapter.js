@@ -9,6 +9,8 @@ const AppBridge = (() => {
   let explicitNavigationExpiresAt = 0;
   let explicitNavigationSettledUntil = 0;
   let lastAcceptedExplicitNavigationPage = null;
+  let protectedExplicitNavigationPage = null;
+  let lastUserPageChangeIntentAt = 0;
 
   function postMessage(message) {
     window.chrome?.webview?.postMessage(message);
@@ -31,6 +33,8 @@ const AppBridge = (() => {
     explicitNavigationExpiresAt = 0;
     explicitNavigationSettledUntil = 0;
     lastAcceptedExplicitNavigationPage = null;
+    protectedExplicitNavigationPage = null;
+    lastUserPageChangeIntentAt = 0;
   }
 
   function rebuildPageOrder(totalPages = getTotalPages()) {
@@ -190,6 +194,33 @@ const AppBridge = (() => {
     explicitNavigationExpiresAt = Date.now() + 900;
     explicitNavigationSettledUntil = 0;
     lastAcceptedExplicitNavigationPage = null;
+    protectedExplicitNavigationPage = null;
+  }
+
+  function markUserPageChangeIntent() {
+    lastUserPageChangeIntentAt = Date.now();
+  }
+
+  function markKeyboardPageChangeIntent(event) {
+    if (event.defaultPrevented || event.isComposing) return;
+    const navigationKeys = new Set([
+      "ArrowUp",
+      "ArrowDown",
+      "ArrowLeft",
+      "ArrowRight",
+      "PageUp",
+      "PageDown",
+      "Home",
+      "End",
+      " "
+    ]);
+    if (navigationKeys.has(event.key)) {
+      markUserPageChangeIntent();
+    }
+  }
+
+  function hasRecentUserPageChangeIntent() {
+    return Date.now() - lastUserPageChangeIntentAt <= 1200;
   }
 
   function shouldAcceptPageChange(pageNumber) {
@@ -206,6 +237,22 @@ const AppBridge = (() => {
       return false;
     }
 
+    if (
+      protectedExplicitNavigationPage &&
+      Number(pageNumber) !== protectedExplicitNavigationPage &&
+      !hasRecentUserPageChangeIntent()
+    ) {
+      return false;
+    }
+
+    if (
+      protectedExplicitNavigationPage &&
+      Number(pageNumber) !== protectedExplicitNavigationPage &&
+      hasRecentUserPageChangeIntent()
+    ) {
+      protectedExplicitNavigationPage = null;
+    }
+
     if (!explicitNavigationTarget) {
       return true;
     }
@@ -215,11 +262,13 @@ const AppBridge = (() => {
       explicitNavigationExpiresAt = 0;
       explicitNavigationSettledUntil = 0;
       lastAcceptedExplicitNavigationPage = null;
+      protectedExplicitNavigationPage = null;
       return true;
     }
 
     if (Number(pageNumber) === explicitNavigationTarget) {
       lastAcceptedExplicitNavigationPage = Number(pageNumber);
+      protectedExplicitNavigationPage = Number(pageNumber);
       explicitNavigationSettledUntil = Date.now() + 450;
       explicitNavigationTarget = null;
       explicitNavigationExpiresAt = 0;
@@ -595,6 +644,9 @@ const AppBridge = (() => {
     window.chrome?.webview?.addEventListener("message", handleHostMessage);
     document.addEventListener("pointerdown", captureExplicitNavigationIntent, true);
     document.addEventListener("click", captureExplicitNavigationIntent, true);
+    document.addEventListener("wheel", markUserPageChangeIntent, { passive: true });
+    document.addEventListener("touchstart", markUserPageChangeIntent, { passive: true });
+    document.addEventListener("keydown", markKeyboardPageChangeIntent, true);
     postMessage({ type: "viewerReady" });
   }
 
