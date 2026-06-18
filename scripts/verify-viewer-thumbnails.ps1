@@ -149,6 +149,10 @@ if ($officialEditorAdapter -notmatch 'function addSelectedTextHighlightEdits\(' 
     throw 'editor adapter must support highlighting selected PDF text ranges.'
 }
 
+if ($officialEditorAdapter -notmatch 'function addSelectedTextWhiteoutEdits\(' -or $officialEditorAdapter -notmatch 'function getSelectedTextWhiteoutTargets\(' -or $officialEditorAdapter -notmatch 'Selected text whiteout is limited to one PDF page at a time') {
+    throw 'editor adapter must support whiteout over selected PDF text ranges.'
+}
+
 if ($officialEditorAdapter -notmatch 'data-mode="replaceText"' -or $officialEditorAdapter -notmatch 'function findTextLayerElementAt\(') {
     throw 'editor adapter must expose a PDF text-layer replacement tool.'
 }

@@ -345,6 +345,12 @@
     });
     if (mode === "replaceText") {
       setTimeout(() => addSelectedTextReplacementEdit(), 0);
+    } else if (mode === "whiteout") {
+      setTimeout(() => {
+        if (addSelectedTextWhiteoutEdits()) {
+          setMode("select");
+        }
+      }, 0);
     } else if (mode === "highlight") {
       setTimeout(() => {
         if (addSelectedTextHighlightEdits()) {
@@ -624,6 +630,28 @@
     return true;
   }
 
+  function addSelectedTextWhiteoutEdits() {
+    const targets = getSelectedTextWhiteoutTargets();
+    if (targets.length === 0) return false;
+
+    recordHistory();
+    for (const target of targets) {
+      addEdit({
+        type: "whiteout",
+        page: getPageNumber(target.pageElement),
+        x: target.x,
+        y: target.y,
+        width: Math.max(target.width, 1),
+        height: Math.max(target.height, 1),
+        fillColor: "#ffffff",
+        borderColor: "#ffffff",
+        borderWidth: 0
+      });
+    }
+    window.getSelection()?.removeAllRanges();
+    return true;
+  }
+
   function getSelectedTextHighlightTargets() {
     const selection = window.getSelection?.();
     if (!selection || selection.isCollapsed || selection.rangeCount === 0) return [];
@@ -649,6 +677,44 @@
         type: "viewerDiagnostic",
         level: "info",
         message: "Selected text highlight is limited to one PDF page at a time."
+      });
+      return [];
+    }
+
+    return selectedRects.map(rect => ({
+      pageElement,
+      x: rect.left - pageRect.left,
+      y: rect.top - pageRect.top,
+      width: rect.width,
+      height: rect.height
+    }));
+  }
+
+  function getSelectedTextWhiteoutTargets() {
+    const selection = window.getSelection?.();
+    if (!selection || selection.isCollapsed || selection.rangeCount === 0) return [];
+
+    const range = selection.getRangeAt(0);
+    const clientRects = [...range.getClientRects()]
+      .filter(rect => rect.width > 0 && rect.height > 0);
+    if (clientRects.length === 0) return [];
+
+    const pageElement = getPageElementForSelection(range, clientRects[0]);
+    if (!pageElement) return [];
+
+    const pageRect = pageElement.getBoundingClientRect();
+    const selectedRects = clientRects.filter(rect => {
+      const centerX = rect.left + rect.width / 2;
+      const centerY = rect.top + rect.height / 2;
+      const element = document.elementFromPoint(centerX, centerY);
+      return pageElement.contains(element);
+    });
+
+    if (selectedRects.length !== clientRects.length) {
+      postMessage({
+        type: "viewerDiagnostic",
+        level: "info",
+        message: "Selected text whiteout is limited to one PDF page at a time."
       });
       return [];
     }
