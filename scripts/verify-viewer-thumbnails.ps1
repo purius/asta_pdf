@@ -17,6 +17,18 @@ if ($viewer -notmatch 'if \(thumbnailRenderKey === nextKey\)') {
     throw 'thumbnail rendering must skip rebuilding unchanged thumbnails during page navigation.'
 }
 
+if ($viewer -notmatch 'let lastActiveThumb = null') {
+    throw 'viewer.html must track the previously active thumbnail to avoid rewriting every thumbnail on scroll.'
+}
+
+if ($viewer -notmatch 'function updateActiveThumb\(previousPage, nextPage\)') {
+    throw 'viewer.html must update only changed active thumbnail nodes.'
+}
+
+if ($viewer -notmatch 'aspect-ratio:\s+var\(--thumb-aspect-ratio') {
+    throw 'thumbnail media must reserve a stable aspect ratio before async rendering completes.'
+}
+
 if ($viewer -notmatch 'for \(let index = 0; index < pageOrder\.length; index \+= 1\)') {
     throw 'thumbnail rendering must iterate over every page in pageOrder.'
 }
@@ -30,6 +42,10 @@ if (-not $clearRenderedPagesMatch.Success) {
 
 if ($clearRenderedPagesMatch.Groups['body'].Value -match 'thumbs\.replaceChildren\(\);') {
     throw 'main page clearing must not remove already-rendered thumbnails.'
+}
+
+if ($clearRenderedPagesMatch.Groups['body'].Value -match 'activePage\s*=\s*1;') {
+    throw 'main page clearing must not reset the active thumbnail to page 1.'
 }
 
 if ($viewer -match 'thumbs\.appendChild\(thumb\);[\s\S]{0,900}await page\.render\(\{ canvasContext: pageContext') {

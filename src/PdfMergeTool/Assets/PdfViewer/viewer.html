@@ -129,6 +129,7 @@
       cursor: pointer;
       user-select: none;
       touch-action: none;
+      contain: layout paint;
     }
 
     .thumb.dragging {
@@ -175,10 +176,12 @@
       display: block;
       width: 100%;
       height: auto;
+      aspect-ratio: var(--thumb-aspect-ratio, 0.707);
       border-radius: 4px;
       background: #fff;
       box-shadow: 0 1px 4px rgba(16, 24, 40, 0.12);
       pointer-events: none;
+      object-fit: contain;
     }
 
     .thumb span {
@@ -390,6 +393,7 @@
     let isDirty = false;
     let documentSourcePath = '';
     let thumbnailRenderKey = '';
+    let lastActiveThumb = null;
     let renderedStartIndex = 0;
     let renderedEndIndex = 0;
     let scrollWindowSwitching = false;
@@ -505,13 +509,13 @@
 
     function clearRenderedPages() {
       pages.replaceChildren();
-      activePage = 1;
       renderedStartIndex = 0;
       renderedEndIndex = 0;
     }
 
     function clearThumbnailCache() {
       thumbnailRenderKey = '';
+      lastActiveThumb = null;
       thumbs.replaceChildren();
     }
 
@@ -637,7 +641,7 @@
       const previousPage = activePage;
       const totalPages = getDocumentPageCount();
       activePage = clamp(pageNumber, 1, totalPages);
-      updateThumbClasses();
+      updateActiveThumb(previousPage, activePage);
       if (fallbackDocument) {
         setStatus(`${activePage} / ${totalPages} 페이지 · 본문 ${Math.round(mainScale * 100)}% · 썸네일 ${Math.round(thumbScale * 100)}% · PDFium`);
         if (previousPage !== activePage) {
@@ -651,16 +655,37 @@
       }
     }
 
+    function findThumbByPage(pageNumber) {
+      return thumbs.querySelector(`.thumb[data-page="${pageNumber}"]`);
+    }
+
+    function updateActiveThumb(previousPage, nextPage) {
+      if (lastActiveThumb?.dataset.page !== String(nextPage)) {
+        lastActiveThumb?.classList.remove('active');
+        lastActiveThumb = findThumbByPage(nextPage);
+      }
+
+      if (previousPage !== nextPage) {
+        findThumbByPage(previousPage)?.classList.remove('active');
+      }
+
+      lastActiveThumb?.classList.add('active');
+    }
+
     function updateThumbClasses() {
       document.querySelectorAll('.thumb').forEach((node) => {
         const page = Number(node.dataset.page);
         node.classList.toggle('active', page === activePage);
         node.classList.toggle('selected', selectedPages.has(page));
       });
+      lastActiveThumb = findThumbByPage(activePage);
       const selectedCount = selectedPages.size;
-      selectionHint.textContent = selectedCount > 0
+      const nextSelectionHint = selectedCount > 0
         ? `${selectedCount}개 선택됨 · 드래그로 묶음 이동`
         : 'Ctrl/Shift 클릭으로 여러 페이지 선택';
+      if (selectionHint.textContent !== nextSelectionHint) {
+        selectionHint.textContent = nextSelectionHint;
+      }
     }
 
     function clearDropIndicators() {
