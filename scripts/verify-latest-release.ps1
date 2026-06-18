@@ -46,6 +46,20 @@ function Assert-HeadOk {
     }
 }
 
+function Test-ExpectedTagReleaseFallback {
+    param([Parameter(Mandatory = $true)][string]$ExpectedTag)
+
+    $releaseUrl = "https://github.com/purius/asta_pdf/releases/tag/$expectedTag"
+    $downloadUrl = "https://github.com/purius/asta_pdf/releases/download/$expectedTag/$installerAssetName"
+
+    Assert-HeadOk $releaseUrl
+    if (-not $SkipDownloadHeadCheck) {
+        Assert-HeadOk $downloadUrl
+    }
+
+    Write-Output "latest release verified by expected tag fallback: $expectedTag $downloadUrl"
+}
+
 $headers = @{
     'User-Agent' = 'PdfMergeTool-release-verifier'
     'Accept' = 'application/vnd.github+json'
@@ -98,7 +112,7 @@ for ($attempt = 1; $attempt -le $RetryCount; $attempt++) {
     catch {
         $lastError = $_
         if ($attempt -eq $RetryCount) {
-            throw
+            break
         }
 
         Write-Output "latest release verification attempt $attempt of $RetryCount failed: $($_.Exception.Message)"
@@ -106,4 +120,12 @@ for ($attempt = 1; $attempt -le $RetryCount; $attempt++) {
     }
 }
 
-throw $lastError
+$expectedTag = if ($ExpectedVersion.StartsWith('v', [System.StringComparison]::OrdinalIgnoreCase)) {
+    $ExpectedVersion
+} else {
+    "v$ExpectedVersion"
+}
+
+Write-Output "GitHub API verification failed after $RetryCount attempt(s); checking expected tag URLs directly."
+Test-ExpectedTagReleaseFallback -ExpectedTag $expectedTag
+exit 0

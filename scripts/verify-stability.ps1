@@ -141,6 +141,13 @@ if (-not (Test-Path $releaseVerificationPath) -or
     throw 'Latest release verification must confirm the project version, GitHub latest release metadata, and installer download URL.'
 }
 
+if ($releaseVerification -notmatch 'Test-ExpectedTagReleaseFallback' -or
+    $releaseVerification -notmatch 'releases/tag/\$expectedTag' -or
+    $releaseVerification -notmatch 'releases/download/\$expectedTag/\$installerAssetName' -or
+    $releaseVerification -notmatch 'GitHub API verification failed after') {
+    throw 'Latest release verification must fall back to expected tag release and installer URLs when GitHub API rate limits are exhausted.'
+}
+
 if ($releaseVerification -notmatch '\[int\]\$RetryCount' -or
     $releaseVerification -notmatch '\[int\]\$RetryDelaySeconds' -or
     $releaseVerification -notmatch 'for \(\$attempt = 1; \$attempt -le \$RetryCount; \$attempt\+\+\)' -or
