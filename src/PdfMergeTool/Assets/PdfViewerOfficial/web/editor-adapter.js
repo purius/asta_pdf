@@ -316,32 +316,39 @@
         deleteSelected();
       }
     });
-    toolbar.querySelector("[data-role='font']").addEventListener("change", event => {
+    bindToolbarPropertyInput("font", event => {
       state.fontName = event.target.value || state.fontName;
       applySelectedProperties();
     });
-    toolbar.querySelector("[data-role='size']").addEventListener("change", event => {
+    bindToolbarPropertyInput("size", event => {
       state.textSize = Number(event.target.value) || state.textSize;
       applySelectedProperties();
     });
-    toolbar.querySelector("[data-role='color']").addEventListener("change", event => {
+    bindToolbarPropertyInput("color", event => {
       state.color = event.target.value || state.color;
       applySelectedProperties();
     });
-    toolbar.querySelector("[data-role='strokeWidth']").addEventListener("change", () => {
+    bindToolbarPropertyInput("strokeWidth", () => {
       applySelectedProperties();
     });
-    toolbar.querySelector("[data-role='fillColor']").addEventListener("change", () => {
+    bindToolbarPropertyInput("fillColor", () => {
       applySelectedProperties();
     });
-    toolbar.querySelector("[data-role='opacity']").addEventListener("change", () => {
+    bindToolbarPropertyInput("opacity", () => {
       applySelectedProperties();
     });
-    toolbar.querySelector("[data-role='rotation']").addEventListener("change", () => {
+    bindToolbarPropertyInput("rotation", () => {
       applySelectedProperties();
     });
     setFonts([]);
     setMode("select");
+  }
+
+  function bindToolbarPropertyInput(role, handler) {
+    const control = toolbar?.querySelector(`[data-role='${role}']`);
+    if (!control) return;
+    control.addEventListener("input", handler);
+    control.addEventListener("change", handler);
   }
 
   function setMode(mode) {

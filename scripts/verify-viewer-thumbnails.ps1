@@ -263,6 +263,18 @@ if ($officialEditorAdapter -notmatch 'data-role="strokeWidth"' -or $officialEdit
     throw 'editor adapter must expose per-object font, size, stroke width, and fill controls.'
 }
 
+if ($officialEditorAdapter -notmatch 'function bindToolbarPropertyInput\(' -or
+    $officialEditorAdapter -notmatch 'bindToolbarPropertyInput\("size"' -or
+    $officialEditorAdapter -notmatch 'bindToolbarPropertyInput\("color"' -or
+    $officialEditorAdapter -notmatch 'bindToolbarPropertyInput\("strokeWidth"' -or
+    $officialEditorAdapter -notmatch 'bindToolbarPropertyInput\("fillColor"' -or
+    $officialEditorAdapter -notmatch 'bindToolbarPropertyInput\("opacity"' -or
+    $officialEditorAdapter -notmatch 'bindToolbarPropertyInput\("rotation"' -or
+    $officialEditorAdapter -notmatch 'addEventListener\("input", handler\)' -or
+    $officialEditorAdapter -notmatch 'addEventListener\("change", handler\)') {
+    throw 'editor toolbar property controls must apply changes immediately while the user types or picks colors.'
+}
+
 if ($officialEditorAdapter -notmatch 'asta-editor-resize-handle' -or $officialEditorAdapter -notmatch 'function startResize\(') {
     throw 'editor adapter must support resizing selected overlay objects.'
 }
