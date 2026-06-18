@@ -63,6 +63,11 @@ if ($mainWindow -notmatch 'RemapEditorStateToOutputPageOrder' -or
     throw 'Overlay edits must be remapped from original PDF page numbers to saved output page order before export.'
 }
 
+if ($mainWindow -notmatch 'string\? transformedTempPath = null;' -or
+    $mainWindow -notmatch 'finally[\s\S]*?TryDeleteTempFile\(transformedTempPath\)') {
+    throw 'Overlay editor-source temporary PDFs must be cleaned up in a finally block after save attempts.'
+}
+
 if ($installerBuild -notmatch 'Invoke-InnoCompilerWithRetry' -or
     $installerBuild -notmatch 'Start-Sleep -Seconds' -or
     $installerBuild -notmatch 'attempt -lt') {

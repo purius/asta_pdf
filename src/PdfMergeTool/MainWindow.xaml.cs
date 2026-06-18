@@ -1467,6 +1467,7 @@ public partial class MainWindow : Window
             return;
         }
 
+        string? transformedTempPath = null;
         try
         {
             var editorState = await CollectEditorStateAsync();
@@ -1474,7 +1475,7 @@ public partial class MainWindow : Window
             var remappedEditorState = RemapEditorStateToOutputPageOrder(editorState, pageTransforms);
             var outputTarget = remappedEditorState.Edits.Count > 0 ? CreateTempPdfPath("editor-source") : outputPath;
             var result = await _pdfService.SaveTransformedPagesAsync(_currentPdfPath, pageTransforms, outputTarget, CancellationToken.None);
-            var transformedTempPath = remappedEditorState.Edits.Count > 0 ? result.OutputPath : null;
+            transformedTempPath = remappedEditorState.Edits.Count > 0 ? result.OutputPath : null;
             if (remappedEditorState.Edits.Count > 0)
             {
                 var exportedBase64 = await ExportOverlayPdfAsync(result.OutputPath, remappedEditorState);
@@ -1489,15 +1490,18 @@ public partial class MainWindow : Window
             UpdateWindowTitle();
             SendViewerCommand("markClean");
             LoadPdf(result.OutputPath);
-            if (transformedTempPath is not null)
-            {
-                TryDeleteTempFile(transformedTempPath);
-            }
             MessageBox.Show(this, message, "PDF 저장", MessageBoxButton.OK, MessageBoxImage.Information);
         }
         catch (Exception ex)
         {
             MessageBox.Show(this, ex.Message, "PDF 저장 실패", MessageBoxButton.OK, MessageBoxImage.Error);
+        }
+        finally
+        {
+            if (transformedTempPath is not null)
+            {
+                TryDeleteTempFile(transformedTempPath);
+            }
         }
     }
 
