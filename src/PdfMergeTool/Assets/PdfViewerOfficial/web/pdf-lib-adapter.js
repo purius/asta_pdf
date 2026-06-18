@@ -15,7 +15,7 @@
   }
 
   function base64ToBytes(base64) {
-    const normalized = String(base64 ?? "").replace(/^data:application\/pdf;base64,/, "");
+    const normalized = String(base64 ?? "").replace(/^data:[^;]+;base64,/, "");
     const binary = atob(normalized);
     const bytes = new Uint8Array(binary.length);
     for (let index = 0; index < binary.length; index += 1) {
@@ -57,6 +57,18 @@
     }
 
     return pdfDoc.embedFont(pdfLib.StandardFonts.Helvetica);
+  }
+
+  async function embedImage(pdfDoc, imageDataUrl, imageMimeType) {
+    const normalizedMimeType = String(imageMimeType || imageDataUrl?.match(/^data:([^;]+);/)?.[1] || "").toLowerCase();
+    const imageBytes = base64ToBytes(imageDataUrl);
+    if (normalizedMimeType.includes("png")) {
+      return pdfDoc.embedPng(imageBytes);
+    }
+    if (normalizedMimeType.includes("jpeg") || normalizedMimeType.includes("jpg")) {
+      return pdfDoc.embedJpg(imageBytes);
+    }
+    throw new Error("Only PNG and JPEG overlay images are supported.");
   }
 
   function drawArrow(page, pdfLib, edit, pageHeight) {
@@ -154,6 +166,41 @@
         });
       } else if (edit.type === "arrow") {
         drawArrow(page, pdfLib, edit, pageHeight);
+      } else if (edit.type === "image" || edit.type === "signature") {
+        const width = Number(edit.width) || 0;
+        const height = Number(edit.height) || 0;
+        const image = await embedImage(pdfDoc, edit.imageDataUrl, edit.imageMimeType);
+        page.drawImage(image, {
+          x,
+          y: pageHeight - yFromTop - height,
+          width,
+          height
+        });
+      } else if (edit.type === "stamp") {
+        const width = Number(edit.width) || 0;
+        const height = Number(edit.height) || 0;
+        const borderWidth = Number(edit.borderWidth) || 3;
+        const color = colorFromArray(pdfLib, edit.color, [0.86, 0.15, 0.15]);
+        const borderColor = colorFromArray(pdfLib, edit.borderColor, [0.86, 0.15, 0.15]);
+        const font = await pdfDoc.embedFont(pdfLib.StandardFonts.HelveticaBold);
+        const size = Math.max(Math.min(height * 0.38, 24), 10);
+        const text = String(edit.text ?? "STAMP").toUpperCase();
+        const textWidth = font.widthOfTextAtSize(text, size);
+        page.drawRectangle({
+          x,
+          y: pageHeight - yFromTop - height,
+          width,
+          height,
+          borderColor,
+          borderWidth
+        });
+        page.drawText(text, {
+          x: x + Math.max((width - textWidth) / 2, borderWidth + 2),
+          y: pageHeight - yFromTop - height / 2 - size / 3,
+          size,
+          font,
+          color
+        });
       }
     }
 

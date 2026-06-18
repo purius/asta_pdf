@@ -133,6 +133,10 @@ if ($officialEditorAdapter -notmatch 'data-mode="arrow"') {
     throw 'editor adapter must expose arrow editing controls.'
 }
 
+if ($officialEditorAdapter -notmatch 'data-mode="image"' -or $officialEditorAdapter -notmatch 'data-mode="stamp"' -or $officialEditorAdapter -notmatch 'data-mode="signature"') {
+    throw 'editor adapter must expose image, stamp, and signature overlay controls.'
+}
+
 if ($officialEditorAdapter -notmatch 'asta-editor-resize-handle' -or $officialEditorAdapter -notmatch 'function startResize\(') {
     throw 'editor adapter must support resizing selected overlay objects.'
 }
@@ -163,6 +167,14 @@ if ($officialPdfLibAdapter -notmatch 'drawEllipse' -or $officialPdfLibAdapter -n
 
 if ($officialPdfLibAdapter -notmatch 'function drawArrow\(') {
     throw 'pdf-lib adapter must persist arrow overlay edits.'
+}
+
+if ($officialPdfLibAdapter -notmatch 'function embedImage\(' -or $officialPdfLibAdapter -notmatch 'page\.drawImage') {
+    throw 'pdf-lib adapter must persist image and signature overlay edits.'
+}
+
+if ($officialPdfLibAdapter -notmatch 'edit\.type === "stamp"') {
+    throw 'pdf-lib adapter must persist stamp overlay edits.'
 }
 
 if ($officialViewerScript -notmatch 'defaultOptions\.defaultUrl\s*=\s*\{[\s\S]*?value:\s*""') {

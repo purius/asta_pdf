@@ -233,6 +233,15 @@ const AppBridge = (() => {
       case "editorArrow":
         window.EditorAdapter?.setMode?.("arrow");
         break;
+      case "editorImage":
+        window.EditorAdapter?.setMode?.("image");
+        break;
+      case "editorStamp":
+        window.EditorAdapter?.setMode?.("stamp");
+        break;
+      case "editorSignature":
+        window.EditorAdapter?.setMode?.("signature");
+        break;
       case "editorDeleteSelection":
         window.EditorAdapter?.deleteSelected?.();
         break;

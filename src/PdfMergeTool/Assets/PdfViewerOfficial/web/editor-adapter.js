@@ -178,6 +178,26 @@
         height: 100%;
         overflow: visible;
       }
+      .asta-editor-image img,
+      .asta-editor-signature img {
+        display: block;
+        width: 100%;
+        height: 100%;
+        object-fit: contain;
+        pointer-events: none;
+      }
+      .asta-editor-stamp {
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        border: 3px solid #dc2626;
+        border-radius: 6px;
+        color: #dc2626;
+        font: 700 20px system-ui, sans-serif;
+        letter-spacing: 0.08em;
+        background: rgba(255, 255, 255, 0.02);
+        text-transform: uppercase;
+      }
       .asta-editor-crosshair .asta-editor-layer {
         cursor: crosshair;
       }
@@ -197,6 +217,9 @@
       <button type="button" data-mode="ellipse" title="Add ellipse">Ellipse</button>
       <button type="button" data-mode="line" title="Add line">Line</button>
       <button type="button" data-mode="arrow" title="Add arrow">Arrow</button>
+      <button type="button" data-mode="image" title="Add image">Image</button>
+      <button type="button" data-mode="stamp" title="Add stamp">Stamp</button>
+      <button type="button" data-mode="signature" title="Add signature image">Sign</button>
       <select data-role="font" title="Font"></select>
       <input data-role="size" type="number" min="6" max="96" value="14" title="Text size" />
       <input data-role="color" type="color" value="#111827" title="Color" />
@@ -353,7 +376,53 @@
         borderColor: state.color,
         borderWidth: 2
       });
+    } else if (state.mode === "image" || state.mode === "signature") {
+      addImageEdit(state.mode, pageElement, point);
+    } else if (state.mode === "stamp") {
+      const text = window.prompt("Stamp text", "APPROVED");
+      if (!text) return;
+      recordHistory();
+      addEdit({
+        type: "stamp",
+        page: getPageNumber(pageElement),
+        x: point.x,
+        y: point.y,
+        width: 180,
+        height: 70,
+        text,
+        borderColor: "#dc2626",
+        color: "#dc2626",
+        borderWidth: 3
+      });
     }
+  }
+
+  function addImageEdit(type, pageElement, point) {
+    const input = document.createElement("input");
+    input.type = "file";
+    input.accept = "image/png,image/jpeg";
+    input.addEventListener("change", () => {
+      const file = input.files?.[0];
+      if (!file) return;
+      const reader = new FileReader();
+      reader.addEventListener("load", () => {
+        const dataUrl = String(reader.result || "");
+        if (!dataUrl.startsWith("data:image/")) return;
+        recordHistory();
+        addEdit({
+          type,
+          page: getPageNumber(pageElement),
+          x: point.x,
+          y: point.y,
+          width: type === "signature" ? 220 : 180,
+          height: type === "signature" ? 90 : 130,
+          imageDataUrl: dataUrl,
+          imageMimeType: file.type || dataUrl.slice(5, dataUrl.indexOf(";"))
+        });
+      });
+      reader.readAsDataURL(file);
+    }, { once: true });
+    input.click();
   }
 
   function addEdit(edit) {
@@ -404,6 +473,14 @@
     } else if (edit.type === "arrow") {
       renderLineSvg(element, edit, true);
       ensureResizeHandle(element, edit.id);
+    } else if (edit.type === "image" || edit.type === "signature") {
+      renderImageElement(element, edit);
+      ensureResizeHandle(element, edit.id);
+    } else if (edit.type === "stamp") {
+      setTextElementContent(element, edit.text ?? "STAMP");
+      element.style.border = `${edit.borderWidth || 3}px solid ${edit.borderColor || "#dc2626"}`;
+      element.style.color = edit.color || "#dc2626";
+      ensureResizeHandle(element, edit.id);
     }
     element.classList.toggle("selected", state.selectedId === edit.id);
   }
@@ -426,6 +503,16 @@
       element.prepend(content);
     }
     content.textContent = text;
+  }
+
+  function renderImageElement(element, edit) {
+    let image = element.querySelector(":scope > img");
+    if (!image) {
+      image = document.createElement("img");
+      image.alt = edit.type === "signature" ? "signature overlay" : "image overlay";
+      element.prepend(image);
+    }
+    image.src = edit.imageDataUrl || "";
   }
 
   function renderLineSvg(element, edit, withArrowHead) {
@@ -551,8 +638,11 @@
       edit.fontName = state.fontName;
       edit.size = state.textSize;
       edit.color = state.color;
-    } else if (edit.type === "rectangle" || edit.type === "ellipse" || edit.type === "line" || edit.type === "arrow") {
+    } else if (edit.type === "rectangle" || edit.type === "ellipse" || edit.type === "line" || edit.type === "arrow" || edit.type === "stamp") {
       edit.borderColor = state.color;
+      if (edit.type === "stamp") {
+        edit.color = state.color;
+      }
     }
     state.dirty = true;
     renderEdit(edit);
@@ -561,7 +651,7 @@
 
   function editText(editId) {
     const edit = state.edits.find(item => item.id === editId);
-    if (!edit || edit.type !== "text") return;
+    if (!edit || (edit.type !== "text" && edit.type !== "stamp")) return;
     const text = window.prompt("Edit text", edit.text ?? "");
     if (text === null) return;
     recordHistory();
@@ -640,6 +730,32 @@
           height: edit.height * scaleY,
           borderColor: toRgbArray(edit.borderColor),
           borderWidth: (edit.borderWidth || 2) * scaleX
+        };
+      }
+      if (edit.type === "image" || edit.type === "signature") {
+        return {
+          type: edit.type,
+          page: edit.page,
+          x: edit.x * scaleX,
+          y: edit.y * scaleY,
+          width: edit.width * scaleX,
+          height: edit.height * scaleY,
+          imageDataUrl: edit.imageDataUrl,
+          imageMimeType: edit.imageMimeType
+        };
+      }
+      if (edit.type === "stamp") {
+        return {
+          type: "stamp",
+          page: edit.page,
+          x: edit.x * scaleX,
+          y: edit.y * scaleY,
+          width: edit.width * scaleX,
+          height: edit.height * scaleY,
+          text: edit.text ?? "STAMP",
+          color: toRgbArray(edit.color || "#dc2626"),
+          borderColor: toRgbArray(edit.borderColor || "#dc2626"),
+          borderWidth: (edit.borderWidth || 3) * scaleX
         };
       }
       return {
