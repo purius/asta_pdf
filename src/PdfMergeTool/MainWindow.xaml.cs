@@ -2329,6 +2329,12 @@ public partial class MainWindow : Window
 
     private void OnEditorWhiteoutClick(object sender, RoutedEventArgs e) => SendViewerCommand("editorWhiteout");
 
+    private void OnEditorRedactClick(object sender, RoutedEventArgs e) => SendViewerCommand("editorRedact");
+
+    private void OnEditorUnderlineClick(object sender, RoutedEventArgs e) => SendViewerCommand("editorUnderline");
+
+    private void OnEditorStrikeoutClick(object sender, RoutedEventArgs e) => SendViewerCommand("editorStrikeout");
+
     private void OnEditorRectangleClick(object sender, RoutedEventArgs e) => SendViewerCommand("editorRectangle");
 
     private void OnEditorEllipseClick(object sender, RoutedEventArgs e) => SendViewerCommand("editorEllipse");

@@ -542,6 +542,21 @@
                                     <TextBlock Text="Whiteout" />
                                 </Button>
                                 <Button Style="{StaticResource ToolbarTextButtonStyle}"
+                                        ToolTip="선택 텍스트 또는 영역 검정 처리"
+                                        Click="OnEditorRedactClick">
+                                    <TextBlock Text="Redact" />
+                                </Button>
+                                <Button Style="{StaticResource ToolbarTextButtonStyle}"
+                                        ToolTip="선택 PDF 텍스트 밑줄"
+                                        Click="OnEditorUnderlineClick">
+                                    <TextBlock Text="Underline" />
+                                </Button>
+                                <Button Style="{StaticResource ToolbarTextButtonStyle}"
+                                        ToolTip="선택 PDF 텍스트 취소선"
+                                        Click="OnEditorStrikeoutClick">
+                                    <TextBlock Text="Strike" />
+                                </Button>
+                                <Button Style="{StaticResource ToolbarTextButtonStyle}"
                                         ToolTip="사각형 추가"
                                         Click="OnEditorRectangleClick">
                                     <TextBlock Text="Rect" />

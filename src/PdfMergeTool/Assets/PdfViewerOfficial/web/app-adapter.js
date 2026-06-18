@@ -419,6 +419,15 @@ const AppBridge = (() => {
       case "editorWhiteout":
         window.EditorAdapter?.setMode?.("whiteout");
         break;
+      case "editorRedact":
+        window.EditorAdapter?.setMode?.("redact");
+        break;
+      case "editorUnderline":
+        window.EditorAdapter?.setMode?.("underline");
+        break;
+      case "editorStrikeout":
+        window.EditorAdapter?.setMode?.("strikeout");
+        break;
       case "editorRectangle":
         window.EditorAdapter?.setMode?.("rectangle");
         break;

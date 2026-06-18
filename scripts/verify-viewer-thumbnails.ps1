@@ -465,8 +465,17 @@ if ($mainWindow -notmatch 'WindowsFontService\.ReadFontBase64') {
     throw 'MainWindow must embed only the Windows fonts used by overlay text edits.'
 }
 
-if ($mainWindow -notmatch 'OnEditorTextClick' -or $mainWindow -notmatch 'editorReplaceText' -or $mainWindow -notmatch 'editorSignature' -or $mainWindow -notmatch 'editorHighlight' -or $mainWindow -notmatch 'editorPen' -or $mainWindow -notmatch 'editorWhiteout' -or $mainWindow -notmatch 'editorDuplicateSelection' -or $mainWindow -notmatch 'editorBringForward') {
+if ($mainWindow -notmatch 'OnEditorTextClick' -or $mainWindow -notmatch 'editorReplaceText' -or $mainWindow -notmatch 'editorSignature' -or $mainWindow -notmatch 'editorHighlight' -or $mainWindow -notmatch 'editorPen' -or $mainWindow -notmatch 'editorWhiteout' -or $mainWindow -notmatch 'editorRedact' -or $mainWindow -notmatch 'editorUnderline' -or $mainWindow -notmatch 'editorStrikeout' -or $mainWindow -notmatch 'editorDuplicateSelection' -or $mainWindow -notmatch 'editorBringForward') {
     throw 'MainWindow must expose WPF toolbar commands for PDF editor tools.'
+}
+
+if ($officialAdapter -notmatch 'case "editorRedact":' -or
+    $officialAdapter -notmatch 'setMode\?\.\("redact"\)' -or
+    $officialAdapter -notmatch 'case "editorUnderline":' -or
+    $officialAdapter -notmatch 'setMode\?\.\("underline"\)' -or
+    $officialAdapter -notmatch 'case "editorStrikeout":' -or
+    $officialAdapter -notmatch 'setMode\?\.\("strikeout"\)') {
+    throw 'official viewer adapter must route WPF redaction, underline, and strikeout editor commands.'
 }
 
 if ($fontService -notmatch 'CurrentVersion\\Fonts') {
