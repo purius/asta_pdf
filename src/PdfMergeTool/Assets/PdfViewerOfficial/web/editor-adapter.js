@@ -1770,7 +1770,7 @@
         width: edit.width * scaleX,
         height: edit.height * scaleY,
         borderColor: toRgbArray(edit.borderColor),
-        borderWidth: (edit.borderWidth || 2) * scaleX,
+        borderWidth: (edit.borderWidth || 2) * Math.max(scaleX, scaleY),
         fillColor: edit.fillColor ? toRgbArray(edit.fillColor) : undefined,
         opacity
       };

@@ -215,6 +215,16 @@ if ($lineArrowExportBlock -match 'borderWidth:\s*\(edit\.borderWidth \|\| 2\) \*
     throw 'editor adapter must not export line and arrow stroke widths using only scaleX.'
 }
 
+$shapeExportBlock = [regex]::Match($officialEditorAdapter, 'return \{\s*type:\s*"rectangle",[\s\S]*?opacity\s*\};').Value
+
+if (-not $shapeExportBlock -or $shapeExportBlock -notmatch 'borderWidth:\s*\(edit\.borderWidth \|\| 2\) \* Math\.max\(scaleX, scaleY\)') {
+    throw 'editor adapter must export rectangle and ellipse border widths using the strongest page scale.'
+}
+
+if ($shapeExportBlock -match 'borderWidth:\s*\(edit\.borderWidth \|\| 2\) \* scaleX') {
+    throw 'editor adapter must not export rectangle and ellipse border widths using only scaleX.'
+}
+
 if ($officialEditorAdapter -match [char]0xfffd) {
     throw 'editor adapter UI strings must not contain replacement characters from broken encoding.'
 }
