@@ -57,6 +57,14 @@ if ($viewer -notmatch 'function hasRecentUserScrollIntent\(\)') {
     throw 'viewer.html must gate render-window switches on recent user scroll intent.'
 }
 
+if ($viewer -notmatch 'function shouldSyncActivePageFromScroll\(\)') {
+    throw 'viewer.html must separately gate scroll-driven active page synchronization.'
+}
+
+if ($viewer -notmatch 'if \(!shouldSyncActivePageFromScroll\(\)\) return;') {
+    throw 'scroll events must not update the active page after programmatic page jumps.'
+}
+
 if ($viewer -notmatch 'async function goToPage\(pageNumber, smooth = false\)') {
     throw 'page navigation must default to immediate scrolling to avoid smooth-scroll feedback loops.'
 }

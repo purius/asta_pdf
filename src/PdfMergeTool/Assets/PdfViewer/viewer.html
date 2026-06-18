@@ -1044,6 +1044,10 @@
       return performance.now() - lastUserScrollAt < 700;
     }
 
+    function shouldSyncActivePageFromScroll() {
+      return !shouldIgnoreScrollEvent() && hasRecentUserScrollIntent();
+    }
+
     function attachThumbEvents(thumb, pageNumber) {
       thumb.addEventListener('dragstart', (event) => {
         const payload = buildPageTransferPayload(pageNumber);
@@ -1619,7 +1623,7 @@
 
     pages.addEventListener('scroll', () => {
       if (!hasDocument()) return;
-      if (shouldIgnoreScrollEvent()) return;
+      if (!shouldSyncActivePageFromScroll()) return;
       let closest = activePage;
       let distance = Number.POSITIVE_INFINITY;
       const pageViewportTop = pages.getBoundingClientRect().top;
@@ -1672,6 +1676,13 @@
 
     pages.addEventListener('touchstart', () => {
       markUserScrollIntent();
+    }, { passive: true });
+
+    pages.addEventListener('keydown', (event) => {
+      const scrollKeys = new Set(['ArrowUp', 'ArrowDown', 'PageUp', 'PageDown', 'Home', 'End', ' ']);
+      if (scrollKeys.has(event.key)) {
+        markUserScrollIntent();
+      }
     }, { passive: true });
 
     window.addEventListener('wheel', (event) => {
