@@ -280,6 +280,14 @@ if ($officialEditorAdapter -notmatch 'let lastAppliedValue = control\.value;' -o
     throw 'editor toolbar property controls must ignore duplicate input/change events for the same value.'
 }
 
+if ($officialEditorAdapter -notmatch 'control\.dataset\.lastAppliedValue = lastAppliedValue;' -or
+    $officialEditorAdapter -notmatch 'lastAppliedValue = control\.dataset\.lastAppliedValue \?\? lastAppliedValue;' -or
+    $officialEditorAdapter -notmatch 'function setToolbarValue\(' -or
+    $officialEditorAdapter -notmatch 'control\.dataset\.lastAppliedValue = control\.value;' -or
+    $officialEditorAdapter -notmatch 'setToolbarValue\(fontInput, edit\.fontName \|\| state\.fontName\)') {
+    throw 'editor toolbar cached values must stay synchronized when selecting a different overlay edit.'
+}
+
 if ($officialEditorAdapter -notmatch 'asta-editor-resize-handle' -or $officialEditorAdapter -notmatch 'function startResize\(') {
     throw 'editor adapter must support resizing selected overlay objects.'
 }

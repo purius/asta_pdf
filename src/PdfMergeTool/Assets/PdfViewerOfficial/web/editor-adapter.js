@@ -348,14 +348,23 @@
     const control = toolbar?.querySelector(`[data-role='${role}']`);
     if (!control) return;
     let lastAppliedValue = control.value;
+    control.dataset.lastAppliedValue = lastAppliedValue;
     const guardedHandler = event => {
+      lastAppliedValue = control.dataset.lastAppliedValue ?? lastAppliedValue;
       const nextValue = event.target.value;
       if (nextValue === lastAppliedValue) return;
       lastAppliedValue = nextValue;
+      control.dataset.lastAppliedValue = lastAppliedValue;
       handler(event);
     };
     control.addEventListener("input", guardedHandler);
     control.addEventListener("change", guardedHandler);
+  }
+
+  function setToolbarValue(control, value) {
+    if (!control) return;
+    control.value = value;
+    control.dataset.lastAppliedValue = control.value;
   }
 
   function setMode(mode) {
@@ -1392,16 +1401,16 @@
     const rotationInput = toolbar.querySelector("[data-role='rotation']");
 
     if (edit.type === "text" || edit.type === "textReplace" || edit.type === "stamp") {
-      fontInput.value = edit.fontName || state.fontName;
-      sizeInput.value = edit.size || state.textSize;
-      colorInput.value = edit.color || state.color;
+      setToolbarValue(fontInput, edit.fontName || state.fontName);
+      setToolbarValue(sizeInput, edit.size || state.textSize);
+      setToolbarValue(colorInput, edit.color || state.color);
     } else {
-      colorInput.value = edit.borderColor || state.color;
+      setToolbarValue(colorInput, edit.borderColor || state.color);
     }
-    strokeWidthInput.value = edit.borderWidth || (edit.type === "stamp" ? 3 : 2);
-    fillColorInput.value = edit.fillColor || "#ffffff";
-    opacityInput.value = Math.round(getEditOpacity(edit) * 100);
-    rotationInput.value = normalizeRotation(edit.rotate, 0);
+    setToolbarValue(strokeWidthInput, edit.borderWidth || (edit.type === "stamp" ? 3 : 2));
+    setToolbarValue(fillColorInput, edit.fillColor || "#ffffff");
+    setToolbarValue(opacityInput, Math.round(getEditOpacity(edit) * 100));
+    setToolbarValue(rotationInput, normalizeRotation(edit.rotate, 0));
   }
 
   function getToolbarProperties() {
