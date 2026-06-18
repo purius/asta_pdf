@@ -61,4 +61,10 @@ if ($installerBuild -notmatch 'Invoke-InnoCompilerWithRetry' -or
     throw 'Installer build must retry Inno Setup after transient file lock failures.'
 }
 
+if ($installerBuild -notmatch '2>&1' -or
+    $installerBuild -notmatch 'Compile aborted' -or
+    $installerBuild -notmatch 'Error in') {
+    throw 'Installer build must treat Inno Setup error output as a failed attempt even when an installer file exists.'
+}
+
 Write-Output 'stability checks passed.'

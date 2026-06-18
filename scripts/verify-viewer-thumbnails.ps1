@@ -167,6 +167,14 @@ if ($officialAdapter -notmatch 'function getVisiblePageOrder\(' -or
     throw 'official viewer next/previous commands must navigate through the app pageOrder, not raw PDF page numbers.'
 }
 
+if ($officialAdapter -notmatch 'function goToPageOrderBoundary\(' -or
+    $officialAdapter -notmatch 'goToPage\(orderedPages\[0\]\)' -or
+    $officialAdapter -notmatch 'goToPage\(orderedPages\[orderedPages\.length - 1\]\)' -or
+    $officialAdapter -match 'case "firstPage":\s*goToPage\(1\);' -or
+    $officialAdapter -match 'case "lastPage":\s*goToPage\(getTotalPages\(\)\);') {
+    throw 'official viewer first/last commands must navigate to the first/last page in app pageOrder.'
+}
+
 if ($officialEditorAdapter -notmatch 'type:\s*"editorStateChanged"') {
     throw 'editor adapter must notify WPF when overlay edits make the document dirty.'
 }

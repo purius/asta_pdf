@@ -103,6 +103,20 @@ const AppBridge = (() => {
     goToPage(orderedPages[nextIndex]);
   }
 
+  function goToPageOrderBoundary(last) {
+    const orderedPages = getVisiblePageOrder();
+    if (orderedPages.length === 0) {
+      return;
+    }
+
+    if (last) {
+      goToPage(orderedPages[orderedPages.length - 1]);
+      return;
+    }
+
+    goToPage(orderedPages[0]);
+  }
+
   function setScale(value) {
     const app = getApp();
     if (!app?.pdfViewer) return;
@@ -342,10 +356,10 @@ const AppBridge = (() => {
         goRelativeInPageOrder(-1);
         break;
       case "firstPage":
-        goToPage(1);
+        goToPageOrderBoundary(false);
         break;
       case "lastPage":
-        goToPage(getTotalPages());
+        goToPageOrderBoundary(true);
         break;
       case "mainZoomIn":
         zoom(0.15);

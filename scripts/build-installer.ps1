@@ -54,8 +54,15 @@ function Invoke-InnoCompilerWithRetry {
             Remove-Item -LiteralPath $OutputPath -Force
         }
 
-        & $CompilerPath @CompilerArgs
-        if ($LASTEXITCODE -eq 0 -and (Test-Path $OutputPath)) {
+        $compilerOutput = & $CompilerPath @CompilerArgs 2>&1
+        $exitCode = $LASTEXITCODE
+        $compilerText = ($compilerOutput | ForEach-Object { $_.ToString() }) -join [Environment]::NewLine
+        if (-not [string]::IsNullOrWhiteSpace($compilerText)) {
+            Write-Host $compilerText
+        }
+
+        $hasCompilerErrorOutput = $compilerText -match 'Compile aborted' -or $compilerText -match 'Error in'
+        if ($exitCode -eq 0 -and -not $hasCompilerErrorOutput -and (Test-Path $OutputPath)) {
             return
         }
 
@@ -65,8 +72,12 @@ function Invoke-InnoCompilerWithRetry {
             continue
         }
 
-        if ($LASTEXITCODE -ne 0) {
-            throw "Inno Setup failed with exit code $LASTEXITCODE after $maxAttempts attempts."
+        if ($exitCode -ne 0) {
+            throw "Inno Setup failed with exit code $exitCode after $maxAttempts attempts."
+        }
+
+        if ($hasCompilerErrorOutput) {
+            throw "Inno Setup reported an error after $maxAttempts attempts."
         }
     }
 }
