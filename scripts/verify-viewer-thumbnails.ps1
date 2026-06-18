@@ -213,6 +213,10 @@ if ($mainWindow -notmatch 'WindowsFontService\.ReadFontBase64') {
     throw 'MainWindow must embed only the Windows fonts used by overlay text edits.'
 }
 
+if ($mainWindow -notmatch 'OnEditorTextClick' -or $mainWindow -notmatch 'editorReplaceText' -or $mainWindow -notmatch 'editorSignature') {
+    throw 'MainWindow must expose WPF toolbar commands for PDF editor tools.'
+}
+
 if ($fontService -notmatch 'CurrentVersion\\Fonts') {
     throw 'WindowsFontService must read installed Windows fonts from the registry.'
 }

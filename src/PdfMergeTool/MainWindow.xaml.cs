@@ -2236,6 +2236,24 @@ public partial class MainWindow : Window
 
     private void OnRedoClick(object sender, RoutedEventArgs e) => SendViewerCommand("redo");
 
+    private void OnEditorTextClick(object sender, RoutedEventArgs e) => SendViewerCommand("editorText");
+
+    private void OnEditorReplaceTextClick(object sender, RoutedEventArgs e) => SendViewerCommand("editorReplaceText");
+
+    private void OnEditorRectangleClick(object sender, RoutedEventArgs e) => SendViewerCommand("editorRectangle");
+
+    private void OnEditorEllipseClick(object sender, RoutedEventArgs e) => SendViewerCommand("editorEllipse");
+
+    private void OnEditorLineClick(object sender, RoutedEventArgs e) => SendViewerCommand("editorLine");
+
+    private void OnEditorArrowClick(object sender, RoutedEventArgs e) => SendViewerCommand("editorArrow");
+
+    private void OnEditorImageClick(object sender, RoutedEventArgs e) => SendViewerCommand("editorImage");
+
+    private void OnEditorStampClick(object sender, RoutedEventArgs e) => SendViewerCommand("editorStamp");
+
+    private void OnEditorSignatureClick(object sender, RoutedEventArgs e) => SendViewerCommand("editorSignature");
+
     private async void OnCopySelectedPagesClick(object sender, RoutedEventArgs e) => await CopySelectedPagesToClipboardAsync(cut: false);
 
     private async void OnCutSelectedPagesClick(object sender, RoutedEventArgs e) => await CopySelectedPagesToClipboardAsync(cut: true);

@@ -526,6 +526,56 @@
 
                         <Border Style="{StaticResource ToolbarGroupStyle}">
                             <StackPanel Orientation="Horizontal">
+                                <Button Style="{StaticResource ToolbarTextButtonStyle}"
+                                        ToolTip="텍스트 추가"
+                                        Click="OnEditorTextClick">
+                                    <TextBlock Text="Text" />
+                                </Button>
+                                <Button Style="{StaticResource ToolbarTextButtonStyle}"
+                                        ToolTip="기존 텍스트 시각 교체"
+                                        Click="OnEditorReplaceTextClick">
+                                    <TextBlock Text="Replace" />
+                                </Button>
+                                <Button Style="{StaticResource ToolbarTextButtonStyle}"
+                                        ToolTip="사각형 추가"
+                                        Click="OnEditorRectangleClick">
+                                    <TextBlock Text="Rect" />
+                                </Button>
+                                <Button Style="{StaticResource ToolbarTextButtonStyle}"
+                                        ToolTip="타원 추가"
+                                        Click="OnEditorEllipseClick">
+                                    <TextBlock Text="Ellipse" />
+                                </Button>
+                                <Button Style="{StaticResource ToolbarTextButtonStyle}"
+                                        ToolTip="선 추가"
+                                        Click="OnEditorLineClick">
+                                    <TextBlock Text="Line" />
+                                </Button>
+                                <Button Style="{StaticResource ToolbarTextButtonStyle}"
+                                        ToolTip="화살표 추가"
+                                        Click="OnEditorArrowClick">
+                                    <TextBlock Text="Arrow" />
+                                </Button>
+                                <Button Style="{StaticResource ToolbarTextButtonStyle}"
+                                        ToolTip="이미지 추가"
+                                        Click="OnEditorImageClick">
+                                    <TextBlock Text="Image" />
+                                </Button>
+                                <Button Style="{StaticResource ToolbarTextButtonStyle}"
+                                        ToolTip="스탬프 추가"
+                                        Click="OnEditorStampClick">
+                                    <TextBlock Text="Stamp" />
+                                </Button>
+                                <Button Style="{StaticResource ToolbarTextButtonStyle}"
+                                        ToolTip="서명 이미지 추가"
+                                        Click="OnEditorSignatureClick">
+                                    <TextBlock Text="Sign" />
+                                </Button>
+                            </StackPanel>
+                        </Border>
+
+                        <Border Style="{StaticResource ToolbarGroupStyle}">
+                            <StackPanel Orientation="Horizontal">
                                 <Button Style="{StaticResource ToolbarButtonStyle}"
                                         ToolTip="실행 취소 (Ctrl+Z)"
                                         Click="OnUndoClick">
