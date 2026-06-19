@@ -246,6 +246,14 @@ if ($officialAdapter -notmatch 'function getVisiblePageOrder\(' -or
     throw 'official viewer next/previous commands must navigate through the app pageOrder, not raw PDF page numbers.'
 }
 
+if ($officialAdapter -notmatch 'function resolvePageAfterPageOrderChange\(' -or
+    $officialAdapter -notmatch 'const currentPage = getApp\(\)\?\.page \?\? previousOrder\[0\] \?\? 1' -or
+    $officialAdapter -notmatch 'goToPage\(targetPage\)' -or
+    $mainWindow -notmatch 'initialPage' -or
+    $mainWindow -notmatch 'restorePageNumber') {
+    throw 'page deletion and insertion must preserve the current page or move to the nearest remaining page instead of jumping to page 1.'
+}
+
 if ($officialAdapter -notmatch 'function goToPageOrderBoundary\(' -or
     $officialAdapter -notmatch 'goToPage\(orderedPages\[0\]\)' -or
     $officialAdapter -notmatch 'goToPage\(orderedPages\[orderedPages\.length - 1\]\)' -or

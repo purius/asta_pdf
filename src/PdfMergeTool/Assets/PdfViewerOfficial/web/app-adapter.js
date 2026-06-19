@@ -85,6 +85,9 @@ const AppBridge = (() => {
     }
 
     await app.open(args);
+    if (Number.isInteger(data.initialPage) && data.initialPage > 0) {
+      goToPage(data.initialPage);
+    }
   }
 
   function goToPage(pageNumber) {
@@ -337,6 +340,8 @@ const AppBridge = (() => {
       return;
     }
 
+    const previousOrder = pageOrder;
+    const currentPage = getApp()?.page ?? previousOrder[0] ?? 1;
     const nextOrder = [];
     for (let index = 1; index <= pagesMapper.pagesNumber; index++) {
       const sourcePage = pagesMapper.getPrevPageNumber(index);
@@ -349,10 +354,24 @@ const AppBridge = (() => {
       return;
     }
 
+    const targetPage = resolvePageAfterPageOrderChange(previousOrder, nextOrder, currentPage);
     pageOrder = nextOrder;
     pageStateDirty = true;
-    selectedPages = new Set([pageOrder[0]]);
+    selectedPages = new Set([targetPage]);
     postPageOrder();
+    goToPage(targetPage);
+  }
+
+  function resolvePageAfterPageOrderChange(previousOrder, nextOrder, currentPage = getApp()?.page ?? previousOrder[0] ?? 1) {
+    if (nextOrder.includes(currentPage)) {
+      return currentPage;
+    }
+
+    const previousIndex = previousOrder.indexOf(currentPage);
+    const fallbackIndex = previousIndex >= 0
+      ? Math.min(previousIndex, nextOrder.length - 1)
+      : 0;
+    return nextOrder[Math.max(fallbackIndex, 0)] ?? 1;
   }
 
   function clearDropIndicators() {
@@ -422,20 +441,26 @@ const AppBridge = (() => {
 
   function deleteSelectedPages() {
     if (pageOrder.length <= 1 || selectedPages.size === 0) return;
+    const previousOrder = pageOrder;
+    const currentPage = getApp()?.page ?? previousOrder[0] ?? 1;
     pageOrder = pageOrder.filter(page => !selectedPages.has(page));
-    selectedPages = new Set([pageOrder[0]]);
+    const targetPage = resolvePageAfterPageOrderChange(previousOrder, pageOrder, currentPage);
+    selectedPages = new Set([targetPage]);
     pageStateDirty = true;
     postPageOrder();
-    goToPage(pageOrder[0]);
+    goToPage(targetPage);
   }
 
   function reversePageOrder() {
     if (pageOrder.length <= 1) return;
+    const previousOrder = pageOrder;
+    const currentPage = getApp()?.page ?? previousOrder[0] ?? 1;
     pageOrder = [...pageOrder].reverse();
-    selectedPages = new Set([pageOrder[0]]);
+    const targetPage = resolvePageAfterPageOrderChange(previousOrder, pageOrder, currentPage);
+    selectedPages = new Set([targetPage]);
     pageStateDirty = true;
     postPageOrder();
-    goToPage(pageOrder[0]);
+    goToPage(targetPage);
   }
 
   async function exportOverlayPdf(data) {

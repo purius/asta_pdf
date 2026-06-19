@@ -41,6 +41,7 @@ public partial class MainWindow : Window
     private string? _pendingPdfPath;
     private string? _pendingReferencePdfPath;
     private bool _pendingDirtyAfterLoad;
+    private int? _pendingInitialPage;
     private IReadOnlyList<int> _pageOrder = [];
     private IReadOnlyDictionary<int, int> _pageRotations = new Dictionary<int, int>();
     private IReadOnlyList<int> _selectedPages = [];
@@ -171,11 +172,13 @@ public partial class MainWindow : Window
                 var pending = _pendingPdfPath;
                 var pendingReference = _pendingReferencePdfPath;
                 var pendingDirty = _pendingDirtyAfterLoad;
+                var pendingInitialPage = _pendingInitialPage;
                 _pendingPdfPath = null;
                 _pendingReferencePdfPath = null;
                 _pendingDirtyAfterLoad = false;
+                _pendingInitialPage = null;
                 _referencePdfPath = pendingReference ?? pending;
-                await SendPdfToViewerAsync(pending, pendingDirty);
+                await SendPdfToViewerAsync(pending, pendingDirty, pendingInitialPage);
                 return;
             }
 
@@ -372,7 +375,7 @@ public partial class MainWindow : Window
             : _selectedPages;
     }
 
-    private async void LoadPdf(string path, string? referencePath = null, bool dirtyAfterLoad = false)
+    private async void LoadPdf(string path, string? referencePath = null, bool dirtyAfterLoad = false, int? initialPage = null)
     {
         CleanupCompatibilityState();
         _currentPdfPath = path;
@@ -400,10 +403,11 @@ public partial class MainWindow : Window
             _pendingPdfPath = path;
             _pendingReferencePdfPath = _referencePdfPath;
             _pendingDirtyAfterLoad = dirtyAfterLoad;
+            _pendingInitialPage = initialPage;
             return;
         }
 
-        await SendPdfToViewerAsync(path, dirtyAfterLoad);
+        await SendPdfToViewerAsync(path, dirtyAfterLoad, initialPage);
     }
 
     private void UpdateWindowTitle()
@@ -439,7 +443,7 @@ public partial class MainWindow : Window
         return IsPdfFile(path) || IsSupportedImageFile(path);
     }
 
-    private Task SendPdfToViewerAsync(string path, bool dirtyAfterLoad = false)
+    private Task SendPdfToViewerAsync(string path, bool dirtyAfterLoad = false, int? initialPage = null)
     {
         var servedPath = PrepareServedPdfPath(path);
         var servedFileName = Path.GetFileName(servedPath);
@@ -452,7 +456,8 @@ public partial class MainWindow : Window
             isDirty = dirtyAfterLoad,
             sourcePath = _referencePdfPath ?? path,
             largeDocumentHint = fileLength >= 80L * 1024 * 1024,
-            fileLength
+            fileLength,
+            initialPage
         });
         PdfViewer.CoreWebView2.PostWebMessageAsJson(message);
         AppLogger.Info($"PDF 뷰어 로드 요청: {path}, {fileLength:N0} bytes");
@@ -1978,6 +1983,7 @@ public partial class MainWindow : Window
     {
         var outputPath = CreateTempPdfPath("edited");
         var referencePath = _referencePdfPath ?? _currentPdfPath!;
+        var restorePageNumber = _activePage.GetValueOrDefault(_selectedPages.FirstOrDefault());
 
         await _pdfService.InsertPdfPagesAsync(
             _currentPdfPath!,
@@ -1987,7 +1993,7 @@ public partial class MainWindow : Window
             outputPath,
             CancellationToken.None);
 
-        LoadPdf(outputPath, referencePath, true);
+        LoadPdf(outputPath, referencePath, true, restorePageNumber > 0 ? restorePageNumber : null);
         if (showMessage)
         {
             MessageBox.Show(this, $"{insertionIndex + 1}번째 위치에 추가했습니다.", title, MessageBoxButton.OK, MessageBoxImage.Information);
