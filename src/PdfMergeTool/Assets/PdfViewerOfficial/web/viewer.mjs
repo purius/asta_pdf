@@ -717,7 +717,7 @@ const defaultOptions = {
     kind: OptionKind.VIEWER + OptionKind.PREFERENCE
   },
   enableSignatureEditor: {
-    value: false,
+    value: true,
     kind: OptionKind.VIEWER + OptionKind.PREFERENCE
   },
   enableSplitMerge: {
@@ -725,7 +725,7 @@ const defaultOptions = {
     kind: OptionKind.VIEWER + OptionKind.PREFERENCE
   },
   enableUpdatedAddImage: {
-    value: false,
+    value: true,
     kind: OptionKind.VIEWER + OptionKind.PREFERENCE
   },
   externalLinkRel: {
@@ -17900,9 +17900,7 @@ const PDFViewerApplication = {
     } catch (ex) {
       console.error("initialize:", ex);
     }
-    if (AppOptions.get("pdfBugEnabled")) {
-      await this._parseHashParams();
-    }
+    await this._parseHashParams();
     let mode;
     switch (AppOptions.get("viewerCssTheme")) {
       case 1:
@@ -18007,6 +18005,7 @@ const PDFViewerApplication = {
       disableHistory: x => x === "true",
       disableRange: x => x === "true",
       disableStream: x => x === "true",
+      enableOptimizedPartialRendering: x => x === "true",
       verbosity: x => x | 0
     };
     for (const name in opts) {

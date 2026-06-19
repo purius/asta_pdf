@@ -562,14 +562,8 @@ const AppBridge = (() => {
       case "editorHighlight":
         window.EditorAdapter?.setMode?.("highlight");
         break;
-      case "editorImage":
-        window.EditorAdapter?.setMode?.("image");
-        break;
       case "editorStamp":
         window.EditorAdapter?.setMode?.("stamp");
-        break;
-      case "editorSignature":
-        window.EditorAdapter?.setMode?.("signature");
         break;
       case "editorDeleteSelection":
         window.EditorAdapter?.deleteSelected?.();

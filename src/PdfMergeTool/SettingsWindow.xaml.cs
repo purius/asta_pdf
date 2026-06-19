@@ -26,6 +26,7 @@ public partial class SettingsWindow : Window
         A4FitSuffixTextBox.Text = _settings.A4FitSuffix;
         A4OptimizedSuffixTextBox.Text = _settings.A4OptimizedSuffix;
         AutoCleanTempFilesCheckBox.IsChecked = _settings.AutoCleanTempFiles;
+        OptimizedPartialRenderingCheckBox.IsChecked = _settings.EnableOptimizedPartialRendering;
     }
 
     private void RefreshDefaultAppStatus()
@@ -87,6 +88,7 @@ public partial class SettingsWindow : Window
         _settings.A4FitSuffix = NormalizeSuffix(A4FitSuffixTextBox.Text, "_A4맞춤");
         _settings.A4OptimizedSuffix = NormalizeSuffix(A4OptimizedSuffixTextBox.Text, "_A4최적화");
         _settings.AutoCleanTempFiles = AutoCleanTempFilesCheckBox.IsChecked == true;
+        _settings.EnableOptimizedPartialRendering = OptimizedPartialRenderingCheckBox.IsChecked == true;
         _settings.RemoveMissingRecentFiles();
         _settings.Save();
 

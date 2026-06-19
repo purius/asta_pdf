@@ -299,8 +299,23 @@ if ($officialEditorAdapter -notmatch 'data-mode="arrow"') {
     throw 'editor adapter must expose arrow editing controls.'
 }
 
-if ($officialEditorAdapter -notmatch 'data-mode="image"' -or $officialEditorAdapter -notmatch 'data-mode="stamp"' -or $officialEditorAdapter -notmatch 'data-mode="signature"') {
-    throw 'editor adapter must expose image, stamp, and signature overlay controls.'
+if ($officialEditorAdapter -match 'data-mode="image"' -or $officialEditorAdapter -match 'data-mode="signature"') {
+    throw 'editor adapter must not expose custom image or signature overlay controls when the official PDF.js tools are enabled.'
+}
+
+if ($officialEditorAdapter -notmatch 'data-mode="stamp"') {
+    throw 'editor adapter must keep the custom stamp overlay control.'
+}
+
+if ($officialViewerScript -notmatch 'enableSignatureEditor:\s*\{\s*value:\s*true' -or
+    $officialViewerScript -notmatch 'enableUpdatedAddImage:\s*\{\s*value:\s*true') {
+    throw 'official PDF.js signature and updated add-image editors must be enabled.'
+}
+
+if ($officialViewerScript -notmatch 'enableoptimizedpartialrendering' -or
+    $mainWindow -notmatch 'BuildViewerUrl\(\)' -or
+    $mainWindow -notmatch 'EnableOptimizedPartialRendering') {
+    throw 'optimized partial rendering must be controllable from the app settings and passed into the official viewer.'
 }
 
 if ($officialEditorAdapter -notmatch 'data-mode="pen"' -or $officialEditorAdapter -notmatch 'data-mode="highlight"' -or $officialEditorAdapter -notmatch 'function startInk\(' -or $officialEditorAdapter -notmatch 'function renderInkElement\(') {
@@ -631,7 +646,8 @@ if ($mainWindow -notmatch 'ViewerAssetFolderName\s*=\s*"PdfViewerOfficial"') {
     throw 'MainWindow must route WebView2 to the official PDF.js viewer assets.'
 }
 
-if ($mainWindow -notmatch 'Navigate\(\$"https://\{ViewerHost\}/web/viewer\.html"\)') {
+if ($mainWindow -notmatch 'Navigate\(BuildViewerUrl\(\)\)' -or
+    $mainWindow -notmatch 'https://\{ViewerHost\}/web/viewer\.html\?enableoptimizedpartialrendering=') {
     throw 'MainWindow must navigate to the official PDF.js viewer entry point.'
 }
 
@@ -655,7 +671,7 @@ if ($mainWindow -notmatch 'WindowsFontService\.ReadFontBase64') {
     throw 'MainWindow must embed only the Windows fonts used by overlay text edits.'
 }
 
-if ($mainWindow -notmatch 'OnEditorTextClick' -or $mainWindow -notmatch 'editorReplaceText' -or $mainWindow -notmatch 'editorSignature' -or $mainWindow -notmatch 'editorHighlight' -or $mainWindow -notmatch 'editorPen' -or $mainWindow -notmatch 'editorWhiteout' -or $mainWindow -notmatch 'editorRedact' -or $mainWindow -notmatch 'editorUnderline' -or $mainWindow -notmatch 'editorStrikeout' -or $mainWindow -notmatch 'editorDuplicateSelection' -or $mainWindow -notmatch 'editorBringForward') {
+if ($mainWindow -notmatch 'OnEditorTextClick' -or $mainWindow -notmatch 'editorReplaceText' -or $mainWindow -match 'editorSignature' -or $mainWindow -match 'OnEditorImageClick' -or $mainWindow -notmatch 'editorHighlight' -or $mainWindow -notmatch 'editorPen' -or $mainWindow -notmatch 'editorWhiteout' -or $mainWindow -notmatch 'editorRedact' -or $mainWindow -notmatch 'editorUnderline' -or $mainWindow -notmatch 'editorStrikeout' -or $mainWindow -notmatch 'editorDuplicateSelection' -or $mainWindow -notmatch 'editorBringForward') {
     throw 'MainWindow must expose WPF toolbar commands for PDF editor tools.'
 }
 

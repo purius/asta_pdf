@@ -297,9 +297,7 @@
         <button type="button" data-mode="highlight" title="Draw highlight">Highlight</button>
         <button type="button" data-mode="underline" title="Underline selected text">Underline</button>
         <button type="button" data-mode="strikeout" title="Strike out selected text">Strike</button>
-        <button type="button" data-mode="image" title="Add image">Image</button>
         <button type="button" data-mode="stamp" title="Add stamp">Stamp</button>
-        <button type="button" data-mode="signature" title="Add signature image">Sign</button>
         <select data-role="font" title="Font"></select>
         <input data-role="size" type="number" min="6" max="96" value="14" title="Text size" />
         <input data-role="color" type="color" value="#111827" title="Color" />
@@ -592,8 +590,6 @@
       });
     } else if (state.mode === "pen" || state.mode === "highlight") {
       startInk(event, pageElement);
-    } else if (state.mode === "image" || state.mode === "signature") {
-      addImageEdit(state.mode, pageElement, point);
     } else if (state.mode === "stamp") {
       const text = window.prompt("Stamp text", "APPROVED");
       if (!text) return;
@@ -613,34 +609,6 @@
         borderWidth: 3
       });
     }
-  }
-
-  function addImageEdit(type, pageElement, point) {
-    const input = document.createElement("input");
-    input.type = "file";
-    input.accept = "image/png,image/jpeg";
-    input.addEventListener("change", () => {
-      const file = input.files?.[0];
-      if (!file) return;
-      const reader = new FileReader();
-      reader.addEventListener("load", () => {
-        const dataUrl = String(reader.result || "");
-        if (!dataUrl.startsWith("data:image/")) return;
-        recordHistory();
-        addEdit({
-          type,
-          page: getPageNumber(pageElement),
-          x: point.x,
-          y: point.y,
-          width: type === "signature" ? 220 : 180,
-          height: type === "signature" ? 90 : 130,
-          imageDataUrl: dataUrl,
-          imageMimeType: file.type || dataUrl.slice(5, dataUrl.indexOf(";"))
-        });
-      });
-      reader.readAsDataURL(file);
-    }, { once: true });
-    input.click();
   }
 
   function addTextReplacementEdit(event, pageElement) {

@@ -145,6 +145,17 @@
                         </WrapPanel>
                     </StackPanel>
                 </GroupBox>
+
+                <GroupBox Header="PDF.js viewer">
+                    <StackPanel>
+                        <CheckBox x:Name="OptimizedPartialRenderingCheckBox"
+                                  Content="Optimized partial rendering (experimental)" />
+                        <TextBlock Text="May improve rendering performance on large pages. Turn off if pages repaint incorrectly."
+                                   Margin="0,5,0,0"
+                                   TextWrapping="Wrap"
+                                   Foreground="{StaticResource MutedBrush}" />
+                    </StackPanel>
+                </GroupBox>
             </StackPanel>
         </ScrollViewer>
 

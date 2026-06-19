@@ -351,7 +351,13 @@ public partial class MainWindow : Window
             ViewerCacheHost,
             AppPaths.ViewerRuntimeDirectory,
             CoreWebView2HostResourceAccessKind.Allow);
-        PdfViewer.CoreWebView2.Navigate($"https://{ViewerHost}/web/viewer.html");
+        PdfViewer.CoreWebView2.Navigate(BuildViewerUrl());
+    }
+
+    private string BuildViewerUrl()
+    {
+        var optimizedPartialRendering = _settings.EnableOptimizedPartialRendering ? "true" : "false";
+        return $"https://{ViewerHost}/web/viewer.html?enableoptimizedpartialrendering={optimizedPartialRendering}";
     }
 
     private void ReceiveActivePageChanged(JsonElement root)
@@ -1412,6 +1418,7 @@ public partial class MainWindow : Window
 
     private void OnOpenSettingsClick(object sender, RoutedEventArgs e)
     {
+        var previousOptimizedPartialRendering = _settings.EnableOptimizedPartialRendering;
         var settingsWindow = new SettingsWindow(_settings)
         {
             Owner = this
@@ -1421,7 +1428,32 @@ public partial class MainWindow : Window
         {
             UpdatePdfContextMenuOption();
             UpdateRecentFilesMenu();
+            if (previousOptimizedPartialRendering != _settings.EnableOptimizedPartialRendering)
+            {
+                ReloadViewerAfterViewerSettingsChanged();
+            }
         }
+    }
+
+    private void ReloadViewerAfterViewerSettingsChanged()
+    {
+        if (PdfViewer.CoreWebView2 is null)
+        {
+            return;
+        }
+
+        var currentPath = _currentPdfPath;
+        var referencePath = _referencePdfPath;
+        var dirtyAfterLoad = _isDirty;
+        _viewerReady = false;
+        if (!string.IsNullOrWhiteSpace(currentPath))
+        {
+            _pendingPdfPath = currentPath;
+            _pendingReferencePdfPath = referencePath ?? currentPath;
+            _pendingDirtyAfterLoad = dirtyAfterLoad;
+        }
+
+        PdfViewer.CoreWebView2.Navigate(BuildViewerUrl());
     }
 
     private void OnOpenPdfClick(object sender, RoutedEventArgs e)
@@ -2392,11 +2424,7 @@ public partial class MainWindow : Window
 
     private void OnEditorHighlightClick(object sender, RoutedEventArgs e) => SendViewerCommand("editorHighlight");
 
-    private void OnEditorImageClick(object sender, RoutedEventArgs e) => SendViewerCommand("editorImage");
-
     private void OnEditorStampClick(object sender, RoutedEventArgs e) => SendViewerCommand("editorStamp");
-
-    private void OnEditorSignatureClick(object sender, RoutedEventArgs e) => SendViewerCommand("editorSignature");
 
     private void OnEditorCopySelectionClick(object sender, RoutedEventArgs e) => SendViewerCommand("editorCopySelection");
 

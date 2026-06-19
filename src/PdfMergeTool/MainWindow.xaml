@@ -556,12 +556,8 @@
                                     <MenuItem Header="Highlight"
                                               Click="OnEditorHighlightClick" />
                                     <Separator />
-                                    <MenuItem Header="Image"
-                                              Click="OnEditorImageClick" />
                                     <MenuItem Header="Stamp"
                                               Click="OnEditorStampClick" />
-                                    <MenuItem Header="Sign"
-                                              Click="OnEditorSignatureClick" />
                                     <Separator />
                                     <MenuItem Header="Copy"
                                               Click="OnEditorCopySelectionClick" />
