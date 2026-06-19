@@ -11,7 +11,6 @@ const AppBridge = (() => {
   let lastAcceptedExplicitNavigationPage = null;
   let protectedExplicitNavigationPage = null;
   let lastUserPageChangeIntentAt = 0;
-  let draggedThumbnailPage = null;
 
   function postMessage(message) {
     window.chrome?.webview?.postMessage(message);
@@ -186,13 +185,6 @@ const AppBridge = (() => {
       #thumbnailsView .thumbnail.asta-drop-after::after {
         right: 2px;
       }
-      #thumbnailsView .thumbnail[draggable="true"] {
-        cursor: grab;
-      }
-      #thumbnailsView .thumbnail.asta-thumbnail-dragging {
-        cursor: grabbing;
-        opacity: 0.45;
-      }
     `;
     document.head.appendChild(style);
   }
@@ -340,154 +332,27 @@ const AppBridge = (() => {
     return clientX < rect.left + rect.width / 2 ? targetIndex : targetIndex + 1;
   }
 
-  function updateThumbnailReorderAttributes() {
-    document.querySelectorAll("#thumbnailsView .thumbnail[page-number]").forEach(thumbnail => {
-      thumbnail.draggable = "true";
-      thumbnail.setAttribute("draggable", "true");
-      thumbnail.setAttribute("aria-grabbed", "false");
-      if (!thumbnail.title) {
-        thumbnail.title = "Drag to move this page";
-      }
-    });
-  }
-
-  function getThumbnailContainerItem(thumbnail) {
-    const link = thumbnail?.closest?.("a");
-    const thumbnailsView = document.getElementById("thumbnailsView");
-    if (link?.parentElement === thumbnailsView) {
-      return link;
-    }
-
-    return thumbnail;
-  }
-
-  function applyThumbnailOrderPresentation() {
-    const thumbnailsView = document.getElementById("thumbnailsView");
-    if (!thumbnailsView || pageOrder.length === 0) {
+  function syncPageOrderFromPagesMapper(pagesMapper) {
+    if (!pagesMapper?.pagesNumber || typeof pagesMapper.getPrevPageNumber !== "function") {
       return;
     }
 
-    const thumbnailsByPage = new Map();
-    document.querySelectorAll("#thumbnailsView .thumbnail[page-number]").forEach(thumbnail => {
-      thumbnailsByPage.set(Number(thumbnail.getAttribute("page-number")), thumbnail);
-    });
-
-    for (const page of pageOrder) {
-      const thumbnail = thumbnailsByPage.get(page);
-      const item = getThumbnailContainerItem(thumbnail);
-      if (item?.parentElement === thumbnailsView) {
-        thumbnailsView.appendChild(item);
+    const nextOrder = [];
+    for (let index = 1; index <= pagesMapper.pagesNumber; index++) {
+      const sourcePage = pagesMapper.getPrevPageNumber(index);
+      if (sourcePage > 0) {
+        nextOrder.push(sourcePage);
       }
     }
-  }
 
-  function reorderPageByThumbnailDrop(draggedPage, insertionIndex) {
-    const sourceIndex = pageOrder.indexOf(draggedPage);
-    if (sourceIndex < 0) {
-      return false;
+    if (nextOrder.length === 0) {
+      return;
     }
 
-    const boundedInsertionIndex = Math.min(Math.max(insertionIndex, 0), pageOrder.length);
-    const adjustedInsertionIndex = sourceIndex < boundedInsertionIndex
-      ? boundedInsertionIndex - 1
-      : boundedInsertionIndex;
-    if (sourceIndex === adjustedInsertionIndex) {
-      return false;
-    }
-
-    const nextOrder = [...pageOrder];
-    nextOrder.splice(sourceIndex, 1);
-    nextOrder.splice(adjustedInsertionIndex, 0, draggedPage);
     pageOrder = nextOrder;
-    selectedPages = new Set([draggedPage]);
     pageStateDirty = true;
+    selectedPages = new Set([pageOrder[0]]);
     postPageOrder();
-    goToPage(draggedPage);
-    return true;
-  }
-
-  function hasInternalThumbnailDrag(event) {
-    return draggedThumbnailPage !== null ||
-      Array.from(event.dataTransfer?.types ?? []).includes("application/x-asta-page-number");
-  }
-
-  function handleThumbnailDragStart(event) {
-    const thumbnail = event.target?.closest?.("#thumbnailsView .thumbnail[page-number]");
-    if (!thumbnail) {
-      return;
-    }
-
-    draggedThumbnailPage = Number(thumbnail.getAttribute("page-number"));
-    if (!pageOrder.includes(draggedThumbnailPage)) {
-      draggedThumbnailPage = null;
-      return;
-    }
-
-    thumbnail.classList.add("asta-thumbnail-dragging");
-    thumbnail.setAttribute("aria-grabbed", "true");
-    event.dataTransfer.effectAllowed = "move";
-    event.dataTransfer.setData("application/x-asta-page-number", String(draggedThumbnailPage));
-    event.dataTransfer.setData("text/plain", String(draggedThumbnailPage));
-  }
-
-  function handleThumbnailDragOver(event) {
-    if (!hasInternalThumbnailDrag(event)) {
-      return;
-    }
-
-    event.preventDefault();
-    event.stopPropagation();
-    event.dataTransfer.dropEffect = "move";
-    updateNativeDropIndicator(event.clientX, event.clientY);
-  }
-
-  function handleThumbnailDrop(event) {
-    if (!hasInternalThumbnailDrag(event)) {
-      return;
-    }
-
-    event.preventDefault();
-    event.stopPropagation();
-    const droppedPage = draggedThumbnailPage ??
-      Number(event.dataTransfer.getData("application/x-asta-page-number"));
-    const insertionIndex = getDropInsertionIndex(event.clientX, event.clientY);
-    clearThumbnailDragState();
-    if (Number.isInteger(droppedPage)) {
-      reorderPageByThumbnailDrop(droppedPage, insertionIndex);
-    }
-  }
-
-  function clearThumbnailDragState() {
-    clearDropIndicators();
-    document.querySelectorAll("#thumbnailsView .thumbnail.asta-thumbnail-dragging").forEach(thumbnail => {
-      thumbnail.classList.remove("asta-thumbnail-dragging");
-      thumbnail.setAttribute("aria-grabbed", "false");
-    });
-    draggedThumbnailPage = null;
-  }
-
-  function initializeThumbnailReorder() {
-    const thumbnailsView = document.getElementById("thumbnailsView");
-    if (!thumbnailsView) {
-      return;
-    }
-
-    ensureDropIndicatorStyle();
-    updateThumbnailReorderAttributes();
-    if (thumbnailsView.dataset.astaThumbnailReorderInitialized === "true") {
-      return;
-    }
-
-    thumbnailsView.dataset.astaThumbnailReorderInitialized = "true";
-    thumbnailsView.addEventListener("dragstart", handleThumbnailDragStart);
-    thumbnailsView.addEventListener("dragover", handleThumbnailDragOver);
-    thumbnailsView.addEventListener("drop", handleThumbnailDrop);
-    thumbnailsView.addEventListener("dragend", clearThumbnailDragState);
-    thumbnailsView.addEventListener("dragleave", event => {
-      if (!thumbnailsView.contains(event.relatedTarget)) {
-        clearDropIndicators();
-      }
-    });
   }
 
   function clearDropIndicators() {
@@ -544,7 +409,6 @@ const AppBridge = (() => {
   }
 
   function applyPageStatePresentation() {
-    initializeThumbnailReorder();
     const visiblePages = new Set(pageOrder);
     document.querySelectorAll(".page[data-page-number]").forEach(page => {
       const pageNumber = Number(page.dataset.pageNumber);
@@ -554,8 +418,6 @@ const AppBridge = (() => {
       const pageNumber = Number(thumbnail.getAttribute("page-number"));
       thumbnail.hidden = visiblePages.size > 0 && !visiblePages.has(pageNumber);
     });
-    updateThumbnailReorderAttributes();
-    applyThumbnailOrderPresentation();
   }
 
   function deleteSelectedPages() {
@@ -784,6 +646,10 @@ const AppBridge = (() => {
     eventBus?._on("pagesloaded", event => {
       rebuildPageOrder(event.pagesCount ?? getTotalPages());
       setTimeout(applyPageStatePresentation, 0);
+    });
+
+    eventBus?._on("pagesedited", event => {
+      syncPageOrderFromPagesMapper(event.pagesMapper);
     });
 
     eventBus?._on("pagerendered", event => {

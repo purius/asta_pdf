@@ -254,15 +254,14 @@ if ($officialAdapter -notmatch 'function goToPageOrderBoundary\(' -or
     throw 'official viewer first/last commands must navigate to the first/last page in app pageOrder.'
 }
 
-if ($officialAdapter -notmatch 'function initializeThumbnailReorder\(' -or
-    $officialAdapter -notmatch 'function reorderPageByThumbnailDrop\(' -or
-    $officialAdapter -notmatch 'draggable = "true"' -or
-    $officialAdapter -notmatch 'dragstart' -or
-    $officialAdapter -notmatch 'dragover' -or
-    $officialAdapter -notmatch 'drop' -or
+if ($officialViewerScript -notmatch 'enableSplitMerge:\s*\{\s*value:\s*true' -or
+    $officialAdapter -notmatch 'function syncPageOrderFromPagesMapper\(' -or
+    $officialAdapter -notmatch 'eventBus\?\._on\("pagesedited"' -or
+    $officialAdapter -notmatch 'pagesMapper\.getPrevPageNumber\(index\)' -or
     $officialAdapter -notmatch 'pageStateDirty = true' -or
-    $officialAdapter -notmatch 'goToPage\(draggedPage\)') {
-    throw 'official viewer thumbnails must support drag-and-drop page reordering through pageOrder.'
+    $officialAdapter -match 'draggable = "true"' -or
+    $officialAdapter -match 'addEventListener\("dragstart", handleThumbnailDragStart\)') {
+    throw 'official viewer thumbnail drag reordering must use the built-in PDF.js split/merge pointer flow and sync pagesedited into pageOrder.'
 }
 
 if ($officialEditorAdapter -notmatch 'type:\s*"editorStateChanged"') {
