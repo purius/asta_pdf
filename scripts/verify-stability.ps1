@@ -123,13 +123,18 @@ if ($releaseWorkflow -notmatch 'verify-viewer-thumbnails\.ps1' -or
     throw 'Release workflow must run viewer thumbnail and stability verifications before publishing an installer.'
 }
 
+if ($releaseWorkflow -notmatch 'name: Test PDF split planning' -or
+    $releaseWorkflow -notmatch 'dotnet test test/PdfMergeTool\.Tests/PdfMergeTool\.Tests\.csproj') {
+    throw 'Release workflow must run the PDF split planner tests before packaging an installer.'
+}
+
 if ($releaseWorkflow -notmatch 'node --check src/PdfMergeTool/Assets/PdfViewerOfficial/web/app-adapter\.js' -or
     $releaseWorkflow -notmatch 'node --check src/PdfMergeTool/Assets/PdfViewerOfficial/web/editor-adapter\.js' -or
     $releaseWorkflow -notmatch 'node --check src/PdfMergeTool/Assets/PdfViewerOfficial/web/pdf-lib-adapter\.js') {
     throw 'Release workflow must syntax-check official viewer adapter JavaScript before publishing an installer.'
 }
 
-if ($releaseWorkflow -match '(?s)name: Build installer.*?verify-viewer-thumbnails\.ps1') {
+if ($releaseWorkflow -match '(?s)name: Build installer.*?(Test PDF split planning|verify-viewer-thumbnails\.ps1)') {
     throw 'Release workflow must run verification steps before building the installer.'
 }
 

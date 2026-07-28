@@ -19,6 +19,9 @@ jobs:
       - name: Install Inno Setup
         run: choco install innosetup --yes --no-progress
 
+      - name: Test PDF split planning
+        run: dotnet test test/PdfMergeTool.Tests/PdfMergeTool.Tests.csproj
+
       - name: Verify viewer and stability contracts
         shell: pwsh
         run: |

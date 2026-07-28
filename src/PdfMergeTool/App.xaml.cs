@@ -8,7 +8,7 @@ public partial class App : Application
 {
     private SingleInstanceService? _mergeSingleInstance;
 
-    private void OnStartup(object sender, StartupEventArgs e)
+    private async void OnStartup(object sender, StartupEventArgs e)
     {
         AppPaths.EnsureDirectories();
         AppLogger.Info("앱을 시작합니다.");
@@ -27,6 +27,7 @@ public partial class App : Application
         var settings = AppSettings.Load();
 
         var args = e.Args.ToList();
+        var explorerCommand = PdfExplorerCommandParser.Parse(args);
         var shouldOpenMergeWindow = args.Any(arg => string.Equals(arg, "--merge", StringComparison.OrdinalIgnoreCase));
         var paths = args
             .Where(arg => !arg.StartsWith("--", StringComparison.Ordinal))
@@ -35,6 +36,14 @@ public partial class App : Application
             .Select(Path.GetFullPath)
             .Distinct(StringComparer.OrdinalIgnoreCase)
             .ToList();
+
+        if (explorerCommand != PdfExplorerCommand.None && paths.Count > 0)
+        {
+            StartDeferredStartupWork(settings);
+            await RunExplorerSplitAsync(explorerCommand, paths);
+            Shutdown();
+            return;
+        }
 
         if (shouldOpenMergeWindow)
         {
@@ -140,5 +149,59 @@ public partial class App : Application
                 AppLogger.Error(ex, "Deferred startup work failed.");
             }
         });
+    }
+
+    private static async Task RunExplorerSplitAsync(PdfExplorerCommand command, IReadOnlyList<string> paths)
+    {
+        var interval = 1;
+        if (command == PdfExplorerCommand.IntervalSplit)
+        {
+            var intervalWindow = new SplitIntervalWindow();
+            if (intervalWindow.ShowDialog() != true)
+            {
+                return;
+            }
+
+            interval = intervalWindow.Interval;
+        }
+
+        var pdfService = new PdfMergeService();
+        var successes = new List<string>();
+        var failures = new List<string>();
+
+        foreach (var path in paths)
+        {
+            try
+            {
+                var pageCount = pdfService.GetPageCount(path);
+                var plan = command == PdfExplorerCommand.IntervalSplit
+                    ? PdfSplitPlanner.CreateIntervalPlan(path, pageCount, interval)
+                    : PdfSplitPlanner.CreateParityPlan(path, pageCount);
+                var results = await pdfService.ExecuteSplitPlanAsync(plan, CancellationToken.None);
+                successes.Add($"{Path.GetFileName(path)}: {results.Count}개 파일\n{plan.OutputFolder}");
+            }
+            catch (Exception ex)
+            {
+                AppLogger.Error(ex, $"PDF 분리 실패: {path}");
+                failures.Add($"{Path.GetFileName(path)}: {ex.Message}");
+            }
+        }
+
+        var messageParts = new List<string>();
+        if (successes.Count > 0)
+        {
+            messageParts.Add($"완료 {successes.Count}개\n{string.Join("\n\n", successes)}");
+        }
+
+        if (failures.Count > 0)
+        {
+            messageParts.Add($"실패 {failures.Count}개\n{string.Join("\n", failures)}");
+        }
+
+        MessageBox.Show(
+            string.Join("\n\n", messageParts),
+            "PDF 분리",
+            MessageBoxButton.OK,
+            failures.Count == 0 ? MessageBoxImage.Information : MessageBoxImage.Warning);
     }
 }
