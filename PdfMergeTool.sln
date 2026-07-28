@@ -7,6 +7,10 @@ Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "src", "src", "{D5812421-1F8
 EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "PdfMergeTool", "src\PdfMergeTool\PdfMergeTool.csproj", "{4EA6BB23-9699-469A-B36E-9A4DBE7A3BE7}"
 EndProject
+Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "test", "test", "{C71CBEA7-09B0-48B5-9A45-5B52C9992F34}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "PdfMergeTool.Tests", "test\PdfMergeTool.Tests\PdfMergeTool.Tests.csproj", "{21A8AB38-4D0C-4475-9923-A94CDBC912B3}"
+EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
 		Debug|Any CPU = Debug|Any CPU
@@ -20,8 +24,13 @@ Global
 		{4EA6BB23-9699-469A-B36E-9A4DBE7A3BE7}.Debug|Any CPU.Build.0 = Debug|Any CPU
 		{4EA6BB23-9699-469A-B36E-9A4DBE7A3BE7}.Release|Any CPU.ActiveCfg = Release|Any CPU
 		{4EA6BB23-9699-469A-B36E-9A4DBE7A3BE7}.Release|Any CPU.Build.0 = Release|Any CPU
+		{21A8AB38-4D0C-4475-9923-A94CDBC912B3}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{21A8AB38-4D0C-4475-9923-A94CDBC912B3}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{21A8AB38-4D0C-4475-9923-A94CDBC912B3}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{21A8AB38-4D0C-4475-9923-A94CDBC912B3}.Release|Any CPU.Build.0 = Release|Any CPU
 	EndGlobalSection
 	GlobalSection(NestedProjects) = preSolution
 		{4EA6BB23-9699-469A-B36E-9A4DBE7A3BE7} = {D5812421-1F8E-4F8F-AE43-8CB794CA8F06}
+		{21A8AB38-4D0C-4475-9923-A94CDBC912B3} = {C71CBEA7-09B0-48B5-9A45-5B52C9992F34}
 	EndGlobalSection
 EndGlobal

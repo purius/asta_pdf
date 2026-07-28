@@ -148,6 +148,35 @@ public sealed class PdfMergeService
         return results;
     }
 
+    public int GetPageCount(string inputPath)
+    {
+        if (!File.Exists(inputPath))
+        {
+            throw new FileNotFoundException("PDF 파일을 찾을 수 없습니다.", inputPath);
+        }
+
+        using var stream = File.OpenRead(inputPath);
+        using var document = PdfiumViewer.PdfDocument.Load(stream);
+        return document.PageCount;
+    }
+
+    public async Task<IReadOnlyList<PdfMergeResult>> ExecuteSplitPlanAsync(
+        PdfSplitPlan plan,
+        CancellationToken cancellationToken)
+    {
+        var results = new List<PdfMergeResult>();
+        foreach (var output in plan.Outputs)
+        {
+            results.Add(await SaveTransformedPagesAsync(
+                plan.InputPath,
+                output.Pages,
+                output.OutputPath,
+                cancellationToken));
+        }
+
+        return results;
+    }
+
     public async Task<PdfMergeResult> InsertPdfPagesAsync(
         string inputPath,
         IReadOnlyList<PdfPageTransform> pages,
@@ -573,7 +602,5 @@ public sealed class PdfMergeService
 }
 
 public sealed record PdfMergeResult(string OutputPath, string? WarningMessage);
-
-public sealed record PdfPageTransform(int PageNumber, int Rotation);
 
 public sealed record PdfImagePage(byte[] JpegBytes, int Width, int Height);

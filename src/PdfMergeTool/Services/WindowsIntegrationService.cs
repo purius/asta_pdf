@@ -8,11 +8,18 @@ internal static class WindowsIntegrationService
 {
     private const string ProductId = "PdfMergeTool";
     private const string PdfProgId = "PdfMergeTool.Pdf";
-    private static readonly string[] PdfContextMenuPaths =
+    private static readonly string[] PdfMergeContextMenuPaths =
     [
         @"Software\Classes\SystemFileAssociations\.pdf\shell\PdfMergeTool",
         @"Software\Classes\.pdf\shell\PdfMergeTool",
         @$"Software\Classes\{PdfProgId}\shell\PdfMergeTool"
+    ];
+
+    private static readonly string[] PdfSplitContextMenuPaths =
+    [
+        @"Software\Classes\SystemFileAssociations\.pdf\shell\PdfMergeToolSplit",
+        @"Software\Classes\.pdf\shell\PdfMergeToolSplit",
+        @$"Software\Classes\{PdfProgId}\shell\PdfMergeToolSplit"
     ];
 
     public static string GetCurrentPdfDefaultApp()
@@ -53,7 +60,7 @@ internal static class WindowsIntegrationService
     public static void RegisterPdfContextMenu()
     {
         var appExe = Environment.ProcessPath ?? System.Reflection.Assembly.GetExecutingAssembly().Location;
-        foreach (var contextMenuPath in PdfContextMenuPaths)
+        foreach (var contextMenuPath in PdfMergeContextMenuPaths)
         {
             using var verbKey = Registry.CurrentUser.CreateSubKey(contextMenuPath);
             verbKey.SetValue(null, "PDF 통합...");
@@ -63,11 +70,22 @@ internal static class WindowsIntegrationService
             using var commandKey = verbKey.CreateSubKey("command");
             commandKey.SetValue(null, $"\"{appExe}\" --merge \"%1\"");
         }
+
+        foreach (var contextMenuPath in PdfSplitContextMenuPaths)
+        {
+            using var splitKey = Registry.CurrentUser.CreateSubKey(contextMenuPath);
+            splitKey.SetValue(null, "PDF 분리");
+            splitKey.SetValue("Icon", appExe);
+            splitKey.SetValue("MultiSelectModel", "Player");
+
+            RegisterSplitCommand(splitKey, "SplitByInterval", "N페이지마다 분리", "--split-interval", appExe);
+            RegisterSplitCommand(splitKey, "SplitByParity", "홀수/짝수 분리", "--split-parity", appExe);
+        }
     }
 
     public static void RemovePdfContextMenu()
     {
-        foreach (var contextMenuPath in PdfContextMenuPaths)
+        foreach (var contextMenuPath in PdfMergeContextMenuPaths.Concat(PdfSplitContextMenuPaths))
         {
             Registry.CurrentUser.DeleteSubKeyTree(contextMenuPath, throwOnMissingSubKey: false);
         }
@@ -75,11 +93,26 @@ internal static class WindowsIntegrationService
 
     public static bool IsPdfContextMenuRegistered()
     {
-        return PdfContextMenuPaths.Any(contextMenuPath =>
+        return PdfMergeContextMenuPaths.Concat(PdfSplitContextMenuPaths).All(contextMenuPath =>
         {
-            using var key = Registry.CurrentUser.OpenSubKey($@"{contextMenuPath}\command");
+            using var key = Registry.CurrentUser.OpenSubKey(contextMenuPath);
             return key is not null;
         });
+    }
+
+    private static void RegisterSplitCommand(
+        RegistryKey splitKey,
+        string verb,
+        string label,
+        string argument,
+        string appExe)
+    {
+        using var verbKey = splitKey.CreateSubKey(verb);
+        verbKey.SetValue(null, label);
+        verbKey.SetValue("MultiSelectModel", "Player");
+
+        using var commandKey = verbKey.CreateSubKey("command");
+        commandKey.SetValue(null, $"\"{appExe}\" {argument} \"%1\"");
     }
 
     public static int CleanTempFiles()

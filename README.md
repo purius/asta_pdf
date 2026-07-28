@@ -27,7 +27,9 @@ Windows PDF viewer, lightweight editor, and merge utility.
 - Sort by filename ascending or descending.
 - Merge selected PDFs with qpdf.
 - Save as `{first-file-name}_통합.pdf` next to the first file by default.
-- Standalone installer with app icon, shortcuts, PDF merge context-menu registration, and Windows uninstall entry.
+- Split PDFs from Windows Explorer with `PDF 분리 > N페이지마다 분리` or `홀수/짝수 분리`.
+- Save split outputs in a new `{source-file-name}_분할` folder next to the source file without overwriting prior results.
+- Standalone installer with app icon, shortcuts, PDF merge/split context-menu registration, and Windows uninstall entry.
 
 The viewer uses WebView2 and the official PDF.js viewer bundle packaged locally. Windows 11 normally includes the WebView2 runtime already.
 
@@ -91,7 +93,7 @@ Output:
 dist\PdfMergeToolSetup.exe
 ```
 
-The installer performs a per-user install under `%LOCALAPPDATA%\Programs\PdfMergeTool`, creates Start Menu and Desktop shortcuts, registers the PDF merge context menu, and adds a Windows uninstall entry. It also supports quiet mode:
+The installer performs a per-user install under `%LOCALAPPDATA%\Programs\PdfMergeTool`, creates Start Menu and Desktop shortcuts, registers the PDF merge/split context menu, and adds a Windows uninstall entry. It also supports quiet mode:
 
 Release publishing keeps only Korean satellite resources to reduce package size.
 
@@ -112,6 +114,8 @@ Or pass PDFs directly:
 .\.tools\dotnet\dotnet.exe .\src\PdfMergeTool\bin\Debug\net8.0-windows\PdfMergeTool.dll --merge "C:\Docs\a.pdf" "C:\Docs\b.pdf"
 ```
 
+In Windows Explorer, select one or more PDFs, right-click, then choose `PDF 분리`. `N페이지마다 분리` prompts for a positive page interval (default `1`); `홀수/짝수 분리` creates only non-empty parity files. Each source PDF receives its own new split output folder.
+
 ## Verification
 
 Viewer/editor changes are gated by:
@@ -119,6 +123,7 @@ Viewer/editor changes are gated by:
 ```powershell
 .\scripts\verify-viewer-thumbnails.ps1
 .\scripts\verify-stability.ps1
+dotnet test test\PdfMergeTool.Tests\PdfMergeTool.Tests.csproj
 node --check src\PdfMergeTool\Assets\PdfViewerOfficial\web\app-adapter.js
 node --check src\PdfMergeTool\Assets\PdfViewerOfficial\web\editor-adapter.js
 node --check src\PdfMergeTool\Assets\PdfViewerOfficial\web\pdf-lib-adapter.js
