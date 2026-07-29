@@ -67,6 +67,7 @@ public partial class MainWindow : Window
     private int? _pageOrganizerDragPageNumber;
     private Point? _pageOrganizerDragStartPosition;
     private int? _pageOrganizerPendingPlainSelectionPageNumber;
+    private int? _pageOrganizerDropInsertionIndex;
     private double _pageOrganizerThumbnailHeight = DefaultPageOrganizerThumbnailHeight;
     private MergeWindow? _mergeWindow;
     private TaskCompletionSource<bool>? _printReadyCompletion;
@@ -3238,10 +3239,32 @@ public partial class MainWindow : Window
 
     private void OnPageOrganizerDragOver(object sender, DragEventArgs e)
     {
-        e.Effects = !IsDocumentMutationInProgress && e.Data.GetDataPresent(PageOrganizerDragDataFormat)
-            ? DragDropEffects.Move
-            : DragDropEffects.None;
+        var canMovePages = !IsDocumentMutationInProgress &&
+                           e.Data.GetDataPresent(PageOrganizerDragDataFormat);
+        e.Effects = canMovePages ? DragDropEffects.Move : DragDropEffects.None;
+        if (canMovePages)
+        {
+            UpdatePageOrganizerDropIndicator(GetPageOrganizerInsertionIndex(e));
+        }
+        else
+        {
+            ClearPageOrganizerDropIndicator();
+        }
+
         e.Handled = true;
+    }
+
+    private void OnPageOrganizerDragLeave(object sender, DragEventArgs e)
+    {
+        _ = Dispatcher.BeginInvoke(
+            new Action(() =>
+            {
+                if (!PageOrganizerList.IsMouseOver)
+                {
+                    ClearPageOrganizerDropIndicator();
+                }
+            }),
+            DispatcherPriority.Input);
     }
 
     private void OnPageOrganizerDrop(object sender, DragEventArgs e)
@@ -3271,6 +3294,37 @@ public partial class MainWindow : Window
         _pageOrganizerDragPageNumber = null;
         _pageOrganizerDragStartPosition = null;
         _pageOrganizerPendingPlainSelectionPageNumber = null;
+        ClearPageOrganizerDropIndicator();
+    }
+
+    private void UpdatePageOrganizerDropIndicator(int insertionIndex)
+    {
+        if (_pageOrganizerState is null || PageOrganizerItems.Count == 0)
+        {
+            ClearPageOrganizerDropIndicator();
+            return;
+        }
+
+        var normalizedInsertionIndex = Math.Clamp(insertionIndex, 0, PageOrganizerItems.Count);
+        _pageOrganizerDropInsertionIndex = normalizedInsertionIndex;
+        for (var index = 0; index < PageOrganizerItems.Count; index++)
+        {
+            var item = PageOrganizerItems[index];
+            item.IsDropBefore = normalizedInsertionIndex < PageOrganizerItems.Count &&
+                                index == normalizedInsertionIndex;
+            item.IsDropAfter = normalizedInsertionIndex == PageOrganizerItems.Count &&
+                               index == PageOrganizerItems.Count - 1;
+        }
+    }
+
+    private void ClearPageOrganizerDropIndicator()
+    {
+        _pageOrganizerDropInsertionIndex = null;
+        foreach (var item in PageOrganizerItems)
+        {
+            item.IsDropBefore = false;
+            item.IsDropAfter = false;
+        }
     }
 
     private int GetPageOrganizerInsertionIndex(DragEventArgs e)
@@ -3586,6 +3640,8 @@ public sealed class PageOrganizerItem : INotifyPropertyChanged
     private int _rotation;
     private bool _isSelected;
     private bool _isActive;
+    private bool _isDropBefore;
+    private bool _isDropAfter;
     private ImageSource? _thumbnail;
     private double _thumbnailHeight = 142;
     private double _thumbnailWidth = 100;
@@ -3622,6 +3678,18 @@ public sealed class PageOrganizerItem : INotifyPropertyChanged
     {
         get => _isActive;
         set => SetField(ref _isActive, value, nameof(IsActive));
+    }
+
+    public bool IsDropBefore
+    {
+        get => _isDropBefore;
+        set => SetField(ref _isDropBefore, value, nameof(IsDropBefore));
+    }
+
+    public bool IsDropAfter
+    {
+        get => _isDropAfter;
+        set => SetField(ref _isDropAfter, value, nameof(IsDropAfter));
     }
 
     public ImageSource? Thumbnail

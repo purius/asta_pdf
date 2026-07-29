@@ -89,6 +89,10 @@ if ($mainWindow -notmatch 'EditorDocumentState\? _pageOrganizerState' -or
     $mainWindow -notmatch 'OnPageOrganizerZoomSliderValueChanged' -or
     $mainWindow -notmatch 'SetPageOrganizerThumbnailHeight\(' -or
     $mainWindow -notmatch 'ThumbnailCardWidth' -or
+    $mainWindow -notmatch 'UpdatePageOrganizerDropIndicator\(GetPageOrganizerInsertionIndex\(e\)\)' -or
+    $mainWindow -notmatch 'ClearPageOrganizerDropIndicator\(' -or
+    $mainWindow -notmatch 'IsDropBefore' -or
+    $mainWindow -notmatch 'IsDropAfter' -or
     $mainWindow -notmatch '_pageOrganizerState\.Undo\(\)' -or
     $mainWindow -notmatch '_pageOrganizerState\.Redo\(\)') {
     throw 'MainWindow must route Page Organizer selection, drag moves, and undo/redo through one app-owned state.'
@@ -109,6 +113,9 @@ if ($xaml -notmatch 'x:Name="PageOrganizerList"' -or
     $xaml -notmatch 'x:Name="PageOrganizerZoomSlider"' -or
     $xaml -notmatch '<WrapPanel Orientation="Horizontal"' -or
     $xaml -notmatch 'ScrollViewer\.HorizontalScrollBarVisibility="Disabled"' -or
+    $xaml -notmatch 'DragLeave="OnPageOrganizerDragLeave"' -or
+    $xaml -notmatch 'x:Name="DropBeforeIndicator"' -or
+    $xaml -notmatch 'x:Name="DropAfterIndicator"' -or
     $xaml -notmatch 'Drop="OnPageOrganizerDrop"') {
     throw 'MainWindow must expose the app-owned Page Organizer panel and its direct input handlers.'
 }
