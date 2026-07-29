@@ -48,6 +48,14 @@ _Avoid_: auto-save to original, backup PDF
 The app-owned page management panel that is the sole authority for page selection, order, rotations, structural edits, and Edit History. The embedded PDF viewer renders the current document but does not own page-editing interactions.
 _Avoid_: PDF.js thumbnail editor, viewer page manager
 
+**Active Page Follow**:
+When preview navigation changes the active page, the Page Organizer scrolls only when that page's thumbnail is outside its visible viewport. Rapid preview changes are coalesced so only the latest active page is followed after layout. It pauses during a Page Move Group drag or Document Mutation, then resumes on the next preview navigation after that work finishes. It never changes Page Selection, page order, or a currently visible thumbnail's position.
+_Avoid_: forced centering, selection sync
+
+**Page Organizer Keyboard Navigation**:
+When Page Organizer has keyboard focus, each arrow key moves only the active page by one position in current document order. Page Up and Page Down move it by 10 positions, and Home and End move it to the first and last positions. Navigation never replaces Page Selection; copy, paste, cut, undo, redo, and delete operate on that retained selection. Other app surfaces retain their own keyboard behavior when Page Organizer does not have focus.
+_Avoid_: grid-direction navigation, selection replacement
+
 **Document Mutation**:
 A long-running operation that produces or replaces PDF content, such as save, extract, split, insert, cut, or A4 conversion. Only one Document Mutation can run for the active PDF. While it runs, Page Organizer and overlay-edit input are temporarily unavailable; opening another PDF cancels the old mutation before it can publish a result.
 _Avoid_: background page edit, concurrent save
