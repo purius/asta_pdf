@@ -20,6 +20,8 @@
              Link="Services/PdfExplorerCommandParser.cs" />
     <Compile Include="../../src/PdfMergeTool/Services/EditorDocumentState.cs"
              Link="Services/EditorDocumentState.cs" />
+    <Compile Include="../../src/PdfMergeTool/Services/DocumentOperationCoordinator.cs"
+             Link="Services/DocumentOperationCoordinator.cs" />
     <Compile Include="../../src/PdfMergeTool/Services/PdfSavePublisher.cs"
              Link="Services/PdfSavePublisher.cs" />
   </ItemGroup>

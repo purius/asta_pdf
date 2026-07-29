@@ -17,7 +17,12 @@
   let copiedEdit = null;
 
   function postMessage(message) {
-    window.chrome?.webview?.postMessage(message);
+    const loadId = Number(window.AstaViewerLoadId);
+    window.chrome?.webview?.postMessage(
+      Number.isInteger(loadId) && loadId > 0
+        ? { ...message, loadId }
+        : message
+    );
   }
 
   function postDirty() {
