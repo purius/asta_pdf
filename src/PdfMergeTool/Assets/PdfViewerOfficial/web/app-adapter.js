@@ -466,6 +466,17 @@ const AppBridge = (() => {
     goToPage(targetPage);
   }
 
+  function undoPageEdit() {
+    const undoButton = document.getElementById("viewsManagerStatusUndoButton");
+    const undoBar = document.getElementById("viewsManagerStatusUndo");
+    if (!undoButton || !undoBar || undoBar.classList.contains("hidden")) {
+      return false;
+    }
+
+    undoButton.click();
+    return true;
+  }
+
   async function exportOverlayPdf(data) {
     try {
       if (!window.PdfLibAdapter?.createOverlayPdf) {
@@ -542,7 +553,7 @@ const AppBridge = (() => {
         reversePageOrder();
         break;
       case "undo":
-        if (!window.EditorAdapter?.undo?.()) {
+        if (!undoPageEdit() && !window.EditorAdapter?.undo?.()) {
           postDiagnostic("info", "No editor action to undo.");
         }
         break;
