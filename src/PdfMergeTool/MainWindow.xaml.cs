@@ -31,6 +31,8 @@ public partial class MainWindow : Window
     private const double DefaultPageOrganizerThumbnailHeight = 142;
     private const double MinimumPageOrganizerThumbnailHeight = 106;
     private const double MaximumPageOrganizerThumbnailHeight = 238;
+    private const double PageOrganizerThumbnailWidthRatio = 0.7071067811865476;
+    private const double PageOrganizerThumbnailCardExtraWidth = 16;
     private static readonly JsonSerializerOptions PageTransferJsonOptions = new()
     {
         PropertyNameCaseInsensitive = true,
@@ -635,7 +637,7 @@ public partial class MainWindow : Window
             item.Rotation = state.GetRotation(pageNumber);
             item.IsSelected = selected.Contains(pageNumber);
             item.IsActive = state.ActivePageNumber == pageNumber;
-            item.ThumbnailHeight = _pageOrganizerThumbnailHeight;
+            ApplyPageOrganizerThumbnailDimensions(item);
             next.Add(item);
         }
 
@@ -2909,18 +2911,36 @@ public partial class MainWindow : Window
 
     private void OnThumbZoomOutClick(object sender, RoutedEventArgs e) => AdjustPageOrganizerThumbnailHeight(-18);
 
-    private void OnThumbZoomResetClick(object sender, RoutedEventArgs e)
-    {
-        _pageOrganizerThumbnailHeight = DefaultPageOrganizerThumbnailHeight;
-        RefreshPageOrganizerThumbnailHeight();
-    }
+    private void OnThumbZoomResetClick(object sender, RoutedEventArgs e) =>
+        SetPageOrganizerThumbnailHeight(DefaultPageOrganizerThumbnailHeight);
+
+    private void OnPageOrganizerZoomSliderValueChanged(object sender, RoutedPropertyChangedEventArgs<double> e) =>
+        SetPageOrganizerThumbnailHeight(e.NewValue, synchronizeSlider: false);
 
     private void AdjustPageOrganizerThumbnailHeight(double delta)
     {
-        _pageOrganizerThumbnailHeight = Math.Clamp(
-            _pageOrganizerThumbnailHeight + delta,
+        SetPageOrganizerThumbnailHeight(_pageOrganizerThumbnailHeight + delta);
+    }
+
+    private void SetPageOrganizerThumbnailHeight(double height, bool synchronizeSlider = true)
+    {
+        var normalizedHeight = Math.Round(Math.Clamp(
+            height,
             MinimumPageOrganizerThumbnailHeight,
-            MaximumPageOrganizerThumbnailHeight);
+            MaximumPageOrganizerThumbnailHeight));
+        if (Math.Abs(_pageOrganizerThumbnailHeight - normalizedHeight) < 0.1)
+        {
+            return;
+        }
+
+        _pageOrganizerThumbnailHeight = normalizedHeight;
+        if (synchronizeSlider &&
+            PageOrganizerZoomSlider is not null &&
+            Math.Abs(PageOrganizerZoomSlider.Value - normalizedHeight) >= 0.1)
+        {
+            PageOrganizerZoomSlider.Value = normalizedHeight;
+        }
+
         RefreshPageOrganizerThumbnailHeight();
     }
 
@@ -2928,8 +2948,16 @@ public partial class MainWindow : Window
     {
         foreach (var item in PageOrganizerItems)
         {
-            item.ThumbnailHeight = _pageOrganizerThumbnailHeight;
+            ApplyPageOrganizerThumbnailDimensions(item);
         }
+    }
+
+    private void ApplyPageOrganizerThumbnailDimensions(PageOrganizerItem item)
+    {
+        var thumbnailWidth = Math.Round(_pageOrganizerThumbnailHeight * PageOrganizerThumbnailWidthRatio);
+        item.ThumbnailHeight = _pageOrganizerThumbnailHeight;
+        item.ThumbnailWidth = thumbnailWidth;
+        item.ThumbnailCardWidth = thumbnailWidth + PageOrganizerThumbnailCardExtraWidth;
     }
 
     private void OnPrevPageClick(object sender, RoutedEventArgs e) => NavigatePageOrganizer(-1);
@@ -3247,30 +3275,69 @@ public partial class MainWindow : Window
 
     private int GetPageOrganizerInsertionIndex(DragEventArgs e)
     {
-        if (_pageOrganizerState is null || e.OriginalSource is not DependencyObject source)
+        if (_pageOrganizerState is null)
         {
             return _pageOrganizerState?.PageNumbers.Count ?? 0;
         }
 
-        var target = FindPageOrganizerItem(source);
-        if (target is null)
+        var containers = new List<(int Index, FrameworkElement Container, Point Origin)>();
+        for (var index = 0; index < _pageOrganizerState.PageNumbers.Count; index++)
+        {
+            if (PageOrganizerList.ItemContainerGenerator.ContainerFromIndex(index) is FrameworkElement container &&
+                container.ActualWidth > 0 &&
+                container.ActualHeight > 0)
+            {
+                containers.Add((index, container, container.TranslatePoint(new Point(), PageOrganizerList)));
+            }
+        }
+
+        if (containers.Count == 0)
         {
             return _pageOrganizerState.PageNumbers.Count;
         }
 
-        var targetIndex = _pageOrganizerState.PageNumbers.ToList().IndexOf(target.PageNumber);
-        if (targetIndex < 0)
+        var dropPosition = e.GetPosition(PageOrganizerList);
+        var isMultiColumn = containers.Count > 1 &&
+                            Math.Abs(containers[0].Origin.Y - containers[1].Origin.Y) < 1;
+        if (!isMultiColumn)
         {
+            foreach (var entry in containers)
+            {
+                if (dropPosition.Y < entry.Origin.Y + entry.Container.ActualHeight / 2d)
+                {
+                    return entry.Index;
+                }
+            }
+
             return _pageOrganizerState.PageNumbers.Count;
         }
 
-        if (PageOrganizerList.ItemContainerGenerator.ContainerFromItem(target) is not FrameworkElement container)
+        var rows = containers
+            .GroupBy(entry => Math.Round(entry.Origin.Y))
+            .Select(group => group.OrderBy(entry => entry.Origin.X).ToArray())
+            .ToArray();
+        var row = rows
+            .OrderBy(entries =>
+            {
+                var top = entries.Min(entry => entry.Origin.Y);
+                var bottom = entries.Max(entry => entry.Origin.Y + entry.Container.ActualHeight);
+                return dropPosition.Y < top
+                    ? top - dropPosition.Y
+                    : dropPosition.Y > bottom
+                        ? dropPosition.Y - bottom
+                        : 0d;
+            })
+            .First();
+
+        foreach (var entry in row)
         {
-            return targetIndex;
+            if (dropPosition.X < entry.Origin.X + entry.Container.ActualWidth / 2d)
+            {
+                return entry.Index;
+            }
         }
 
-        var position = e.GetPosition(container);
-        return position.Y < container.ActualHeight / 2d ? targetIndex : targetIndex + 1;
+        return row[^1].Index + 1;
     }
 
     private static PageOrganizerItem? FindPageOrganizerItem(DependencyObject source)
@@ -3521,6 +3588,8 @@ public sealed class PageOrganizerItem : INotifyPropertyChanged
     private bool _isActive;
     private ImageSource? _thumbnail;
     private double _thumbnailHeight = 142;
+    private double _thumbnailWidth = 100;
+    private double _thumbnailCardWidth = 116;
 
     public PageOrganizerItem(int pageNumber)
     {
@@ -3565,6 +3634,18 @@ public sealed class PageOrganizerItem : INotifyPropertyChanged
     {
         get => _thumbnailHeight;
         set => SetField(ref _thumbnailHeight, value, nameof(ThumbnailHeight));
+    }
+
+    public double ThumbnailWidth
+    {
+        get => _thumbnailWidth;
+        set => SetField(ref _thumbnailWidth, value, nameof(ThumbnailWidth));
+    }
+
+    public double ThumbnailCardWidth
+    {
+        get => _thumbnailCardWidth;
+        set => SetField(ref _thumbnailCardWidth, value, nameof(ThumbnailCardWidth));
     }
 
     public string PositionLabel => $"{Position}";

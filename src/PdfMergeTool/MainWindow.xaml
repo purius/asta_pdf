@@ -794,7 +794,7 @@
                 AllowDrop="True">
             <Grid>
                 <Grid.ColumnDefinitions>
-                    <ColumnDefinition Width="272" MinWidth="220" MaxWidth="420" />
+                    <ColumnDefinition Width="272" MinWidth="220" MaxWidth="720" />
                     <ColumnDefinition Width="8" />
                     <ColumnDefinition Width="*" />
                 </Grid.ColumnDefinitions>
@@ -829,11 +829,43 @@
                                     </Button>
                                 </StackPanel>
                             </DockPanel>
-                            <TextBlock x:Name="PageOrganizerSummaryText"
-                                       Text="페이지 없음"
-                                       Margin="0,4,0,8"
-                                       FontSize="12"
-                                       Foreground="{StaticResource MutedBrush}" />
+                            <DockPanel Margin="0,4,0,8"
+                                       LastChildFill="True">
+                                <StackPanel DockPanel.Dock="Right"
+                                            Orientation="Horizontal"
+                                            VerticalAlignment="Center">
+                                    <Button Style="{StaticResource ToolbarButtonStyle}"
+                                            ToolTip="썸네일 작게 (Ctrl+Shift+-)"
+                                            Click="OnThumbZoomOutClick">
+                                        <iconPacks:PackIconMaterial Kind="ImageSizeSelectSmall"
+                                                                    Style="{StaticResource EditIconStyle}" />
+                                    </Button>
+                                    <Slider x:Name="PageOrganizerZoomSlider"
+                                            Width="58"
+                                            Margin="3,0"
+                                            Minimum="106"
+                                            Maximum="238"
+                                            Value="142"
+                                            SmallChange="6"
+                                            LargeChange="18"
+                                            TickFrequency="6"
+                                            IsSnapToTickEnabled="True"
+                                            ToolTip="썸네일 크기"
+                                            ValueChanged="OnPageOrganizerZoomSliderValueChanged" />
+                                    <Button Style="{StaticResource ToolbarButtonStyle}"
+                                            ToolTip="썸네일 크게 (Ctrl+Shift++)"
+                                            Click="OnThumbZoomInClick">
+                                        <iconPacks:PackIconMaterial Kind="ImageSizeSelectLarge"
+                                                                    Style="{StaticResource EditIconStyle}" />
+                                    </Button>
+                                </StackPanel>
+                                <TextBlock x:Name="PageOrganizerSummaryText"
+                                           Text="페이지 없음"
+                                           VerticalAlignment="Center"
+                                           FontSize="12"
+                                           Foreground="{StaticResource MutedBrush}"
+                                           TextTrimming="CharacterEllipsis" />
+                            </DockPanel>
                         </StackPanel>
 
                         <ListBox x:Name="PageOrganizerList"
@@ -843,17 +875,27 @@
                                  SelectionMode="Multiple"
                                  Focusable="False"
                                  AllowDrop="True"
+                                 ScrollViewer.HorizontalScrollBarVisibility="Disabled"
+                                 ScrollViewer.VerticalScrollBarVisibility="Auto"
+                                 ScrollViewer.CanContentScroll="False"
                                  PreviewMouseLeftButtonDown="OnPageOrganizerItemPreviewMouseLeftButtonDown"
                                  PreviewMouseLeftButtonUp="OnPageOrganizerItemPreviewMouseLeftButtonUp"
                                  PreviewMouseMove="OnPageOrganizerItemPreviewMouseMove"
                                  DragOver="OnPageOrganizerDragOver"
                                  Drop="OnPageOrganizerDrop"
                                  ItemsSource="{Binding PageOrganizerItems, RelativeSource={RelativeSource AncestorType={x:Type Window}}}">
+                            <ListBox.ItemsPanel>
+                                <ItemsPanelTemplate>
+                                    <WrapPanel Orientation="Horizontal" />
+                                </ItemsPanelTemplate>
+                            </ListBox.ItemsPanel>
                             <ListBox.ItemContainerStyle>
                                 <Style TargetType="{x:Type ListBoxItem}">
+                                    <Setter Property="Width" Value="{Binding ThumbnailCardWidth}" />
                                     <Setter Property="HorizontalContentAlignment" Value="Stretch" />
+                                    <Setter Property="VerticalContentAlignment" Value="Top" />
                                     <Setter Property="Padding" Value="0" />
-                                    <Setter Property="Margin" Value="0,0,0,6" />
+                                    <Setter Property="Margin" Value="0,0,8,8" />
                                     <Setter Property="Template">
                                         <Setter.Value>
                                             <ControlTemplate TargetType="{x:Type ListBoxItem}">
@@ -878,24 +920,36 @@
                             </ListBox.ItemContainerStyle>
                             <ListBox.ItemTemplate>
                                 <DataTemplate>
-                                    <Grid Height="{Binding ThumbnailHeight}">
-                                        <Grid.ColumnDefinitions>
-                                            <ColumnDefinition Width="24" />
-                                            <ColumnDefinition Width="*" />
-                                            <ColumnDefinition Width="40" />
-                                        </Grid.ColumnDefinitions>
-                                        <CheckBox Grid.Column="0"
-                                                  VerticalAlignment="Top"
-                                                  Margin="0,3,0,0"
-                                                  IsChecked="{Binding IsSelected, Mode=OneWay}"
-                                                  Focusable="False"
-                                                  PreviewMouseLeftButtonDown="OnPageOrganizerCheckBoxPreviewMouseLeftButtonDown" />
-                                        <Border Grid.Column="1"
+                                    <Grid>
+                                        <Grid.RowDefinitions>
+                                            <RowDefinition Height="24" />
+                                            <RowDefinition Height="Auto" />
+                                            <RowDefinition Height="18" />
+                                        </Grid.RowDefinitions>
+                                        <Grid Grid.Row="0"
+                                              Margin="0,0,0,4">
+                                            <CheckBox HorizontalAlignment="Left"
+                                                      VerticalAlignment="Center"
+                                                      IsChecked="{Binding IsSelected, Mode=OneWay}"
+                                                      Focusable="False"
+                                                      PreviewMouseLeftButtonDown="OnPageOrganizerCheckBoxPreviewMouseLeftButtonDown" />
+                                            <TextBlock Text="{Binding PositionLabel}"
+                                                       HorizontalAlignment="Right"
+                                                       VerticalAlignment="Center"
+                                                       FontSize="11"
+                                                       FontWeight="Bold"
+                                                       Foreground="{StaticResource InkBrush}" />
+                                        </Grid>
+                                        <Border Grid.Row="1"
+                                                Width="{Binding ThumbnailWidth}"
+                                                Height="{Binding ThumbnailHeight}"
+                                                HorizontalAlignment="Center"
                                                 Background="#FFFFFF"
                                                 BorderBrush="#E5E7EB"
                                                 BorderThickness="1"
                                                 CornerRadius="3"
-                                                Padding="3">
+                                                Padding="3"
+                                                ClipToBounds="True">
                                             <Grid>
                                                 <TextBlock Text="PDF"
                                                            HorizontalAlignment="Center"
@@ -911,20 +965,12 @@
                                                 </Image>
                                             </Grid>
                                         </Border>
-                                        <StackPanel Grid.Column="2"
-                                                    HorizontalAlignment="Center"
-                                                    VerticalAlignment="Top">
-                                            <TextBlock Text="{Binding PositionLabel}"
-                                                       FontWeight="Bold"
-                                                       Foreground="{StaticResource InkBrush}"
-                                                       TextAlignment="Center" />
-                                            <TextBlock Text="{Binding RotationLabel}"
-                                                       Margin="0,3,0,0"
-                                                       FontSize="10"
-                                                       Foreground="{StaticResource MutedBrush}"
-                                                       TextAlignment="Center"
-                                                       TextWrapping="Wrap" />
-                                        </StackPanel>
+                                        <TextBlock Grid.Row="2"
+                                                   Text="{Binding RotationLabel}"
+                                                   HorizontalAlignment="Center"
+                                                   VerticalAlignment="Center"
+                                                   FontSize="10"
+                                                   Foreground="{StaticResource MutedBrush}" />
                                     </Grid>
                                 </DataTemplate>
                             </ListBox.ItemTemplate>
