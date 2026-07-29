@@ -42,6 +42,94 @@ const thumbnailLoadingOverlayPattern =
   /<ProgressBar(?=\s|>)[^>]*\bIsHitTestVisible\s*=\s*"False"[^>]*>[\s\S]*?<ProgressBar\.Style>[\s\S]*?<Setter\s+Property\s*=\s*"Visibility"\s+Value\s*=\s*"Collapsed"\s*\/>[\s\S]*?<DataTrigger\s+Binding\s*=\s*"\{Binding\s+IsThumbnailLoading\}"\s+Value\s*=\s*"True"\s*>[\s\S]*?<Setter\s+Property\s*=\s*"Visibility"\s+Value\s*=\s*"Visible"\s*\/>[\s\S]*?<\/DataTrigger>[\s\S]*?<\/ProgressBar>/;
 const thumbnailRetryOverlayPattern =
   /<Button(?=\s|>)[^>]*\bClick\s*=\s*"OnPageOrganizerThumbnailRetryClick"[^>]*>[\s\S]*?<Button\.Style>[\s\S]*?<Setter\s+Property\s*=\s*"Visibility"\s+Value\s*=\s*"Collapsed"\s*\/>[\s\S]*?<DataTrigger\s+Binding\s*=\s*"\{Binding\s+IsThumbnailFailed\}"\s+Value\s*=\s*"True"\s*>[\s\S]*?<Setter\s+Property\s*=\s*"Visibility"\s+Value\s*=\s*"Visible"\s*\/>[\s\S]*?<\/DataTrigger>[\s\S]*?<iconPacks:PackIconMaterial(?=\s|\/|>)[^>]*\bKind\s*=\s*"Refresh"[^>]*\/>[\s\S]*?<\/Button>/;
+const thumbnailImagePattern =
+  /<Image(?=\s|\/|>)[^>]*\bSource\s*=\s*"\{Binding\s+Thumbnail\}"[^>]*>/;
+
+function escapeRegExp(value) {
+  return value.replace(/[\\^$.*+?()\[\]{}|]/g, "\\$&");
+}
+
+function getElementBlocks(markup, elementName) {
+  const escapedElementName = escapeRegExp(elementName);
+  const tagPattern = new RegExp(
+    `<\\/?${escapedElementName}(?=\\s|/|>)[^>]*>`,
+    "g"
+  );
+  const blocks = [];
+  const openOffsets = [];
+
+  for (const match of markup.matchAll(tagPattern)) {
+    const tag = match[0];
+    const isClosingTag = tag.startsWith("</");
+    const isSelfClosingTag = /\/\s*>$/.test(tag);
+
+    if (isClosingTag) {
+      const openOffset = openOffsets.pop();
+      if (openOffset !== undefined) {
+        blocks.push(markup.slice(openOffset, match.index + tag.length));
+      }
+    } else if (isSelfClosingTag) {
+      if (openOffsets.length === 0) {
+        blocks.push(tag);
+      }
+    } else {
+      openOffsets.push(match.index);
+    }
+  }
+
+  return blocks;
+}
+
+function getThumbnailDataTemplate(markup) {
+  const thumbnailDataTemplate = getElementBlocks(markup, "DataTemplate").find(
+    template => thumbnailImagePattern.test(template)
+  );
+  assert.ok(
+    thumbnailDataTemplate,
+    "Thumbnail DataTemplate containing Image Source=\"{Binding Thumbnail}\" is missing."
+  );
+  return thumbnailDataTemplate;
+}
+
+function getOpeningTag(block) {
+  return block.slice(0, block.indexOf(">") + 1);
+}
+
+function hasAttribute(block, name, value) {
+  return new RegExp(
+    "\\b" + escapeRegExp(name) + "\\s*=\\s*\"" + escapeRegExp(value) + "\""
+  ).test(getOpeningTag(block));
+}
+
+function assertThumbnailOverlayContract(markup) {
+  const thumbnailDataTemplate = getThumbnailDataTemplate(markup);
+  const thumbnailLoadingOverlay = getElementBlocks(
+    thumbnailDataTemplate,
+    "ProgressBar"
+  ).find(block => hasAttribute(block, "IsHitTestVisible", "False"));
+  assert.ok(
+    thumbnailLoadingOverlay,
+    "Thumbnail loading ProgressBar is missing from the thumbnail DataTemplate."
+  );
+  assert.match(thumbnailLoadingOverlay, thumbnailLoadingOverlayPattern);
+
+  const thumbnailRetryOverlay = getElementBlocks(
+    thumbnailDataTemplate,
+    "Button"
+  ).find(block =>
+    hasAttribute(block, "Click", "OnPageOrganizerThumbnailRetryClick")
+  );
+  assert.ok(
+    thumbnailRetryOverlay,
+    "Thumbnail retry Button is missing from the thumbnail DataTemplate."
+  );
+  assert.doesNotMatch(
+    getOpeningTag(thumbnailRetryOverlay),
+    /\bIsHitTestVisible\s*=\s*"False"/i,
+    "Thumbnail retry Button must remain interactive."
+  );
+  assert.match(thumbnailRetryOverlay, thumbnailRetryOverlayPattern);
+}
 
 assert.match(mainWindow, /EditorDocumentState\? _pageOrganizerState/);
 assert.match(mainWindow, /void ApplyPageOrganizerState\(/);
@@ -89,8 +177,42 @@ assert.match(xaml, /x:Name="DropBeforeIndicator"/);
 assert.match(xaml, /x:Name="DropAfterIndicator"/);
 assert.match(xaml, /Binding="\{Binding IsDropBefore\}"/);
 assert.match(xaml, /Binding="\{Binding IsDropAfter\}"/);
-assert.match(xaml, thumbnailLoadingOverlayPattern);
-assert.match(xaml, thumbnailRetryOverlayPattern);
+const thumbnailDataTemplate = getThumbnailDataTemplate(xaml);
+const thumbnailLoadingOverlay = getElementBlocks(
+  thumbnailDataTemplate,
+  "ProgressBar"
+).find(block => thumbnailLoadingOverlayPattern.test(block));
+const thumbnailRetryOverlay = getElementBlocks(
+  thumbnailDataTemplate,
+  "Button"
+).find(block => thumbnailRetryOverlayPattern.test(block));
+assert.ok(thumbnailLoadingOverlay, "Expected loading overlay fixture in thumbnail DataTemplate.");
+assert.ok(thumbnailRetryOverlay, "Expected retry overlay fixture in thumbnail DataTemplate.");
+
+const unrelatedOverlayTemplate = `<DataTemplate x:Key="UnrelatedThumbnailOverlayTemplate">${thumbnailLoadingOverlay}${thumbnailRetryOverlay}</DataTemplate>`;
+const thumbnailOverlaysRemovedXaml = xaml
+  .replace(thumbnailLoadingOverlay, "")
+  .replace(thumbnailRetryOverlay, "")
+  .replace(
+    "</Window.Resources>",
+    `${unrelatedOverlayTemplate}</Window.Resources>`
+  );
+assert.throws(
+  () => assertThumbnailOverlayContract(thumbnailOverlaysRemovedXaml),
+  /thumbnail DataTemplate/
+);
+const disabledRetryXaml = xaml.replace(
+  thumbnailRetryOverlay,
+  thumbnailRetryOverlay.replace(
+    "<Button ",
+    '<Button IsHitTestVisible="False" '
+  )
+);
+assert.throws(
+  () => assertThumbnailOverlayContract(disabledRetryXaml),
+  /interactive/
+);
+assertThumbnailOverlayContract(xaml);
 assert.match(mainWindow, /QueueActivePageFollow\(/);
 assert.match(mainWindow, /FollowActivePageOrganizerItem\(/);
 assert.match(mainWindow, /PageOrganizerViewport\.GetVerticalOffsetToReveal/);

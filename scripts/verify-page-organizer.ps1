@@ -29,6 +29,48 @@ $adapter = Get-Content -Raw $adapterPath
 $editorAdapter = Get-Content -Raw $editorAdapterPath
 $viewer = Get-Content -Raw $viewerScriptPath
 
+function Assert-ThumbnailOverlayVisibilityTrigger {
+    param(
+        [System.Xml.XmlElement]$Control,
+        [string]$StylePropertyElementName,
+        [string]$BindingName,
+        [string]$ControlName
+    )
+
+    $style = $Control.SelectSingleNode(
+        "./*[local-name()='$StylePropertyElementName']/*[local-name()='Style']"
+    )
+    if ($null -eq $style) {
+        throw "$ControlName must define a local Style."
+    }
+
+    $collapsedSetter = $style.SelectSingleNode(
+        './*[local-name()="Setter" and @Property="Visibility" and @Value="Collapsed"]'
+    )
+    if ($null -eq $collapsedSetter) {
+        throw "$ControlName must default Visibility to Collapsed in its Style."
+    }
+
+    $trigger = @(
+        $style.SelectNodes(
+            './*[local-name()="Style.Triggers"]/*[local-name()="DataTrigger"]'
+        ) | Where-Object {
+            $_.GetAttribute('Binding') -eq "{Binding $BindingName}" -and
+            $_.GetAttribute('Value') -eq 'True'
+        }
+    ) | Select-Object -First 1
+    if ($null -eq $trigger) {
+        throw "$ControlName must have a $BindingName DataTrigger."
+    }
+
+    $visibleSetter = $trigger.SelectSingleNode(
+        './*[local-name()="Setter" and @Property="Visibility" and @Value="Visible"]'
+    )
+    if ($null -eq $visibleSetter) {
+        throw "$ControlName must set Visibility to Visible in its $BindingName DataTrigger."
+    }
+}
+
 if ($viewer -notmatch 'enableSplitMerge:\s*\{\s*value:\s*false') {
     throw 'PDF.js split/merge editing must remain disabled because Page Organizer owns structural edits.'
 }
@@ -124,48 +166,6 @@ if ($mainWindow -match 'pageNumbers\s*\.\s*Take\s*\(\s*96\s*\)' -or
     throw 'Page Organizer thumbnail scheduling, viewport refresh, and retry state must remain app-owned.'
 }
 
-$thumbnailLoadingOverlayPattern = @'
-(?xs)
-<ProgressBar(?=\s|>)
-    [^>]* \bIsHitTestVisible \s* = \s* "False"
-    [^>]* >
-.*?
-<ProgressBar\.Style>
-.*?
-<Setter \s+ Property \s* = \s* "Visibility" \s+ Value \s* = \s* "Collapsed" \s* />
-.*?
-<DataTrigger \s+ Binding \s* = \s* "\{Binding \s+ IsThumbnailLoading\}" \s+ Value \s* = \s* "True" \s* >
-.*?
-<Setter \s+ Property \s* = \s* "Visibility" \s+ Value \s* = \s* "Visible" \s* />
-.*?
-</DataTrigger>
-.*?
-</ProgressBar>
-'@
-
-$thumbnailRetryOverlayPattern = @'
-(?xs)
-<Button(?=\s|>)
-    [^>]* \bClick \s* = \s* "OnPageOrganizerThumbnailRetryClick"
-    [^>]* >
-.*?
-<Button\.Style>
-.*?
-<Setter \s+ Property \s* = \s* "Visibility" \s+ Value \s* = \s* "Collapsed" \s* />
-.*?
-<DataTrigger \s+ Binding \s* = \s* "\{Binding \s+ IsThumbnailFailed\}" \s+ Value \s* = \s* "True" \s* >
-.*?
-<Setter \s+ Property \s* = \s* "Visibility" \s+ Value \s* = \s* "Visible" \s* />
-.*?
-</DataTrigger>
-.*?
-<iconPacks:PackIconMaterial(?=\s|/|>)
-    [^>]* \bKind \s* = \s* "Refresh"
-    [^>]* />
-.*?
-</Button>
-'@
-
 if ($xaml -notmatch 'x:Name="PageOrganizerList"' -or
     $xaml -notmatch 'x:Name="PageOrganizerList"[\s\S]*?Focusable="True"' -or
     $xaml -notmatch 'PreviewMouseLeftButtonDown="OnPageOrganizerItemPreviewMouseLeftButtonDown"' -or
@@ -183,9 +183,44 @@ if ($xaml -notmatch 'x:Name="PageOrganizerList"' -or
     throw 'MainWindow must expose the app-owned Page Organizer panel and its direct input handlers.'
 }
 
-if ($xaml -notmatch $thumbnailLoadingOverlayPattern -or
-    $xaml -notmatch $thumbnailRetryOverlayPattern) {
-    throw 'Page Organizer thumbnail overlays must expose scoped loading and retry state.'
+try {
+    [xml]$xamlDocument = $xaml
+} catch {
+    throw "MainWindow XAML must be valid XML for thumbnail overlay verification: $($_.Exception.Message)"
+}
+
+$thumbnailDataTemplate = $xamlDocument.SelectSingleNode(
+    '//*[local-name()="DataTemplate"][.//*[local-name()="Image" and @Source="{Binding Thumbnail}"]]'
+)
+if ($null -eq $thumbnailDataTemplate) {
+    throw 'MainWindow must expose thumbnail overlays inside the DataTemplate that binds Image.Source to Thumbnail.'
+}
+
+$thumbnailLoadingProgressBar = $thumbnailDataTemplate.SelectSingleNode(
+    './/*[local-name()="ProgressBar" and @IsHitTestVisible="False"]'
+)
+if ($null -eq $thumbnailLoadingProgressBar) {
+    throw 'Thumbnail DataTemplate must contain a non-hit-testable loading ProgressBar.'
+}
+Assert-ThumbnailOverlayVisibilityTrigger -Control $thumbnailLoadingProgressBar -StylePropertyElementName 'ProgressBar.Style' -BindingName 'IsThumbnailLoading' -ControlName 'Thumbnail loading ProgressBar'
+
+$thumbnailRetryButton = $thumbnailDataTemplate.SelectSingleNode(
+    './/*[local-name()="Button" and @Click="OnPageOrganizerThumbnailRetryClick"]'
+)
+if ($null -eq $thumbnailRetryButton) {
+    throw 'Thumbnail DataTemplate must contain the retry Button.'
+}
+if ($thumbnailRetryButton.HasAttribute('IsHitTestVisible') -and
+    $thumbnailRetryButton.GetAttribute('IsHitTestVisible') -ieq 'False') {
+    throw 'Thumbnail retry Button must remain interactive.'
+}
+Assert-ThumbnailOverlayVisibilityTrigger -Control $thumbnailRetryButton -StylePropertyElementName 'Button.Style' -BindingName 'IsThumbnailFailed' -ControlName 'Thumbnail retry Button'
+
+$thumbnailRetryIcon = $thumbnailRetryButton.SelectSingleNode(
+    './/*[local-name()="PackIconMaterial" and @Kind="Refresh"]'
+)
+if ($null -eq $thumbnailRetryIcon) {
+    throw 'Thumbnail retry Button must contain a Refresh PackIconMaterial.'
 }
 
 Write-Output 'page organizer checks passed.'
