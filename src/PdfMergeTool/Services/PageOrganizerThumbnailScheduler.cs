@@ -12,37 +12,67 @@ public enum PageOrganizerThumbnailRenderState
 public sealed class PageOrganizerThumbnailScheduler
 {
     private const int MinimumCacheRadius = 24;
+    public const int MaximumCacheWindowSize = 96;
     private const int MaximumRenderAttempts = 2;
-    private readonly int[] _pageNumbers;
+    private readonly int[] _knownPageNumbers;
     private readonly HashSet<int> _knownPages;
-    private readonly Dictionary<int, int> _pageIndexes;
     private readonly HashSet<int> _pendingPages;
     private readonly HashSet<int> _inFlightPages = [];
     private readonly LinkedList<int> _priorityPages = [];
     private readonly HashSet<int> _priorityPageSet = [];
     private readonly Dictionary<int, int> _failureCounts = [];
+    private int[] _cacheOrder = [];
+    private Dictionary<int, int> _cacheOrderIndexes = [];
 
     public PageOrganizerThumbnailScheduler(IReadOnlyList<int> pageNumbers)
     {
-        _pageNumbers = pageNumbers.Distinct().ToArray();
-        _knownPages = _pageNumbers.ToHashSet();
-        _pageIndexes = _pageNumbers
+        _knownPageNumbers = pageNumbers.Distinct().ToArray();
+        _knownPages = _knownPageNumbers.ToHashSet();
+        _pendingPages = _knownPageNumbers.ToHashSet();
+        UpdateCacheOrder(pageNumbers);
+    }
+
+    public void UpdateCacheOrder(IReadOnlyList<int> pageNumbers)
+    {
+        var nextOrder = new List<int>(_knownPageNumbers.Length);
+        var includedPages = new HashSet<int>();
+        foreach (var pageNumber in pageNumbers)
+        {
+            if (_knownPages.Contains(pageNumber) && includedPages.Add(pageNumber))
+            {
+                nextOrder.Add(pageNumber);
+            }
+        }
+
+        foreach (var pageNumber in _cacheOrder)
+        {
+            if (includedPages.Add(pageNumber))
+            {
+                nextOrder.Add(pageNumber);
+            }
+        }
+
+        foreach (var pageNumber in _knownPageNumbers)
+        {
+            if (includedPages.Add(pageNumber))
+            {
+                nextOrder.Add(pageNumber);
+            }
+        }
+
+        _cacheOrder = nextOrder.ToArray();
+        _cacheOrderIndexes = _cacheOrder
             .Select((pageNumber, index) => new { pageNumber, index })
             .ToDictionary(entry => entry.pageNumber, entry => entry.index);
-        _pendingPages = _pageNumbers.ToHashSet();
     }
 
     public void Prioritize(IEnumerable<int> pageNumbers)
     {
-        var promotedPageNumbers = new List<int>();
-        var seenPageNumbers = new HashSet<int>();
-        foreach (var pageNumber in pageNumbers)
-        {
-            if (_pendingPages.Contains(pageNumber) && seenPageNumbers.Add(pageNumber))
-            {
-                promotedPageNumbers.Add(pageNumber);
-            }
-        }
+        var promotedPageNumbers = pageNumbers
+            .Where(_pendingPages.Contains)
+            .Distinct()
+            .OrderBy(pageNumber => _cacheOrderIndexes[pageNumber])
+            .ToArray();
 
         foreach (var pageNumber in promotedPageNumbers)
         {
@@ -88,7 +118,7 @@ public sealed class PageOrganizerThumbnailScheduler
             }
         }
 
-        foreach (var candidate in _pageNumbers)
+        foreach (var candidate in _cacheOrder)
         {
             if (TryStart(candidate, out pageNumber))
             {
@@ -125,28 +155,50 @@ public sealed class PageOrganizerThumbnailScheduler
     public IReadOnlySet<int> GetCacheWindow(IReadOnlyCollection<int> visiblePageNumbers)
     {
         var visibleIndexes = visiblePageNumbers
-            .Where(_pageIndexes.ContainsKey)
-            .Select(pageNumber => _pageIndexes[pageNumber])
+            .Where(_cacheOrderIndexes.ContainsKey)
+            .Select(pageNumber => _cacheOrderIndexes[pageNumber])
             .Order()
             .ToArray();
         if (visibleIndexes.Length == 0)
         {
-            return _pageNumbers.Take(MinimumCacheRadius).ToHashSet();
+            return _cacheOrder
+                .Take(Math.Min(MinimumCacheRadius, MaximumCacheWindowSize))
+                .ToHashSet();
         }
 
+        var maximumWindowSize = Math.Min(MaximumCacheWindowSize, _cacheOrder.Length);
         var radius = Math.Max(MinimumCacheRadius, visibleIndexes.Length * 2);
-        var cacheWindow = new HashSet<int>();
-        foreach (var visibleIndex in visibleIndexes)
+        var firstVisibleIndex = visibleIndexes[0];
+        var lastVisibleIndex = visibleIndexes[^1];
+        var firstCacheIndex = Math.Max(0, firstVisibleIndex - radius);
+        var lastCacheIndex = Math.Min(_cacheOrder.Length - 1, lastVisibleIndex + radius);
+
+        if (lastCacheIndex - firstCacheIndex + 1 > maximumWindowSize)
         {
-            var firstIndex = Math.Max(0, visibleIndex - radius);
-            var lastIndex = Math.Min(_pageNumbers.Length - 1, visibleIndex + radius);
-            for (var index = firstIndex; index <= lastIndex; index++)
+            var visibleSpan = lastVisibleIndex - firstVisibleIndex + 1;
+            if (visibleSpan >= maximumWindowSize)
             {
-                cacheWindow.Add(_pageNumbers[index]);
+                firstCacheIndex = Math.Clamp(
+                    firstVisibleIndex,
+                    0,
+                    _cacheOrder.Length - maximumWindowSize);
             }
+            else
+            {
+                var leadingCachePages = (maximumWindowSize - visibleSpan) / 2;
+                firstCacheIndex = Math.Clamp(
+                    firstVisibleIndex - leadingCachePages,
+                    0,
+                    _cacheOrder.Length - maximumWindowSize);
+            }
+
+            lastCacheIndex = firstCacheIndex + maximumWindowSize - 1;
         }
 
-        return cacheWindow;
+        return _cacheOrder
+            .Skip(firstCacheIndex)
+            .Take(lastCacheIndex - firstCacheIndex + 1)
+            .ToHashSet();
     }
 
     private bool TryStart(int pageNumber, out int nextPageNumber)

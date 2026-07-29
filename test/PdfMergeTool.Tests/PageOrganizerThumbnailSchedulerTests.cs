@@ -38,6 +38,35 @@ public sealed class PageOrganizerThumbnailSchedulerTests
     }
 
     [Fact]
+    public void UpdateCacheOrder_uses_the_current_display_order_for_background_priority()
+    {
+        var scheduler = new PageOrganizerThumbnailScheduler(Enumerable.Range(1, 200).ToArray());
+        var currentDisplayOrder = new[] { 200 }.Concat(Enumerable.Range(1, 199)).ToArray();
+
+        scheduler.UpdateCacheOrder(currentDisplayOrder);
+
+        Assert.True(scheduler.TryTakeNext(out var first));
+
+        Assert.Equal(200, first);
+    }
+
+    [Fact]
+    public void Prioritize_uses_the_current_display_order_for_visible_pages()
+    {
+        var scheduler = new PageOrganizerThumbnailScheduler(Enumerable.Range(1, 200).ToArray());
+        var currentDisplayOrder = new[] { 200 }.Concat(Enumerable.Range(1, 199)).ToArray();
+
+        scheduler.UpdateCacheOrder(currentDisplayOrder);
+        scheduler.Prioritize([1, 200]);
+
+        Assert.True(scheduler.TryTakeNext(out var first));
+        scheduler.Complete(first);
+        Assert.True(scheduler.TryTakeNext(out var second));
+
+        Assert.Equal(new[] { 200, 1 }, new[] { first, second });
+    }
+
+    [Fact]
     public void RegisterFailure_retries_once_then_leaves_the_failed_page_out_of_the_queue()
     {
         var scheduler = new PageOrganizerThumbnailScheduler([1, 2, 3]);
@@ -83,20 +112,42 @@ public sealed class PageOrganizerThumbnailSchedulerTests
     }
 
     [Fact]
-    public void GetCacheWindow_unions_bounded_ranges_for_distant_visible_pages_after_reorder()
+    public void GetCacheWindow_uses_a_single_current_display_order_range_after_reorder()
     {
         var scheduler = new PageOrganizerThumbnailScheduler(Enumerable.Range(1, 200).ToArray());
+        var currentDisplayOrder = Enumerable.Range(1, 199).ToList();
+        currentDisplayOrder.Insert(96, 200);
 
-        var window = scheduler.GetCacheWindow([200, 1]);
+        scheduler.UpdateCacheOrder(currentDisplayOrder);
 
-        Assert.Equal(50, window.Count);
-        Assert.All(window, page => Assert.True(
-            (page >= 1 && page <= 25) || (page >= 176 && page <= 200)));
-        Assert.Contains(1, window);
-        Assert.Contains(25, window);
-        Assert.Contains(176, window);
+        var window = scheduler.GetCacheWindow([200, 97, 98, 99, 100]);
+
+        Assert.Equal(53, window.Count);
+        Assert.Contains(73, window);
         Assert.Contains(200, window);
-        Assert.DoesNotContain(26, window);
-        Assert.DoesNotContain(175, window);
+        Assert.Contains(124, window);
+        Assert.DoesNotContain(72, window);
+        Assert.DoesNotContain(125, window);
+        Assert.DoesNotContain(176, window);
+    }
+
+    [Fact]
+    public void GetCacheWindow_hard_limits_a_contiguous_current_display_order_range()
+    {
+        var scheduler = new PageOrganizerThumbnailScheduler(Enumerable.Range(1, 200).ToArray());
+        var currentDisplayOrder = new[] { 200 }.Concat(Enumerable.Range(1, 199)).ToArray();
+        var visiblePageNumbers = currentDisplayOrder.Skip(65).Take(70).ToArray();
+
+        scheduler.UpdateCacheOrder(currentDisplayOrder);
+
+        var window = scheduler.GetCacheWindow(visiblePageNumbers);
+        var cacheIndexes = window
+            .Select(pageNumber => Array.IndexOf(currentDisplayOrder, pageNumber))
+            .Order()
+            .ToArray();
+
+        Assert.Equal(96, window.Count);
+        Assert.All(visiblePageNumbers, pageNumber => Assert.Contains(pageNumber, window));
+        Assert.Equal(Enumerable.Range(cacheIndexes[0], cacheIndexes.Length), cacheIndexes);
     }
 }

@@ -60,18 +60,24 @@ public partial class MainWindow : Window
     private bool _isDirty;
     private bool _editorDirty;
     private EditorDocumentState? _pageOrganizerState;
+    private readonly Dictionary<int, PageOrganizerItem> _pageOrganizerItemsByPageNumber = [];
+    private readonly Dictionary<int, int> _pageOrganizerRowIndexesByPageNumber = [];
     private CancellationTokenSource? _pageOrganizerThumbnailCancellation;
     private PageOrganizerThumbnailScheduler? _pageOrganizerThumbnailScheduler;
     private HashSet<int> _pageOrganizerThumbnailCacheWindow = [];
     private string? _pageOrganizerThumbnailSourcePath;
     private int? _pageOrganizerThumbnailWorkerGeneration;
     private int _pageOrganizerThumbnailGeneration;
+    private bool _pageOrganizerThumbnailViewportRefreshQueued;
+    private int _pageOrganizerThumbnailViewportRefreshRequestId;
     private int _documentLoadGeneration;
     private int? _documentMutationGeneration;
     private int? _pageOrganizerDragPageNumber;
     private Point? _pageOrganizerDragStartPosition;
     private int? _pageOrganizerPendingPlainSelectionPageNumber;
     private int? _pageOrganizerDropInsertionIndex;
+    private PageOrganizerItem? _pageOrganizerDropIndicatorItem;
+    private int _pageOrganizerColumnCount = 1;
     private int? _pendingPageOrganizerFollowPage;
     private int _pendingPageOrganizerFollowLoadGeneration;
     private int _pageOrganizerFollowRequestId;
@@ -93,6 +99,7 @@ public partial class MainWindow : Window
     private string? _overlayPdfExportRequestId;
 
     public ObservableCollection<PageOrganizerItem> PageOrganizerItems { get; } = [];
+    public ObservableCollection<PageOrganizerRow> PageOrganizerRows { get; } = [];
 
     public MainWindow(IEnumerable<string> initialFiles, bool openMergeWindow)
     {
@@ -460,13 +467,30 @@ public partial class MainWindow : Window
 
     private void FollowActivePageOrganizerItem(int pageNumber)
     {
-        if (_pageOrganizerState is null)
+        if (!_pageOrganizerRowIndexesByPageNumber.TryGetValue(pageNumber, out var rowIndex) ||
+            rowIndex < 0 ||
+            rowIndex >= PageOrganizerRows.Count)
         {
             return;
         }
 
-        var index = _pageOrganizerState.PageNumbers.ToList().IndexOf(pageNumber);
-        if (index < 0 || PageOrganizerList.ItemContainerGenerator.ContainerFromIndex(index) is not FrameworkElement container)
+        PageOrganizerList.ScrollIntoView(PageOrganizerRows[rowIndex]);
+        var loadGeneration = _documentLoadGeneration;
+        _ = Dispatcher.BeginInvoke(new Action(() =>
+        {
+            if (loadGeneration == _documentLoadGeneration)
+            {
+                RevealPageOrganizerRowIfRealized(pageNumber);
+            }
+        }), DispatcherPriority.Loaded);
+    }
+
+    private void RevealPageOrganizerRowIfRealized(int pageNumber)
+    {
+        if (!_pageOrganizerRowIndexesByPageNumber.TryGetValue(pageNumber, out var rowIndex) ||
+            rowIndex < 0 ||
+            rowIndex >= PageOrganizerRows.Count ||
+            PageOrganizerList.ItemContainerGenerator.ContainerFromIndex(rowIndex) is not FrameworkElement container)
         {
             return;
         }
@@ -667,7 +691,12 @@ public partial class MainWindow : Window
         int loadGeneration)
     {
         CancelPageOrganizerThumbnailRendering();
+        ClearPageOrganizerDropIndicator();
         PageOrganizerItems.Clear();
+        PageOrganizerRows.Clear();
+        _pageOrganizerItemsByPageNumber.Clear();
+        _pageOrganizerRowIndexesByPageNumber.Clear();
+        _pageOrganizerColumnCount = 1;
 
         try
         {
@@ -724,7 +753,7 @@ public partial class MainWindow : Window
 
     private void RefreshPageOrganizerItems(EditorDocumentState state)
     {
-        var existing = PageOrganizerItems.ToDictionary(item => item.PageNumber);
+        var existing = _pageOrganizerItemsByPageNumber;
         var orderChanged = PageOrganizerItems.Count != state.PageNumbers.Count ||
                            !PageOrganizerItems.Select(item => item.PageNumber).SequenceEqual(state.PageNumbers);
         var selected = state.SelectedPageNumbers.ToHashSet();
@@ -748,11 +777,19 @@ public partial class MainWindow : Window
         if (orderChanged)
         {
             PageOrganizerItems.Clear();
+            _pageOrganizerItemsByPageNumber.Clear();
             foreach (var item in next)
             {
                 PageOrganizerItems.Add(item);
+                _pageOrganizerItemsByPageNumber[item.PageNumber] = item;
             }
 
+            if (_pageOrganizerThumbnailScheduler is { } scheduler)
+            {
+                scheduler.UpdateCacheOrder(state.PageNumbers);
+            }
+
+            RebuildPageOrganizerRows(force: true);
             QueuePageOrganizerThumbnailViewportRefresh();
         }
 
@@ -760,18 +797,77 @@ public partial class MainWindow : Window
             ? "페이지 없음"
             : $"{state.PageNumbers.Count} 페이지 · {state.SelectedPageNumbers.Count} 선택";
 
-        try
+    }
+
+    private void OnPageOrganizerListSizeChanged(object sender, SizeChangedEventArgs e)
+    {
+        if (!e.WidthChanged)
         {
-            PageOrganizerList.SelectedItems.Clear();
-            foreach (var item in next.Where(item => item.IsSelected))
+            return;
+        }
+
+        RebuildPageOrganizerRows();
+        QueuePageOrganizerThumbnailViewportRefresh();
+    }
+
+    private void RebuildPageOrganizerRows(bool force = false)
+    {
+        var columnCount = GetPageOrganizerColumnCount();
+        var expectedRowCount = (int)Math.Ceiling(PageOrganizerItems.Count / (double)columnCount);
+        if (!force &&
+            columnCount == _pageOrganizerColumnCount &&
+            PageOrganizerRows.Count == expectedRowCount &&
+            _pageOrganizerRowIndexesByPageNumber.Count == PageOrganizerItems.Count)
+        {
+            return;
+        }
+
+        var nextRows = new List<PageOrganizerRow>(expectedRowCount);
+        var nextRowIndexes = new Dictionary<int, int>(PageOrganizerItems.Count);
+        for (var startIndex = 0; startIndex < PageOrganizerItems.Count; startIndex += columnCount)
+        {
+            var rowIndex = nextRows.Count;
+            var rowItemCount = Math.Min(columnCount, PageOrganizerItems.Count - startIndex);
+            var rowItems = new PageOrganizerItem[rowItemCount];
+            for (var offset = 0; offset < rowItemCount; offset++)
             {
-                PageOrganizerList.SelectedItems.Add(item);
+                var item = PageOrganizerItems[startIndex + offset];
+                rowItems[offset] = item;
+                nextRowIndexes[item.PageNumber] = rowIndex;
             }
+
+            nextRows.Add(new PageOrganizerRow(rowItems));
         }
-        catch (InvalidOperationException)
+
+        PageOrganizerRows.Clear();
+        foreach (var row in nextRows)
         {
-            // The organizer can refresh before its ListBox finishes item generation.
+            PageOrganizerRows.Add(row);
         }
+
+        _pageOrganizerRowIndexesByPageNumber.Clear();
+        foreach (var (pageNumber, rowIndex) in nextRowIndexes)
+        {
+            _pageOrganizerRowIndexesByPageNumber[pageNumber] = rowIndex;
+        }
+
+        _pageOrganizerColumnCount = columnCount;
+    }
+
+    private int GetPageOrganizerColumnCount()
+    {
+        var scrollViewer = FindVisualDescendant<ScrollViewer>(PageOrganizerList);
+        var availableWidth = scrollViewer?.ViewportWidth > 0
+            ? scrollViewer.ViewportWidth
+            : PageOrganizerList.ActualWidth;
+        if (availableWidth <= 0)
+        {
+            return Math.Max(1, _pageOrganizerColumnCount);
+        }
+
+        var thumbnailWidth = Math.Round(_pageOrganizerThumbnailHeight * PageOrganizerThumbnailWidthRatio);
+        var thumbnailCardWidth = thumbnailWidth + PageOrganizerThumbnailCardExtraWidth;
+        return Math.Max(1, (int)Math.Floor((availableWidth + 8) / (thumbnailCardWidth + 8)));
     }
 
     private void QueuePageOrganizerThumbnailViewportRefresh()
@@ -787,8 +883,21 @@ public partial class MainWindow : Window
             return;
         }
 
+        if (_pageOrganizerThumbnailViewportRefreshQueued)
+        {
+            return;
+        }
+
+        _pageOrganizerThumbnailViewportRefreshQueued = true;
+        var requestId = ++_pageOrganizerThumbnailViewportRefreshRequestId;
         _ = Dispatcher.BeginInvoke(new Action(() =>
         {
+            if (requestId != _pageOrganizerThumbnailViewportRefreshRequestId)
+            {
+                return;
+            }
+
+            _pageOrganizerThumbnailViewportRefreshQueued = false;
             if (IsDocumentMutationInProgress ||
                 !IsCurrentPageOrganizerThumbnailRequest(generation, cancellation) ||
                 !ReferenceEquals(_pageOrganizerThumbnailScheduler, scheduler))
@@ -838,16 +947,7 @@ public partial class MainWindow : Window
 
         scheduler.Prioritize(_pageOrganizerThumbnailCacheWindow);
         EnsurePageOrganizerThumbnailWorker(generation, cancellation);
-        _ = Dispatcher.BeginInvoke(
-            new Action(() =>
-            {
-                if (IsCurrentPageOrganizerThumbnailRequest(generation, cancellation) &&
-                    ReferenceEquals(_pageOrganizerThumbnailScheduler, scheduler))
-                {
-                    RefreshPageOrganizerThumbnailViewport();
-                }
-            }),
-            DispatcherPriority.Loaded);
+        QueuePageOrganizerThumbnailViewportRefresh();
     }
 
     private bool IsCurrentPageOrganizerThumbnailRequest(
@@ -898,8 +998,7 @@ public partial class MainWindow : Window
                     return;
                 }
 
-                var item = PageOrganizerItems.FirstOrDefault(candidate => candidate.PageNumber == pageNumber);
-                if (item is null)
+                if (!_pageOrganizerItemsByPageNumber.TryGetValue(pageNumber, out var item))
                 {
                     scheduler.Complete(pageNumber);
                     continue;
@@ -1020,6 +1119,8 @@ public partial class MainWindow : Window
         _pageOrganizerThumbnailSourcePath = null;
         _pageOrganizerThumbnailScheduler = null;
         _pageOrganizerThumbnailCacheWindow = [];
+        _pageOrganizerThumbnailViewportRefreshQueued = false;
+        _pageOrganizerThumbnailViewportRefreshRequestId++;
         cancellation?.Cancel();
     }
 
@@ -1040,14 +1141,20 @@ public partial class MainWindow : Window
         object sender,
         ScrollChangedEventArgs e)
     {
+        if (e.ViewportWidthChange != 0)
+        {
+            RebuildPageOrganizerRows();
+        }
+
         if (e.VerticalChange == 0 &&
             e.ExtentHeightChange == 0 &&
-            e.ViewportHeightChange == 0)
+            e.ViewportHeightChange == 0 &&
+            e.ViewportWidthChange == 0)
         {
             return;
         }
 
-        RefreshPageOrganizerThumbnailViewport();
+        QueuePageOrganizerThumbnailViewportRefresh();
     }
 
     private IReadOnlyList<int> GetVisiblePageOrganizerThumbnailNumbers()
@@ -1059,19 +1166,20 @@ public partial class MainWindow : Window
         }
 
         var visiblePageNumbers = new List<int>();
-        for (var index = 0; index < PageOrganizerItems.Count; index++)
+        foreach (var entry in GetRealizedPageOrganizerItemContainers())
         {
-            if (PageOrganizerList.ItemContainerGenerator.ContainerFromIndex(index) is not FrameworkElement container ||
-                container.ActualHeight <= 0)
+            try
             {
-                continue;
+                var itemTop = entry.Container.TranslatePoint(new Point(), scrollViewer).Y;
+                var itemBottom = itemTop + entry.Container.ActualHeight;
+                if (itemBottom > 0 && itemTop < scrollViewer.ViewportHeight)
+                {
+                    visiblePageNumbers.Add(entry.Item.PageNumber);
+                }
             }
-
-            var itemTop = container.TranslatePoint(new Point(), scrollViewer).Y;
-            var itemBottom = itemTop + container.ActualHeight;
-            if (itemBottom > 0 && itemTop < scrollViewer.ViewportHeight)
+            catch (InvalidOperationException)
             {
-                visiblePageNumbers.Add(PageOrganizerItems[index].PageNumber);
+                // A recycled row can be detached while the scroll request is being handled.
             }
         }
 
@@ -1098,9 +1206,10 @@ public partial class MainWindow : Window
             return;
         }
 
+        var previousCacheWindow = _pageOrganizerThumbnailCacheWindow;
         _pageOrganizerThumbnailCacheWindow = cacheWindow.ToHashSet();
 
-        foreach (var item in PageOrganizerItems)
+        foreach (var pageNumber in previousCacheWindow.Except(cacheWindow))
         {
             if (!IsCurrentPageOrganizerThumbnailRequest(generation, cancellation) ||
                 !ReferenceEquals(_pageOrganizerThumbnailScheduler, scheduler))
@@ -1108,16 +1217,44 @@ public partial class MainWindow : Window
                 return;
             }
 
-            if (!cacheWindow.Contains(item.PageNumber) &&
+            if (_pageOrganizerItemsByPageNumber.TryGetValue(pageNumber, out var item) &&
                 item.Thumbnail is not null)
             {
                 item.Thumbnail = null;
                 item.ThumbnailRenderState = PageOrganizerThumbnailRenderState.Evicted;
             }
-            else if (cacheWindow.Contains(item.PageNumber) &&
-                     item.Thumbnail is null &&
-                     item.ThumbnailRenderState is PageOrganizerThumbnailRenderState.Pending or
-                         PageOrganizerThumbnailRenderState.Evicted)
+        }
+
+        foreach (var pageNumber in cacheWindow.Except(previousCacheWindow))
+        {
+            if (!IsCurrentPageOrganizerThumbnailRequest(generation, cancellation) ||
+                !ReferenceEquals(_pageOrganizerThumbnailScheduler, scheduler))
+            {
+                return;
+            }
+
+            if (_pageOrganizerItemsByPageNumber.TryGetValue(pageNumber, out var item) &&
+                item.Thumbnail is null &&
+                (item.ThumbnailRenderState is PageOrganizerThumbnailRenderState.Pending or
+                    PageOrganizerThumbnailRenderState.Evicted))
+            {
+                item.ThumbnailRenderState = PageOrganizerThumbnailRenderState.Pending;
+                scheduler.Request(item.PageNumber, priority: false);
+            }
+        }
+
+        foreach (var pageNumber in visiblePageNumbers.Distinct())
+        {
+            if (!IsCurrentPageOrganizerThumbnailRequest(generation, cancellation) ||
+                !ReferenceEquals(_pageOrganizerThumbnailScheduler, scheduler))
+            {
+                return;
+            }
+
+            if (_pageOrganizerItemsByPageNumber.TryGetValue(pageNumber, out var item) &&
+                item.Thumbnail is null &&
+                (item.ThumbnailRenderState is PageOrganizerThumbnailRenderState.Pending or
+                    PageOrganizerThumbnailRenderState.Evicted))
             {
                 item.ThumbnailRenderState = PageOrganizerThumbnailRenderState.Pending;
                 scheduler.Request(item.PageNumber, priority: false);
@@ -3374,6 +3511,9 @@ public partial class MainWindow : Window
         {
             ApplyPageOrganizerThumbnailDimensions(item);
         }
+
+        RebuildPageOrganizerRows();
+        QueuePageOrganizerThumbnailViewportRefresh();
     }
 
     private void ApplyPageOrganizerThumbnailDimensions(PageOrganizerItem item)
@@ -3561,7 +3701,8 @@ public partial class MainWindow : Window
             cancellation is null ||
             !IsCurrentPageOrganizerThumbnailRequest(generation, cancellation) ||
             sender is not FrameworkElement { DataContext: PageOrganizerItem item } ||
-            !PageOrganizerItems.Contains(item) ||
+            !_pageOrganizerItemsByPageNumber.TryGetValue(item.PageNumber, out var currentItem) ||
+            !ReferenceEquals(currentItem, item) ||
             !scheduler.RequestManualRetry(item.PageNumber))
         {
             return;
@@ -3768,25 +3909,34 @@ public partial class MainWindow : Window
         }
 
         var normalizedInsertionIndex = Math.Clamp(insertionIndex, 0, PageOrganizerItems.Count);
-        _pageOrganizerDropInsertionIndex = normalizedInsertionIndex;
-        for (var index = 0; index < PageOrganizerItems.Count; index++)
+        if (_pageOrganizerDropInsertionIndex == normalizedInsertionIndex)
         {
-            var item = PageOrganizerItems[index];
-            item.IsDropBefore = normalizedInsertionIndex < PageOrganizerItems.Count &&
-                                index == normalizedInsertionIndex;
-            item.IsDropAfter = normalizedInsertionIndex == PageOrganizerItems.Count &&
-                               index == PageOrganizerItems.Count - 1;
+            return;
         }
+
+        ClearPageOrganizerDropIndicator();
+        _pageOrganizerDropInsertionIndex = normalizedInsertionIndex;
+        if (normalizedInsertionIndex == 0)
+        {
+            _pageOrganizerDropIndicatorItem = PageOrganizerItems[0];
+            _pageOrganizerDropIndicatorItem.IsDropBefore = true;
+            return;
+        }
+
+        _pageOrganizerDropIndicatorItem = PageOrganizerItems[normalizedInsertionIndex - 1];
+        _pageOrganizerDropIndicatorItem.IsDropAfter = true;
     }
 
     private void ClearPageOrganizerDropIndicator()
     {
         _pageOrganizerDropInsertionIndex = null;
-        foreach (var item in PageOrganizerItems)
+        if (_pageOrganizerDropIndicatorItem is { } item)
         {
             item.IsDropBefore = false;
             item.IsDropAfter = false;
         }
+
+        _pageOrganizerDropIndicatorItem = null;
     }
 
     private int GetPageOrganizerInsertionIndex(DragEventArgs e)
@@ -3796,16 +3946,7 @@ public partial class MainWindow : Window
             return _pageOrganizerState?.PageNumbers.Count ?? 0;
         }
 
-        var containers = new List<(int Index, FrameworkElement Container, Point Origin)>();
-        for (var index = 0; index < _pageOrganizerState.PageNumbers.Count; index++)
-        {
-            if (PageOrganizerList.ItemContainerGenerator.ContainerFromIndex(index) is FrameworkElement container &&
-                container.ActualWidth > 0 &&
-                container.ActualHeight > 0)
-            {
-                containers.Add((index, container, container.TranslatePoint(new Point(), PageOrganizerList)));
-            }
-        }
+        var containers = GetRealizedPageOrganizerItemContainers();
 
         if (containers.Count == 0)
         {
@@ -3856,6 +3997,53 @@ public partial class MainWindow : Window
         return row[^1].Index + 1;
     }
 
+    private IReadOnlyList<(int Index, PageOrganizerItem Item, FrameworkElement Container, Point Origin)>
+        GetRealizedPageOrganizerItemContainers()
+    {
+        var containers = new List<(int Index, PageOrganizerItem Item, FrameworkElement Container, Point Origin)>();
+        foreach (var rowContainer in FindVisualDescendants<ListBoxItem>(PageOrganizerList))
+        {
+            if (rowContainer.DataContext is not PageOrganizerRow row)
+            {
+                continue;
+            }
+
+            var itemHost = FindVisualDescendants<ItemsControl>(rowContainer)
+                .FirstOrDefault(control => ReferenceEquals(control.DataContext, row));
+            if (itemHost is null)
+            {
+                continue;
+            }
+
+            foreach (var item in row.Items)
+            {
+                if (!_pageOrganizerItemsByPageNumber.TryGetValue(item.PageNumber, out var currentItem) ||
+                    !ReferenceEquals(currentItem, item) ||
+                    itemHost.ItemContainerGenerator.ContainerFromItem(item) is not FrameworkElement container ||
+                    container.ActualWidth <= 0 ||
+                    container.ActualHeight <= 0)
+                {
+                    continue;
+                }
+
+                try
+                {
+                    containers.Add((
+                        item.Position - 1,
+                        item,
+                        container,
+                        container.TranslatePoint(new Point(), PageOrganizerList)));
+                }
+                catch (InvalidOperationException)
+                {
+                    // A row can be recycled while a drag or viewport refresh is in progress.
+                }
+            }
+        }
+
+        return containers.OrderBy(entry => entry.Index).ToArray();
+    }
+
     private static PageOrganizerItem? FindPageOrganizerItem(DependencyObject source)
     {
         for (DependencyObject? current = source; current is not null; current = GetVisualParent(current))
@@ -3902,6 +4090,27 @@ public partial class MainWindow : Window
         }
 
         return null;
+    }
+
+    private static IEnumerable<T> FindVisualDescendants<T>(DependencyObject root)
+        where T : DependencyObject
+    {
+        var pending = new Stack<DependencyObject>();
+        pending.Push(root);
+        while (pending.Count > 0)
+        {
+            var current = pending.Pop();
+            for (var index = 0; index < VisualTreeHelper.GetChildrenCount(current); index++)
+            {
+                var child = VisualTreeHelper.GetChild(current, index);
+                if (child is T typed)
+                {
+                    yield return typed;
+                }
+
+                pending.Push(child);
+            }
+        }
     }
 
     private static DependencyObject? GetVisualParent(DependencyObject current)
@@ -4172,6 +4381,16 @@ public partial class MainWindow : Window
 
         return paths.Length > 0;
     }
+}
+
+public sealed class PageOrganizerRow
+{
+    public PageOrganizerRow(IReadOnlyList<PageOrganizerItem> items)
+    {
+        Items = items;
+    }
+
+    public IReadOnlyList<PageOrganizerItem> Items { get; }
 }
 
 public sealed class PageOrganizerItem : INotifyPropertyChanged

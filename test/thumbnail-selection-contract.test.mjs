@@ -35,6 +35,10 @@ const xaml = await readFile(
   new URL("../src/PdfMergeTool/MainWindow.xaml", import.meta.url),
   "utf8"
 );
+const thumbnailScheduler = await readFile(
+  new URL("../src/PdfMergeTool/Services/PageOrganizerThumbnailScheduler.cs", import.meta.url),
+  "utf8"
+);
 
 const pageOrganizerThumbnailCapPattern =
   /pageNumbers\s*\.\s*Take\s*\(\s*96\s*\)/;
@@ -93,6 +97,14 @@ function getThumbnailDataTemplate(markup) {
 
 function getOpeningTag(block) {
   return block.slice(0, block.indexOf(">") + 1);
+}
+
+function getMethodBlock(source, methodName, nextMethodName) {
+  const start = source.indexOf(methodName);
+  const end = source.indexOf(nextMethodName, start);
+  assert.notEqual(start, -1, `Missing ${methodName}.`);
+  assert.notEqual(end, -1, `Missing method after ${methodName}.`);
+  return source.slice(start, end);
 }
 
 function hasAttribute(block, name, value) {
@@ -232,6 +244,12 @@ assert.match(mainWindow, /Key\.Home/);
 assert.match(mainWindow, /Key\.End/);
 assert.match(xaml, /x:Name="PageOrganizerList"[\s\S]*?Focusable="True"[\s\S]*?PreviewKeyDown="OnPageOrganizerPreviewKeyDown"/);
 assert.match(mainWindow, /PageOrganizerThumbnailScheduler/);
+assert.match(mainWindow, /ObservableCollection<PageOrganizerRow> PageOrganizerRows/);
+assert.match(mainWindow, /Dictionary<int, PageOrganizerItem> _pageOrganizerItemsByPageNumber/);
+assert.match(mainWindow, /void RebuildPageOrganizerRows\(/);
+assert.match(mainWindow, /void OnPageOrganizerListSizeChanged\(/);
+assert.match(mainWindow, /scheduler\.UpdateCacheOrder\(state\.PageNumbers\)/);
+assert.match(mainWindow, /_pageOrganizerThumbnailViewportRefreshQueued/);
 assert.match(mainWindow, /OnPageOrganizerThumbnailScrollChanged/);
 assert.match(mainWindow, /RefreshPageOrganizerThumbnailViewport/);
 assert.match(mainWindow, /OnPageOrganizerThumbnailRetryClick/);
@@ -240,12 +258,10 @@ for (const restoredThumbnailCap of ["pageNumbers.Take(96)", "pageNumbers . Take 
   assert.match(restoredThumbnailCap, pageOrganizerThumbnailCapPattern);
 }
 assert.doesNotMatch(mainWindow, pageOrganizerThumbnailCapPattern);
+assert.match(thumbnailScheduler, /const int MaximumCacheWindowSize = 96/);
+assert.match(thumbnailScheduler, /void UpdateCacheOrder\(/);
 assert.match(mainWindow, /_pageOrganizerThumbnailCacheWindow = cacheWindow\.ToHashSet\(\)/);
 assert.match(mainWindow, /item\.ThumbnailRenderState = PageOrganizerThumbnailRenderState\.Loading/);
-assert.match(
-  mainWindow,
-  /!cacheWindow\.Contains\(item\.PageNumber\)[\s\S]*?item\.ThumbnailRenderState = PageOrganizerThumbnailRenderState\.Evicted/
-);
 assert.match(
   mainWindow,
   /item\.ThumbnailRenderState is PageOrganizerThumbnailRenderState\.Pending or\s+PageOrganizerThumbnailRenderState\.Evicted/s
@@ -264,6 +280,56 @@ assert.match(
   mainWindow,
   /private void QueuePageOrganizerThumbnailViewportRefresh\(\)[\s\S]*?IsCurrentPageOrganizerThumbnailRequest\([\s\S]*?DispatcherPriority\.Loaded[\s\S]*?IsCurrentPageOrganizerThumbnailRequest\(/s
 );
+
+const organizerList = getElementBlocks(xaml, "ListBox").find(block =>
+  hasAttribute(block, "x:Name", "PageOrganizerList")
+);
+assert.ok(organizerList, "Page Organizer ListBox is missing.");
+assert.match(organizerList, /ItemsSource="\{Binding PageOrganizerRows,/);
+assert.match(organizerList, /ScrollViewer\.CanContentScroll="True"/);
+assert.match(organizerList, /<VirtualizingStackPanel[\s\S]*?VirtualizationMode="Recycling"/);
+
+const queueViewportRefresh = getMethodBlock(
+  mainWindow,
+  "private void QueuePageOrganizerThumbnailViewportRefresh()",
+  "private void RefreshDirtyState()"
+);
+assert.match(queueViewportRefresh, /if \(_pageOrganizerThumbnailViewportRefreshQueued\)/);
+assert.match(queueViewportRefresh, /_pageOrganizerThumbnailViewportRefreshQueued = true/);
+
+const thumbnailScrollHandler = getMethodBlock(
+  mainWindow,
+  "private void OnPageOrganizerThumbnailScrollChanged(",
+  "private IReadOnlyList<int> GetVisiblePageOrganizerThumbnailNumbers()"
+);
+assert.match(thumbnailScrollHandler, /QueuePageOrganizerThumbnailViewportRefresh\(\)/);
+assert.doesNotMatch(thumbnailScrollHandler, /RefreshPageOrganizerThumbnailViewport\(\);/);
+
+const visiblePageDiscovery = getMethodBlock(
+  mainWindow,
+  "private IReadOnlyList<int> GetVisiblePageOrganizerThumbnailNumbers()",
+  "private void RefreshPageOrganizerThumbnailViewport()"
+);
+assert.match(visiblePageDiscovery, /GetRealizedPageOrganizerItemContainers\(\)/);
+assert.doesNotMatch(visiblePageDiscovery, /PageOrganizerItems\.Count/);
+assert.doesNotMatch(visiblePageDiscovery, /ItemContainerGenerator\.ContainerFromIndex\(index\)/);
+
+const viewportRefresh = getMethodBlock(
+  mainWindow,
+  "private void RefreshPageOrganizerThumbnailViewport()",
+  "private void UpdateWindowTitle()"
+);
+assert.match(viewportRefresh, /previousCacheWindow\.Except\(cacheWindow\)/);
+assert.match(viewportRefresh, /cacheWindow\.Except\(previousCacheWindow\)/);
+assert.doesNotMatch(viewportRefresh, /foreach \(var item in PageOrganizerItems\)/);
+
+const cacheWindowMethod = getMethodBlock(
+  thumbnailScheduler,
+  "public IReadOnlySet<int> GetCacheWindow(IReadOnlyCollection<int> visiblePageNumbers)",
+  "private bool TryStart(int pageNumber, out int nextPageNumber)"
+);
+assert.match(cacheWindowMethod, /maximumWindowSize/);
+assert.doesNotMatch(cacheWindowMethod, /foreach \(var visibleIndex/);
 
 const emittedMessages = [];
 const eventHandlers = new Map();

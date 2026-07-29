@@ -884,7 +884,10 @@
                                  AllowDrop="True"
                                  ScrollViewer.HorizontalScrollBarVisibility="Disabled"
                                  ScrollViewer.VerticalScrollBarVisibility="Auto"
-                                 ScrollViewer.CanContentScroll="False"
+                                 ScrollViewer.CanContentScroll="True"
+                                 VirtualizingPanel.IsVirtualizing="True"
+                                 VirtualizingPanel.VirtualizationMode="Recycling"
+                                 SizeChanged="OnPageOrganizerListSizeChanged"
                                  PreviewKeyDown="OnPageOrganizerPreviewKeyDown"
                                  PreviewMouseLeftButtonDown="OnPageOrganizerItemPreviewMouseLeftButtonDown"
                                  PreviewMouseLeftButtonUp="OnPageOrganizerItemPreviewMouseLeftButtonUp"
@@ -892,22 +895,49 @@
                                  DragOver="OnPageOrganizerDragOver"
                                  DragLeave="OnPageOrganizerDragLeave"
                                  Drop="OnPageOrganizerDrop"
-                                 ItemsSource="{Binding PageOrganizerItems, RelativeSource={RelativeSource AncestorType={x:Type Window}}}">
+                                 ItemsSource="{Binding PageOrganizerRows, RelativeSource={RelativeSource AncestorType={x:Type Window}}}">
                             <ListBox.ItemsPanel>
                                 <ItemsPanelTemplate>
-                                    <WrapPanel Orientation="Horizontal" />
+                                    <VirtualizingStackPanel Orientation="Vertical"
+                                                            VirtualizingPanel.IsVirtualizing="True"
+                                                            VirtualizingPanel.VirtualizationMode="Recycling"
+                                                            VirtualizingPanel.ScrollUnit="Pixel" />
                                 </ItemsPanelTemplate>
                             </ListBox.ItemsPanel>
                             <ListBox.ItemContainerStyle>
                                 <Style TargetType="{x:Type ListBoxItem}">
-                                    <Setter Property="Width" Value="{Binding ThumbnailCardWidth}" />
                                     <Setter Property="HorizontalContentAlignment" Value="Stretch" />
                                     <Setter Property="VerticalContentAlignment" Value="Top" />
                                     <Setter Property="Padding" Value="0" />
-                                    <Setter Property="Margin" Value="0,0,8,8" />
+                                    <Setter Property="Margin" Value="0" />
+                                    <Setter Property="Focusable" Value="False" />
+                                    <Setter Property="IsTabStop" Value="False" />
                                     <Setter Property="Template">
                                         <Setter.Value>
                                             <ControlTemplate TargetType="{x:Type ListBoxItem}">
+                                                <ContentPresenter />
+                                            </ControlTemplate>
+                                        </Setter.Value>
+                                    </Setter>
+                                </Style>
+                            </ListBox.ItemContainerStyle>
+                            <ListBox.ItemTemplate>
+                                <DataTemplate>
+                                    <ItemsControl ItemsSource="{Binding Items}">
+                                        <ItemsControl.ItemsPanel>
+                                            <ItemsPanelTemplate>
+                                                <WrapPanel Orientation="Horizontal" />
+                                            </ItemsPanelTemplate>
+                                        </ItemsControl.ItemsPanel>
+                                        <ItemsControl.ItemContainerStyle>
+                                            <Style TargetType="{x:Type ContentPresenter}">
+                                                <Setter Property="Width" Value="{Binding ThumbnailCardWidth}" />
+                                                <Setter Property="Margin" Value="0,0,8,8" />
+                                                <Setter Property="VerticalAlignment" Value="Top" />
+                                            </Style>
+                                        </ItemsControl.ItemContainerStyle>
+                                        <ItemsControl.ItemTemplate>
+                                            <DataTemplate>
                                                 <Grid>
                                                     <Border x:Name="OrganizerItemBorder"
                                                             Background="#FFFFFF"
@@ -915,7 +945,99 @@
                                                             BorderThickness="1"
                                                             CornerRadius="5"
                                                             Padding="5">
-                                                        <ContentPresenter />
+                                                        <Grid>
+                                                            <Grid.RowDefinitions>
+                                                                <RowDefinition Height="24" />
+                                                                <RowDefinition Height="Auto" />
+                                                                <RowDefinition Height="18" />
+                                                            </Grid.RowDefinitions>
+                                                            <Grid Grid.Row="0"
+                                                                  Margin="0,0,0,4">
+                                                                <CheckBox HorizontalAlignment="Left"
+                                                                          VerticalAlignment="Center"
+                                                                          IsChecked="{Binding IsSelected, Mode=OneWay}"
+                                                                          Focusable="False"
+                                                                          PreviewMouseLeftButtonDown="OnPageOrganizerCheckBoxPreviewMouseLeftButtonDown" />
+                                                                <TextBlock Text="{Binding PositionLabel}"
+                                                                           HorizontalAlignment="Right"
+                                                                           VerticalAlignment="Center"
+                                                                           FontSize="11"
+                                                                           FontWeight="Bold"
+                                                                           Foreground="{StaticResource InkBrush}" />
+                                                            </Grid>
+                                                            <Border Grid.Row="1"
+                                                                    Width="{Binding ThumbnailWidth}"
+                                                                    Height="{Binding ThumbnailHeight}"
+                                                                    HorizontalAlignment="Center"
+                                                                    Background="#FFFFFF"
+                                                                    BorderBrush="#E5E7EB"
+                                                                    BorderThickness="1"
+                                                                    CornerRadius="3"
+                                                                    Padding="3"
+                                                                    ClipToBounds="True">
+                                                                <Grid>
+                                                                    <TextBlock Text="PDF"
+                                                                               HorizontalAlignment="Center"
+                                                                               VerticalAlignment="Center"
+                                                                               FontWeight="SemiBold"
+                                                                               Foreground="#94A3B8" />
+                                                                    <Image Source="{Binding Thumbnail}"
+                                                                           Stretch="Uniform"
+                                                                           RenderTransformOrigin="0.5,0.5">
+                                                                        <Image.RenderTransform>
+                                                                            <RotateTransform Angle="{Binding Rotation}" />
+                                                                        </Image.RenderTransform>
+                                                                    </Image>
+                                                                    <ProgressBar Width="34"
+                                                                                 Height="3"
+                                                                                 IsIndeterminate="True"
+                                                                                 VerticalAlignment="Center"
+                                                                                 HorizontalAlignment="Center"
+                                                                                 IsHitTestVisible="False">
+                                                                        <ProgressBar.Style>
+                                                                            <Style TargetType="{x:Type ProgressBar}">
+                                                                                <Setter Property="Visibility" Value="Collapsed" />
+                                                                                <Style.Triggers>
+                                                                                    <DataTrigger Binding="{Binding IsThumbnailLoading}" Value="True">
+                                                                                        <Setter Property="Visibility" Value="Visible" />
+                                                                                    </DataTrigger>
+                                                                                </Style.Triggers>
+                                                                            </Style>
+                                                                        </ProgressBar.Style>
+                                                                    </ProgressBar>
+                                                                    <Button Width="28"
+                                                                            Height="28"
+                                                                            Padding="0"
+                                                                            HorizontalAlignment="Center"
+                                                                            VerticalAlignment="Center"
+                                                                            ToolTip="썸네일 다시 불러오기"
+                                                                            Background="#FFF7ED"
+                                                                            BorderBrush="#F59E0B"
+                                                                            Click="OnPageOrganizerThumbnailRetryClick">
+                                                                        <Button.Style>
+                                                                            <Style TargetType="{x:Type Button}">
+                                                                                <Setter Property="Visibility" Value="Collapsed" />
+                                                                                <Style.Triggers>
+                                                                                    <DataTrigger Binding="{Binding IsThumbnailFailed}" Value="True">
+                                                                                        <Setter Property="Visibility" Value="Visible" />
+                                                                                    </DataTrigger>
+                                                                                </Style.Triggers>
+                                                                            </Style>
+                                                                        </Button.Style>
+                                                                        <iconPacks:PackIconMaterial Kind="Refresh"
+                                                                                                    Width="16"
+                                                                                                    Height="16"
+                                                                                                    Foreground="#B45309" />
+                                                                    </Button>
+                                                                </Grid>
+                                                            </Border>
+                                                            <TextBlock Grid.Row="2"
+                                                                       Text="{Binding RotationLabel}"
+                                                                       HorizontalAlignment="Center"
+                                                                       VerticalAlignment="Center"
+                                                                       FontSize="10"
+                                                                       Foreground="{StaticResource MutedBrush}" />
+                                                        </Grid>
                                                     </Border>
                                                     <Border x:Name="DropBeforeIndicator"
                                                             Width="4"
@@ -938,118 +1060,21 @@
                                                             Panel.ZIndex="1"
                                                             Visibility="Collapsed" />
                                                 </Grid>
-                                                <ControlTemplate.Triggers>
-                                                    <Trigger Property="IsSelected" Value="True">
+                                                <DataTemplate.Triggers>
+                                                    <DataTrigger Binding="{Binding IsSelected}" Value="True">
                                                         <Setter TargetName="OrganizerItemBorder" Property="Background" Value="#EAF1FF" />
                                                         <Setter TargetName="OrganizerItemBorder" Property="BorderBrush" Value="#2563EB" />
-                                                    </Trigger>
+                                                    </DataTrigger>
                                                     <DataTrigger Binding="{Binding IsDropBefore}" Value="True">
                                                         <Setter TargetName="DropBeforeIndicator" Property="Visibility" Value="Visible" />
                                                     </DataTrigger>
                                                     <DataTrigger Binding="{Binding IsDropAfter}" Value="True">
                                                         <Setter TargetName="DropAfterIndicator" Property="Visibility" Value="Visible" />
                                                     </DataTrigger>
-                                                </ControlTemplate.Triggers>
-                                            </ControlTemplate>
-                                        </Setter.Value>
-                                    </Setter>
-                                </Style>
-                            </ListBox.ItemContainerStyle>
-                            <ListBox.ItemTemplate>
-                                <DataTemplate>
-                                    <Grid>
-                                        <Grid.RowDefinitions>
-                                            <RowDefinition Height="24" />
-                                            <RowDefinition Height="Auto" />
-                                            <RowDefinition Height="18" />
-                                        </Grid.RowDefinitions>
-                                        <Grid Grid.Row="0"
-                                              Margin="0,0,0,4">
-                                            <CheckBox HorizontalAlignment="Left"
-                                                      VerticalAlignment="Center"
-                                                      IsChecked="{Binding IsSelected, Mode=OneWay}"
-                                                      Focusable="False"
-                                                      PreviewMouseLeftButtonDown="OnPageOrganizerCheckBoxPreviewMouseLeftButtonDown" />
-                                            <TextBlock Text="{Binding PositionLabel}"
-                                                       HorizontalAlignment="Right"
-                                                       VerticalAlignment="Center"
-                                                       FontSize="11"
-                                                       FontWeight="Bold"
-                                                       Foreground="{StaticResource InkBrush}" />
-                                        </Grid>
-                                        <Border Grid.Row="1"
-                                                Width="{Binding ThumbnailWidth}"
-                                                Height="{Binding ThumbnailHeight}"
-                                                HorizontalAlignment="Center"
-                                                Background="#FFFFFF"
-                                                BorderBrush="#E5E7EB"
-                                                BorderThickness="1"
-                                                CornerRadius="3"
-                                                Padding="3"
-                                                ClipToBounds="True">
-                                            <Grid>
-                                                <TextBlock Text="PDF"
-                                                           HorizontalAlignment="Center"
-                                                           VerticalAlignment="Center"
-                                                           FontWeight="SemiBold"
-                                                           Foreground="#94A3B8" />
-                                                <Image Source="{Binding Thumbnail}"
-                                                       Stretch="Uniform"
-                                                       RenderTransformOrigin="0.5,0.5">
-                                                    <Image.RenderTransform>
-                                                        <RotateTransform Angle="{Binding Rotation}" />
-                                                    </Image.RenderTransform>
-                                                </Image>
-                                                <ProgressBar Width="34"
-                                                             Height="3"
-                                                             IsIndeterminate="True"
-                                                             VerticalAlignment="Center"
-                                                             HorizontalAlignment="Center"
-                                                             IsHitTestVisible="False">
-                                                    <ProgressBar.Style>
-                                                        <Style TargetType="{x:Type ProgressBar}">
-                                                            <Setter Property="Visibility" Value="Collapsed" />
-                                                            <Style.Triggers>
-                                                                <DataTrigger Binding="{Binding IsThumbnailLoading}" Value="True">
-                                                                    <Setter Property="Visibility" Value="Visible" />
-                                                                </DataTrigger>
-                                                            </Style.Triggers>
-                                                        </Style>
-                                                    </ProgressBar.Style>
-                                                </ProgressBar>
-                                                <Button Width="28"
-                                                        Height="28"
-                                                        Padding="0"
-                                                        HorizontalAlignment="Center"
-                                                        VerticalAlignment="Center"
-                                                        ToolTip="썸네일 다시 불러오기"
-                                                        Background="#FFF7ED"
-                                                        BorderBrush="#F59E0B"
-                                                        Click="OnPageOrganizerThumbnailRetryClick">
-                                                    <Button.Style>
-                                                        <Style TargetType="{x:Type Button}">
-                                                            <Setter Property="Visibility" Value="Collapsed" />
-                                                            <Style.Triggers>
-                                                                <DataTrigger Binding="{Binding IsThumbnailFailed}" Value="True">
-                                                                    <Setter Property="Visibility" Value="Visible" />
-                                                                </DataTrigger>
-                                                            </Style.Triggers>
-                                                        </Style>
-                                                    </Button.Style>
-                                                    <iconPacks:PackIconMaterial Kind="Refresh"
-                                                                                Width="16"
-                                                                                Height="16"
-                                                                                Foreground="#B45309" />
-                                                </Button>
-                                            </Grid>
-                                        </Border>
-                                        <TextBlock Grid.Row="2"
-                                                   Text="{Binding RotationLabel}"
-                                                   HorizontalAlignment="Center"
-                                                   VerticalAlignment="Center"
-                                                   FontSize="10"
-                                                   Foreground="{StaticResource MutedBrush}" />
-                                    </Grid>
+                                                </DataTemplate.Triggers>
+                                            </DataTemplate>
+                                        </ItemsControl.ItemTemplate>
+                                    </ItemsControl>
                                 </DataTemplate>
                             </ListBox.ItemTemplate>
                         </ListBox>

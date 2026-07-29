@@ -6,13 +6,14 @@ $mainWindowPath = Join-Path $root 'src\PdfMergeTool\MainWindow.xaml.cs'
 $mainWindowXamlPath = Join-Path $root 'src\PdfMergeTool\MainWindow.xaml'
 $statePath = Join-Path $root 'src\PdfMergeTool\Services\EditorDocumentState.cs'
 $operationCoordinatorPath = Join-Path $root 'src\PdfMergeTool\Services\DocumentOperationCoordinator.cs'
+$thumbnailSchedulerPath = Join-Path $root 'src\PdfMergeTool\Services\PageOrganizerThumbnailScheduler.cs'
 $adapterPath = Join-Path $root 'src\PdfMergeTool\Assets\PdfViewerOfficial\web\app-adapter.js'
 $editorAdapterPath = Join-Path $root 'src\PdfMergeTool\Assets\PdfViewerOfficial\web\editor-adapter.js'
 $viewerScriptPath = Join-Path $root 'src\PdfMergeTool\Assets\PdfViewerOfficial\web\viewer.mjs'
 $overlayGeometryVerificationPath = Join-Path $root 'scripts\verify-overlay-geometry.ps1'
 $overlayExportVerificationPath = Join-Path $root 'scripts\verify-pdf-lib-overlay-export.ps1'
 
-foreach ($path in @($mainWindowPath, $mainWindowXamlPath, $statePath, $operationCoordinatorPath, $adapterPath, $editorAdapterPath, $viewerScriptPath, $overlayGeometryVerificationPath, $overlayExportVerificationPath)) {
+foreach ($path in @($mainWindowPath, $mainWindowXamlPath, $statePath, $operationCoordinatorPath, $thumbnailSchedulerPath, $adapterPath, $editorAdapterPath, $viewerScriptPath, $overlayGeometryVerificationPath, $overlayExportVerificationPath)) {
     if (-not (Test-Path $path)) {
         throw "Required Page Organizer contract file is missing: $path"
     }
@@ -25,6 +26,7 @@ $mainWindow = Get-Content -Raw $mainWindowPath
 $xaml = Get-Content -Raw $mainWindowXamlPath
 $state = Get-Content -Raw $statePath
 $operationCoordinator = Get-Content -Raw $operationCoordinatorPath
+$thumbnailScheduler = Get-Content -Raw $thumbnailSchedulerPath
 $adapter = Get-Content -Raw $adapterPath
 $editorAdapter = Get-Content -Raw $editorAdapterPath
 $viewer = Get-Content -Raw $viewerScriptPath
@@ -171,6 +173,59 @@ if ($mainWindow -match 'pageNumbers\s*\.\s*Take\s*\(\s*96\s*\)' -or
     throw 'Page Organizer thumbnail scheduling, viewport refresh, and retry state must remain app-owned.'
 }
 
+if ($mainWindow -notmatch 'ObservableCollection<PageOrganizerRow> PageOrganizerRows' -or
+    $mainWindow -notmatch 'Dictionary<int, PageOrganizerItem> _pageOrganizerItemsByPageNumber' -or
+    $mainWindow -notmatch 'void RebuildPageOrganizerRows\(' -or
+    $mainWindow -notmatch 'void OnPageOrganizerListSizeChanged\(' -or
+    $mainWindow -notmatch 'scheduler\.UpdateCacheOrder\(state\.PageNumbers\)' -or
+    $mainWindow -notmatch '_pageOrganizerThumbnailViewportRefreshQueued' -or
+    $thumbnailScheduler -notmatch 'const int MaximumCacheWindowSize = 96' -or
+    $thumbnailScheduler -notmatch 'void UpdateCacheOrder\(') {
+    throw 'Page Organizer rows must virtualize outer rows and keep cache order bounded by the current display order.'
+}
+
+$visiblePageDiscovery = [regex]::Match(
+    $mainWindow,
+    'private IReadOnlyList<int> GetVisiblePageOrganizerThumbnailNumbers\(\)[\s\S]*?(?=    private void RefreshPageOrganizerThumbnailViewport\(\))'
+)
+if (-not $visiblePageDiscovery.Success -or
+    $visiblePageDiscovery.Value -notmatch 'GetRealizedPageOrganizerItemContainers\(' -or
+    $visiblePageDiscovery.Value -match 'PageOrganizerItems\.Count' -or
+    $visiblePageDiscovery.Value -match 'ItemContainerGenerator\.ContainerFromIndex\(index\)') {
+    throw 'Viewport discovery must inspect only realized organizer rows and cards.'
+}
+
+$viewportRefresh = [regex]::Match(
+    $mainWindow,
+    'private void RefreshPageOrganizerThumbnailViewport\(\)[\s\S]*?(?=    private void UpdateWindowTitle\(\))'
+)
+if (-not $viewportRefresh.Success -or
+    $viewportRefresh.Value -notmatch 'previousCacheWindow\.Except\(cacheWindow\)' -or
+    $viewportRefresh.Value -notmatch 'cacheWindow\.Except\(previousCacheWindow\)' -or
+    $viewportRefresh.Value -match 'foreach \(var item in PageOrganizerItems\)') {
+    throw 'Viewport refresh must apply cache deltas instead of scanning every organizer item.'
+}
+
+$thumbnailScrollHandler = [regex]::Match(
+    $mainWindow,
+    'private void OnPageOrganizerThumbnailScrollChanged\([\s\S]*?(?=    private IReadOnlyList<int> GetVisiblePageOrganizerThumbnailNumbers\(\))'
+)
+if (-not $thumbnailScrollHandler.Success -or
+    $thumbnailScrollHandler.Value -notmatch 'QueuePageOrganizerThumbnailViewportRefresh\(' -or
+    $thumbnailScrollHandler.Value -match 'RefreshPageOrganizerThumbnailViewport\(\);') {
+    throw 'Organizer scroll events must coalesce viewport refresh work.'
+}
+
+$cacheWindowMethod = [regex]::Match(
+    $thumbnailScheduler,
+    'public IReadOnlySet<int> GetCacheWindow\(IReadOnlyCollection<int> visiblePageNumbers\)[\s\S]*?(?=    private bool TryStart\()'
+)
+if (-not $cacheWindowMethod.Success -or
+    $cacheWindowMethod.Value -notmatch 'maximumWindowSize' -or
+    $cacheWindowMethod.Value -match 'foreach \(var visibleIndex') {
+    throw 'Thumbnail cache windows must stay contiguous and hard-bounded in current display order.'
+}
+
 if ($xaml -notmatch 'x:Name="PageOrganizerList"' -or
     $xaml -notmatch 'x:Name="PageOrganizerList"[\s\S]*?Focusable="True"' -or
     $xaml -notmatch 'PreviewMouseLeftButtonDown="OnPageOrganizerItemPreviewMouseLeftButtonDown"' -or
@@ -179,6 +234,9 @@ if ($xaml -notmatch 'x:Name="PageOrganizerList"' -or
     $xaml -notmatch 'PreviewKeyDown="OnViewerPreviewKeyDown"' -or
     $xaml -notmatch 'PreviewKeyDown="OnPageOrganizerPreviewKeyDown"' -or
     $xaml -notmatch 'x:Name="PageOrganizerZoomSlider"' -or
+    $xaml -notmatch 'ItemsSource="\{Binding PageOrganizerRows,' -or
+    $xaml -notmatch 'ScrollViewer\.CanContentScroll="True"' -or
+    $xaml -notmatch '<VirtualizingStackPanel[\s\S]*?VirtualizationMode="Recycling"' -or
     $xaml -notmatch '<WrapPanel Orientation="Horizontal"' -or
     $xaml -notmatch 'ScrollViewer\.HorizontalScrollBarVisibility="Disabled"' -or
     $xaml -notmatch 'DragLeave="OnPageOrganizerDragLeave"' -or
