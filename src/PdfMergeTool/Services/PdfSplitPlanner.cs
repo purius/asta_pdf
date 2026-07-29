@@ -7,24 +7,35 @@ public static class PdfSplitPlanner
     public static PdfSplitPlan CreateIntervalPlan(string inputPath, int pageCount, int interval)
     {
         ValidatePageCount(pageCount);
+        return CreateIntervalPlan(inputPath, CreatePageTransforms(1, pageCount), interval);
+    }
+
+    public static PdfSplitPlan CreateIntervalPlan(
+        string inputPath,
+        IReadOnlyList<PdfPageTransform> pages,
+        int interval,
+        string? outputPathReference = null)
+    {
+        ValidatePages(pages);
         if (interval < 1)
         {
             throw new ArgumentOutOfRangeException(nameof(interval), "분할 페이지 수는 1 이상이어야 합니다.");
         }
 
-        var outputFolder = AllocateOutputFolder(inputPath);
-        var baseName = GetBaseName(inputPath);
+        var outputReference = outputPathReference ?? inputPath;
+        var outputFolder = AllocateOutputFolder(outputReference);
+        var baseName = GetBaseName(outputReference);
         var outputs = new List<PdfSplitOutput>();
 
-        for (var startPage = 1; startPage <= pageCount; startPage += interval)
+        for (var startIndex = 0; startIndex < pages.Count; startIndex += interval)
         {
-            var endPage = Math.Min(startPage + interval - 1, pageCount);
+            var outputPages = pages.Skip(startIndex).Take(interval).ToList();
             var outputIndex = outputs.Count + 1;
             outputs.Add(new PdfSplitOutput(
                 PdfSplitKind.Interval,
                 Path.Combine(outputFolder, $"{baseName}_{outputIndex:000}.pdf"),
-                FormatPageRange(startPage, endPage),
-                CreatePageTransforms(startPage, endPage)));
+                FormatPageRange(outputPages),
+                outputPages));
         }
 
         return new PdfSplitPlan(inputPath, outputFolder, outputs);
@@ -33,13 +44,23 @@ public static class PdfSplitPlanner
     public static PdfSplitPlan CreateParityPlan(string inputPath, int pageCount)
     {
         ValidatePageCount(pageCount);
+        return CreateParityPlan(inputPath, CreatePageTransforms(1, pageCount));
+    }
 
-        var outputFolder = AllocateOutputFolder(inputPath);
-        var baseName = GetBaseName(inputPath);
+    public static PdfSplitPlan CreateParityPlan(
+        string inputPath,
+        IReadOnlyList<PdfPageTransform> pages,
+        string? outputPathReference = null)
+    {
+        ValidatePages(pages);
+
+        var outputReference = outputPathReference ?? inputPath;
+        var outputFolder = AllocateOutputFolder(outputReference);
+        var baseName = GetBaseName(outputReference);
         var outputs = new List<PdfSplitOutput>();
 
-        AddParityOutput(outputs, outputFolder, baseName, PdfSplitKind.Odd, pageCount, 1, "홀수");
-        AddParityOutput(outputs, outputFolder, baseName, PdfSplitKind.Even, pageCount, 2, "짝수");
+        AddParityOutput(outputs, outputFolder, baseName, PdfSplitKind.Odd, pages, 1, "홀수");
+        AddParityOutput(outputs, outputFolder, baseName, PdfSplitKind.Even, pages, 0, "짝수");
 
         return new PdfSplitPlan(inputPath, outputFolder, outputs);
     }
@@ -49,13 +70,12 @@ public static class PdfSplitPlanner
         string outputFolder,
         string baseName,
         PdfSplitKind kind,
-        int pageCount,
-        int firstPage,
+        IReadOnlyList<PdfPageTransform> sourcePages,
+        int parity,
         string label)
     {
-        var pages = Enumerable.Range(firstPage, pageCount - firstPage + 1)
-            .Where(page => page <= pageCount && page % 2 == firstPage % 2)
-            .Select(page => new PdfPageTransform(page, 0))
+        var pages = sourcePages
+            .Where(page => page.PageNumber % 2 == parity)
             .ToList();
 
         if (pages.Count == 0)
@@ -101,9 +121,23 @@ public static class PdfSplitPlanner
             .ToList();
     }
 
-    private static string FormatPageRange(int startPage, int endPage)
+    private static string FormatPageRange(IReadOnlyList<PdfPageTransform> pages)
     {
-        return startPage == endPage ? startPage.ToString() : $"{startPage}-{endPage}";
+        if (pages.Count == 1)
+        {
+            return pages[0].PageNumber.ToString();
+        }
+
+        var firstPage = pages[0].PageNumber;
+        var isContiguousRange = pages
+            .Select((page, index) => page.PageNumber == firstPage + index)
+            .All(isContiguous => isContiguous);
+        if (isContiguousRange)
+        {
+            return $"{firstPage}-{pages[^1].PageNumber}";
+        }
+
+        return string.Join(",", pages.Select(page => page.PageNumber));
     }
 
     private static string GetBaseName(string inputPath)
@@ -118,6 +152,22 @@ public static class PdfSplitPlanner
             throw new ArgumentOutOfRangeException(nameof(pageCount), "PDF 페이지 수는 1 이상이어야 합니다.");
         }
     }
+
+    private static void ValidatePages(IReadOnlyList<PdfPageTransform> pages)
+    {
+        ArgumentNullException.ThrowIfNull(pages);
+        if (pages.Count < 1)
+        {
+            throw new ArgumentOutOfRangeException(nameof(pages), "분할할 페이지가 없습니다.");
+        }
+    }
+}
+
+public enum PdfSplitMode
+{
+    PageByPage,
+    Interval,
+    Parity
 }
 
 public enum PdfSplitKind

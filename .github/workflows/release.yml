@@ -35,6 +35,7 @@ jobs:
           node --check src/PdfMergeTool/Assets/PdfViewerOfficial/web/editor-adapter.js
           node --check src/PdfMergeTool/Assets/PdfViewerOfficial/web/pdf-lib-adapter.js
           node test/thumbnail-selection-contract.test.mjs
+          node test/pdf-split-integration-contract.test.mjs
 
       - name: Build installer
         shell: pwsh

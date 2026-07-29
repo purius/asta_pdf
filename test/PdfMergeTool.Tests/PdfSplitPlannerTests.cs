@@ -6,8 +6,9 @@ namespace PdfMergeTool.Tests;
 public sealed class PdfSplitPlannerTests
 {
     [Fact]
-    public void Parse_recognizes_interval_and_parity_commands()
+    public void Parse_recognizes_split_commands()
     {
+        Assert.Equal(PdfExplorerCommand.PageSplit, PdfExplorerCommandParser.Parse(new[] { "--split-pages", "source.pdf" }));
         Assert.Equal(PdfExplorerCommand.IntervalSplit, PdfExplorerCommandParser.Parse(new[] { "--split-interval", "source.pdf" }));
         Assert.Equal(PdfExplorerCommand.ParitySplit, PdfExplorerCommandParser.Parse(new[] { "--split-parity", "source.pdf" }));
     }
@@ -50,6 +51,49 @@ public sealed class PdfSplitPlannerTests
         var plan = PdfSplitPlanner.CreateIntervalPlan(sourcePath, 2, 1);
 
         Assert.EndsWith("source_분할 (2)", plan.OutputFolder);
+    }
+
+    [Fact]
+    public void CreateIntervalPlan_preserves_current_page_order_and_rotation()
+    {
+        var pages = new[]
+        {
+            new PdfPageTransform(3, 90),
+            new PdfPageTransform(1, 0),
+            new PdfPageTransform(2, 180)
+        };
+
+        var plan = PdfSplitPlanner.CreateIntervalPlan(
+            Path.Combine(Path.GetTempPath(), "source.pdf"),
+            pages,
+            2);
+
+        Assert.Equal("3,1", plan.Outputs[0].PageRange);
+        Assert.Equal(new[] { 3, 1 }, plan.Outputs[0].Pages.Select(page => page.PageNumber));
+        Assert.Equal(new[] { 90, 0 }, plan.Outputs[0].Pages.Select(page => page.Rotation));
+        Assert.Equal("2", plan.Outputs[1].PageRange);
+        Assert.Equal(180, plan.Outputs[1].Pages.Single().Rotation);
+    }
+
+    [Fact]
+    public void CreateParityPlan_preserves_current_page_order_and_rotation()
+    {
+        var pages = new[]
+        {
+            new PdfPageTransform(4, 0),
+            new PdfPageTransform(3, 90),
+            new PdfPageTransform(2, 180),
+            new PdfPageTransform(1, 270)
+        };
+
+        var plan = PdfSplitPlanner.CreateParityPlan(Path.Combine(Path.GetTempPath(), "source.pdf"), pages);
+
+        var odd = plan.Outputs.Single(output => output.Kind == PdfSplitKind.Odd);
+        var even = plan.Outputs.Single(output => output.Kind == PdfSplitKind.Even);
+        Assert.Equal(new[] { 3, 1 }, odd.Pages.Select(page => page.PageNumber));
+        Assert.Equal(new[] { 90, 270 }, odd.Pages.Select(page => page.Rotation));
+        Assert.Equal(new[] { 4, 2 }, even.Pages.Select(page => page.PageNumber));
+        Assert.Equal(new[] { 0, 180 }, even.Pages.Select(page => page.Rotation));
     }
 
     private sealed class TemporaryDirectory : IDisposable

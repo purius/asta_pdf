@@ -246,8 +246,14 @@
                 <Separator />
                 <MenuItem Header="선택 페이지 추출"
                           Click="OnExtractSelectedPagesClick" />
-                <MenuItem Header="페이지별 분할"
-                          Click="OnSplitPagesClick" />
+                <MenuItem Header="PDF 분할">
+                    <MenuItem Header="페이지별 분할"
+                              Click="OnSplitPagesClick" />
+                    <MenuItem Header="N페이지마다 분리"
+                              Click="OnSplitByIntervalClick" />
+                    <MenuItem Header="홀수/짝수 분리"
+                              Click="OnSplitByParityClick" />
+                </MenuItem>
             </MenuItem>
             <MenuItem Header="_이동">
                 <MenuItem Header="이전 페이지"
