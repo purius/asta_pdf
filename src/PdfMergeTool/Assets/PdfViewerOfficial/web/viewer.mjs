@@ -10262,6 +10262,7 @@ class PDFThumbnailViewer {
   #thumbnailsPositions = null;
   #lastDraggedOverIndex = NaN;
   #selectedPages = null;
+  #selectionAnchorPage = null;
   #draggedImageX = 0;
   #draggedImageY = 0;
   #draggedImageWidth = 0;
@@ -10654,7 +10655,9 @@ class PDFThumbnailViewer {
     this.#lastDraggedOverIndex = startPageNumber - 1;
     if (!this.#selectedPages?.has(startPageNumber)) {
       this.#pageNumberToRemove = startPageNumber;
+      this.#clearSelection();
       this.#selectPage(startPageNumber, true);
+      this.#selectionAnchorPage = startPageNumber;
     }
     for (const selected of this.#selectedPages) {
       const thumbnail = this._thumbnails[selected - 1];
@@ -10720,14 +10723,20 @@ class PDFThumbnailViewer {
       this._currentPageNumber = -1;
       const newIndex = lastDraggedOverIndex + 1;
       const pagesToMove = Array.from(selectedPages).sort((a, b) => a - b);
+      const movedThumbnails = pagesToMove.map(pageNumber => this._thumbnails[pageNumber - 1]);
       const pagesMapper = this.#pagesMapper;
       const currentPageNumber = isNaN(this.#pageNumberToRemove) ? pagesToMove[0] : this.#pageNumberToRemove;
       pagesMapper.movePages(selectedPages, pagesToMove, newIndex);
       this.#updateCurrentPage(this.#updateThumbnails(currentPageNumber));
       this.#computeThumbnailsPosition();
       selectedPages.clear();
+      for (const thumbnail of movedThumbnails) {
+        const pageNumber = thumbnail.id;
+        thumbnail.checkbox.checked = true;
+        this.#selectPage(pageNumber, true);
+      }
+      this.#selectionAnchorPage = this.#pageNumberToRemove || movedThumbnails[0]?.id || null;
       this.#pageNumberToRemove = NaN;
-      this.#toggleMenuEntries(false);
       this.#updateStatus("select");
       this.#reportTelemetry({
         action: "move"
@@ -10735,6 +10744,7 @@ class PDFThumbnailViewer {
       this.eventBus.dispatch("pagesedited", {
         source: this,
         pagesMapper,
+        selectedPages: Array.from(selectedPages),
         type: "move"
       });
     }
@@ -10748,6 +10758,7 @@ class PDFThumbnailViewer {
       this._thumbnails[pageNumber - 1].toggleSelected(false);
     }
     this.#selectedPages.clear();
+    this.#selectionAnchorPage = null;
   }
   #updateCurrentPage(currentPageNumber, forceFocus = false) {
     setTimeout(() => {
@@ -11197,7 +11208,24 @@ class PDFThumbnailViewer {
       } = e;
       if (target instanceof HTMLInputElement) {
         const pageNumber = parseInt(target.parentElement.getAttribute("page-number"), 10);
-        this.#selectPage(pageNumber, target.checked);
+        if (e.shiftKey && this.#selectionAnchorPage) {
+          this.#clearSelection();
+          const start = Math.min(this.#selectionAnchorPage, pageNumber);
+          const end = Math.max(this.#selectionAnchorPage, pageNumber);
+          for (let selectedPage = start; selectedPage <= end; selectedPage++) {
+            const thumbnail = this._thumbnails[selectedPage - 1];
+            thumbnail.checkbox.checked = true;
+            this.#selectPage(selectedPage, true);
+          }
+        } else if (e.ctrlKey || e.metaKey) {
+          this.#selectPage(pageNumber, target.checked);
+          this.#selectionAnchorPage = pageNumber;
+        } else {
+          this.#clearSelection();
+          target.checked = true;
+          this.#selectPage(pageNumber, true);
+          this.#selectionAnchorPage = pageNumber;
+        }
         return;
       }
       this.#goToPage(e);

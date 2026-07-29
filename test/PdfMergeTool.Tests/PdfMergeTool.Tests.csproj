@@ -18,5 +18,9 @@
              Link="Services/PdfSplitPlanner.cs" />
     <Compile Include="../../src/PdfMergeTool/Services/PdfExplorerCommandParser.cs"
              Link="Services/PdfExplorerCommandParser.cs" />
+    <Compile Include="../../src/PdfMergeTool/Services/EditorDocumentState.cs"
+             Link="Services/EditorDocumentState.cs" />
+    <Compile Include="../../src/PdfMergeTool/Services/PdfSavePublisher.cs"
+             Link="Services/PdfSavePublisher.cs" />
   </ItemGroup>
 </Project>

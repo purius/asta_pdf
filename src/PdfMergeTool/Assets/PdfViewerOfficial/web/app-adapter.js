@@ -335,7 +335,7 @@ const AppBridge = (() => {
     return clientX < rect.left + rect.width / 2 ? targetIndex : targetIndex + 1;
   }
 
-  function syncPageOrderFromPagesMapper(pagesMapper) {
+  function syncPageOrderFromPagesMapper(pagesMapper, selectedPagePositions = []) {
     if (!pagesMapper?.pagesNumber || typeof pagesMapper.getPrevPageNumber !== "function") {
       return;
     }
@@ -357,7 +357,10 @@ const AppBridge = (() => {
     const targetPage = resolvePageAfterPageOrderChange(previousOrder, nextOrder, currentPage);
     pageOrder = nextOrder;
     pageStateDirty = true;
-    selectedPages = new Set([targetPage]);
+    const movedPages = selectedPagePositions
+      .map(position => nextOrder[Number(position) - 1])
+      .filter(page => Number.isInteger(page));
+    selectedPages = new Set(movedPages.length > 0 ? movedPages : [targetPage]);
     postPageOrder();
     goToPage(targetPage);
   }
@@ -668,7 +671,7 @@ const AppBridge = (() => {
     });
 
     eventBus?._on("pagesedited", event => {
-      syncPageOrderFromPagesMapper(event.pagesMapper);
+      syncPageOrderFromPagesMapper(event.pagesMapper, Array.isArray(event.selectedPages) ? event.selectedPages : []);
     });
 
     eventBus?._on("pagerendered", event => {

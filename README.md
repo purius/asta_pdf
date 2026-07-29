@@ -13,6 +13,8 @@ Windows PDF viewer, lightweight editor, and merge utility.
 - Reorder pages in the current viewer by dragging thumbnails.
 - Select multiple pages with Ctrl/Shift click and move them together.
 - Undo/redo page edits.
+- Reorder selected thumbnails together: Shift-click selects a range and Ctrl-click toggles individual pages.
+- The first save creates an editing copy; later saves update that same copy without overwriting the source PDF.
 - Delete, rotate, extract, split, and reverse pages.
 - Add overlay text boxes, visual text replacement, whiteout/redaction, underline, strikeout, shapes, lines, arrows, freehand pen/highlight, images, stamps, and signatures.
 - Save overlay edits into the PDF with pdf-lib.
