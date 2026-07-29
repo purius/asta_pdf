@@ -24,5 +24,7 @@
              Link="Services/DocumentOperationCoordinator.cs" />
     <Compile Include="../../src/PdfMergeTool/Services/PdfSavePublisher.cs"
              Link="Services/PdfSavePublisher.cs" />
+    <Compile Include="../../src/PdfMergeTool/Services/PageOrganizerViewport.cs"
+             Link="Services/PageOrganizerViewport.cs" />
   </ItemGroup>
 </Project>
