@@ -61,6 +61,10 @@ public partial class MainWindow : Window
     private bool _editorDirty;
     private EditorDocumentState? _pageOrganizerState;
     private CancellationTokenSource? _pageOrganizerThumbnailCancellation;
+    private PageOrganizerThumbnailScheduler? _pageOrganizerThumbnailScheduler;
+    private HashSet<int> _pageOrganizerThumbnailCacheWindow = [];
+    private string? _pageOrganizerThumbnailSourcePath;
+    private int? _pageOrganizerThumbnailWorkerGeneration;
     private int _pageOrganizerThumbnailGeneration;
     private int _documentLoadGeneration;
     private int? _documentMutationGeneration;
@@ -94,6 +98,9 @@ public partial class MainWindow : Window
     {
         InitializeComponent();
         ApplyWindowSettings();
+        PageOrganizerList.AddHandler(
+            ScrollViewer.ScrollChangedEvent,
+            new ScrollChangedEventHandler(OnPageOrganizerThumbnailScrollChanged));
         AddHandler(DragDrop.PreviewDragOverEvent, new DragEventHandler(OnWindowDragOver), true);
         AddHandler(DragDrop.PreviewDropEvent, new DragEventHandler(OnWindowDrop), true);
         Loaded += OnLoaded;
@@ -561,6 +568,7 @@ public partial class MainWindow : Window
     {
         if (isBusy)
         {
+            CancelPageOrganizerThumbnailRendering();
             _documentMutationGeneration = operation.Generation;
             PageOrganizerList.IsHitTestVisible = false;
             PdfViewer.IsHitTestVisible = false;
@@ -575,6 +583,7 @@ public partial class MainWindow : Window
         _documentMutationGeneration = null;
         PageOrganizerList.IsHitTestVisible = true;
         PdfViewer.IsHitTestVisible = true;
+        ResumePageOrganizerThumbnailRenderingAfterMutation();
     }
 
     private bool IsDocumentOperationSuperseded(DocumentOperationToken operation)
@@ -779,15 +788,68 @@ public partial class MainWindow : Window
 
     private void StartPageOrganizerThumbnailRendering(string path, IReadOnlyList<int> pageNumbers)
     {
+        CancelPageOrganizerThumbnailRendering();
         var cancellation = new CancellationTokenSource();
         _pageOrganizerThumbnailCancellation = cancellation;
+        _pageOrganizerThumbnailSourcePath = path;
+        var scheduler = new PageOrganizerThumbnailScheduler(pageNumbers);
+        _pageOrganizerThumbnailScheduler = scheduler;
+        _pageOrganizerThumbnailCacheWindow = scheduler.GetCacheWindow([]).ToHashSet();
         var generation = ++_pageOrganizerThumbnailGeneration;
-        _ = RenderPageOrganizerThumbnailsAsync(path, pageNumbers.ToArray(), generation, cancellation);
+
+        foreach (var item in PageOrganizerItems)
+        {
+            if (!IsCurrentPageOrganizerThumbnailRequest(generation, cancellation))
+            {
+                return;
+            }
+
+            item.Thumbnail = null;
+            item.ThumbnailRenderState = PageOrganizerThumbnailRenderState.Pending;
+        }
+
+        scheduler.Prioritize(_pageOrganizerThumbnailCacheWindow);
+        EnsurePageOrganizerThumbnailWorker(generation, cancellation);
+        _ = Dispatcher.BeginInvoke(
+            new Action(() =>
+            {
+                if (IsCurrentPageOrganizerThumbnailRequest(generation, cancellation) &&
+                    ReferenceEquals(_pageOrganizerThumbnailScheduler, scheduler))
+                {
+                    RefreshPageOrganizerThumbnailViewport();
+                }
+            }),
+            DispatcherPriority.Loaded);
+    }
+
+    private bool IsCurrentPageOrganizerThumbnailRequest(
+        int generation,
+        CancellationTokenSource cancellation)
+    {
+        return generation == _pageOrganizerThumbnailGeneration &&
+               ReferenceEquals(_pageOrganizerThumbnailCancellation, cancellation) &&
+               !cancellation.IsCancellationRequested;
+    }
+
+    private void EnsurePageOrganizerThumbnailWorker(
+        int generation,
+        CancellationTokenSource cancellation)
+    {
+        var path = _pageOrganizerThumbnailSourcePath;
+        if (_pageOrganizerThumbnailWorkerGeneration == generation ||
+            !IsCurrentPageOrganizerThumbnailRequest(generation, cancellation) ||
+            _pageOrganizerThumbnailScheduler is null ||
+            string.IsNullOrWhiteSpace(path))
+        {
+            return;
+        }
+
+        _pageOrganizerThumbnailWorkerGeneration = generation;
+        _ = RenderPageOrganizerThumbnailsAsync(path, generation, cancellation);
     }
 
     private async Task RenderPageOrganizerThumbnailsAsync(
         string path,
-        IReadOnlyList<int> pageNumbers,
         int generation,
         CancellationTokenSource cancellation)
     {
@@ -798,27 +860,93 @@ public partial class MainWindow : Window
             var session = await Task.Run(() => _pageOrganizerRenderService.OpenDocument(path), cancellationToken);
             sessionId = session.SessionId;
 
-            foreach (var pageNumber in pageNumbers.Take(96))
+            while (IsCurrentPageOrganizerThumbnailRequest(generation, cancellation) &&
+                   _pageOrganizerThumbnailScheduler is { } scheduler &&
+                   scheduler.TryTakeNext(out var pageNumber))
             {
-                cancellationToken.ThrowIfCancellationRequested();
-                var rendered = await _pageOrganizerRenderService.RenderPageAsync(
-                    sessionId,
-                    pageNumber,
-                    targetWidth: 132,
-                    rotationDegrees: 0,
-                    thumbnail: true,
-                    cancellationToken: cancellationToken);
-                cancellationToken.ThrowIfCancellationRequested();
-
-                if (generation != _pageOrganizerThumbnailGeneration)
+                if (!IsCurrentPageOrganizerThumbnailRequest(generation, cancellation) ||
+                    !ReferenceEquals(_pageOrganizerThumbnailScheduler, scheduler))
                 {
                     return;
                 }
 
                 var item = PageOrganizerItems.FirstOrDefault(candidate => candidate.PageNumber == pageNumber);
-                if (item is not null)
+                if (item is null)
                 {
-                    item.Thumbnail = LoadPageOrganizerThumbnail(rendered.ImagePath);
+                    scheduler.Complete(pageNumber);
+                    continue;
+                }
+
+                if (!IsCurrentPageOrganizerThumbnailRequest(generation, cancellation) ||
+                    !ReferenceEquals(_pageOrganizerThumbnailScheduler, scheduler))
+                {
+                    return;
+                }
+
+                item.ThumbnailRenderState = PageOrganizerThumbnailRenderState.Loading;
+                try
+                {
+                    var rendered = await _pageOrganizerRenderService.RenderPageAsync(
+                        sessionId,
+                        pageNumber,
+                        targetWidth: 132,
+                        rotationDegrees: 0,
+                        thumbnail: true,
+                        cancellationToken: cancellationToken);
+                    cancellationToken.ThrowIfCancellationRequested();
+                    if (!IsCurrentPageOrganizerThumbnailRequest(generation, cancellation) ||
+                        !ReferenceEquals(_pageOrganizerThumbnailScheduler, scheduler))
+                    {
+                        return;
+                    }
+
+                    if (_pageOrganizerThumbnailCacheWindow.Contains(pageNumber))
+                    {
+                        var thumbnail = LoadPageOrganizerThumbnail(rendered.ImagePath);
+                        if (!IsCurrentPageOrganizerThumbnailRequest(generation, cancellation) ||
+                            !ReferenceEquals(_pageOrganizerThumbnailScheduler, scheduler))
+                        {
+                            return;
+                        }
+
+                        item.Thumbnail = thumbnail;
+                        item.ThumbnailRenderState = PageOrganizerThumbnailRenderState.Ready;
+                    }
+                    else
+                    {
+                        item.Thumbnail = null;
+                        item.ThumbnailRenderState = PageOrganizerThumbnailRenderState.Evicted;
+                    }
+
+                    scheduler.Complete(pageNumber);
+                }
+                catch (OperationCanceledException)
+                {
+                    scheduler.Complete(pageNumber);
+                    throw;
+                }
+                catch (Exception ex)
+                {
+                    if (!IsCurrentPageOrganizerThumbnailRequest(generation, cancellation) ||
+                        !ReferenceEquals(_pageOrganizerThumbnailScheduler, scheduler))
+                    {
+                        return;
+                    }
+
+                    AppLogger.Error(
+                        ex,
+                        $"Page Organizer thumbnail rendering failed: {pageNumber} in {path}");
+                    var retryScheduled = scheduler.RegisterFailure(pageNumber);
+                    if (!IsCurrentPageOrganizerThumbnailRequest(generation, cancellation) ||
+                        !ReferenceEquals(_pageOrganizerThumbnailScheduler, scheduler))
+                    {
+                        return;
+                    }
+
+                    item.Thumbnail = null;
+                    item.ThumbnailRenderState = retryScheduled
+                        ? PageOrganizerThumbnailRenderState.Pending
+                        : PageOrganizerThumbnailRenderState.Failed;
                 }
             }
         }
@@ -833,10 +961,14 @@ public partial class MainWindow : Window
         finally
         {
             _pageOrganizerRenderService.CloseSession(sessionId);
-            cancellation.Dispose();
-            if (ReferenceEquals(_pageOrganizerThumbnailCancellation, cancellation))
+            if (_pageOrganizerThumbnailWorkerGeneration == generation)
             {
-                _pageOrganizerThumbnailCancellation = null;
+                _pageOrganizerThumbnailWorkerGeneration = null;
+            }
+
+            if (!ReferenceEquals(_pageOrganizerThumbnailCancellation, cancellation))
+            {
+                cancellation.Dispose();
             }
         }
     }
@@ -855,8 +987,122 @@ public partial class MainWindow : Window
     private void CancelPageOrganizerThumbnailRendering()
     {
         _pageOrganizerThumbnailGeneration++;
-        _pageOrganizerThumbnailCancellation?.Cancel();
+        var cancellation = _pageOrganizerThumbnailCancellation;
         _pageOrganizerThumbnailCancellation = null;
+        _pageOrganizerThumbnailSourcePath = null;
+        _pageOrganizerThumbnailScheduler = null;
+        _pageOrganizerThumbnailCacheWindow = [];
+        cancellation?.Cancel();
+    }
+
+    private void ResumePageOrganizerThumbnailRenderingAfterMutation()
+    {
+        if (IsDocumentMutationInProgress ||
+            _pageOrganizerThumbnailScheduler is not null ||
+            string.IsNullOrWhiteSpace(_currentPdfPath) ||
+            _pageOrganizerState is not { PageNumbers.Count: > 0 } state)
+        {
+            return;
+        }
+
+        StartPageOrganizerThumbnailRendering(_currentPdfPath, state.PageNumbers);
+    }
+
+    private void OnPageOrganizerThumbnailScrollChanged(
+        object sender,
+        ScrollChangedEventArgs e)
+    {
+        if (e.VerticalChange == 0 &&
+            e.ExtentHeightChange == 0 &&
+            e.ViewportHeightChange == 0)
+        {
+            return;
+        }
+
+        RefreshPageOrganizerThumbnailViewport();
+    }
+
+    private IReadOnlyList<int> GetVisiblePageOrganizerThumbnailNumbers()
+    {
+        var scrollViewer = FindVisualDescendant<ScrollViewer>(PageOrganizerList);
+        if (scrollViewer is null || scrollViewer.ViewportHeight <= 0)
+        {
+            return [];
+        }
+
+        var visiblePageNumbers = new List<int>();
+        for (var index = 0; index < PageOrganizerItems.Count; index++)
+        {
+            if (PageOrganizerList.ItemContainerGenerator.ContainerFromIndex(index) is not FrameworkElement container ||
+                container.ActualHeight <= 0)
+            {
+                continue;
+            }
+
+            var itemTop = container.TranslatePoint(new Point(), scrollViewer).Y;
+            var itemBottom = itemTop + container.ActualHeight;
+            if (itemBottom > 0 && itemTop < scrollViewer.ViewportHeight)
+            {
+                visiblePageNumbers.Add(PageOrganizerItems[index].PageNumber);
+            }
+        }
+
+        return visiblePageNumbers;
+    }
+
+    private void RefreshPageOrganizerThumbnailViewport()
+    {
+        var scheduler = _pageOrganizerThumbnailScheduler;
+        var cancellation = _pageOrganizerThumbnailCancellation;
+        var generation = _pageOrganizerThumbnailGeneration;
+        if (scheduler is null ||
+            cancellation is null ||
+            !IsCurrentPageOrganizerThumbnailRequest(generation, cancellation))
+        {
+            return;
+        }
+
+        var visiblePageNumbers = GetVisiblePageOrganizerThumbnailNumbers();
+        var cacheWindow = scheduler.GetCacheWindow(visiblePageNumbers);
+        if (!IsCurrentPageOrganizerThumbnailRequest(generation, cancellation) ||
+            !ReferenceEquals(_pageOrganizerThumbnailScheduler, scheduler))
+        {
+            return;
+        }
+
+        _pageOrganizerThumbnailCacheWindow = cacheWindow.ToHashSet();
+
+        foreach (var item in PageOrganizerItems)
+        {
+            if (!IsCurrentPageOrganizerThumbnailRequest(generation, cancellation) ||
+                !ReferenceEquals(_pageOrganizerThumbnailScheduler, scheduler))
+            {
+                return;
+            }
+
+            if (!cacheWindow.Contains(item.PageNumber) &&
+                item.Thumbnail is not null)
+            {
+                item.Thumbnail = null;
+                item.ThumbnailRenderState = PageOrganizerThumbnailRenderState.Evicted;
+            }
+            else if (cacheWindow.Contains(item.PageNumber) &&
+                     item.Thumbnail is null &&
+                     item.ThumbnailRenderState != PageOrganizerThumbnailRenderState.Failed)
+            {
+                item.ThumbnailRenderState = PageOrganizerThumbnailRenderState.Pending;
+                scheduler.Request(item.PageNumber, priority: true);
+            }
+        }
+
+        if (!IsCurrentPageOrganizerThumbnailRequest(generation, cancellation) ||
+            !ReferenceEquals(_pageOrganizerThumbnailScheduler, scheduler))
+        {
+            return;
+        }
+
+        scheduler.Prioritize(cacheWindow);
+        EnsurePageOrganizerThumbnailWorker(generation, cancellation);
     }
 
     private void UpdateWindowTitle()
@@ -3276,6 +3522,34 @@ public partial class MainWindow : Window
         e.Handled = true;
     }
 
+    private void OnPageOrganizerThumbnailRetryClick(object sender, RoutedEventArgs e)
+    {
+        var scheduler = _pageOrganizerThumbnailScheduler;
+        var cancellation = _pageOrganizerThumbnailCancellation;
+        var generation = _pageOrganizerThumbnailGeneration;
+        if (scheduler is null ||
+            cancellation is null ||
+            !IsCurrentPageOrganizerThumbnailRequest(generation, cancellation) ||
+            sender is not FrameworkElement { DataContext: PageOrganizerItem item } ||
+            !PageOrganizerItems.Contains(item) ||
+            !scheduler.RequestManualRetry(item.PageNumber))
+        {
+            return;
+        }
+
+        if (!IsCurrentPageOrganizerThumbnailRequest(generation, cancellation) ||
+            !ReferenceEquals(_pageOrganizerThumbnailScheduler, scheduler))
+        {
+            return;
+        }
+
+        item.Thumbnail = null;
+        item.ThumbnailRenderState = PageOrganizerThumbnailRenderState.Pending;
+        scheduler.Prioritize([item.PageNumber]);
+        EnsurePageOrganizerThumbnailWorker(generation, cancellation);
+        e.Handled = true;
+    }
+
     private void OnPageOrganizerItemPreviewMouseLeftButtonDown(object sender, MouseButtonEventArgs e)
     {
         if (IsDocumentMutationInProgress)
@@ -3290,7 +3564,8 @@ public partial class MainWindow : Window
             return;
         }
 
-        if (FindVisualAncestor<CheckBox>(source) is not null)
+        if (FindVisualAncestor<CheckBox>(source) is not null ||
+            FindVisualAncestor<Button>(source) is not null)
         {
             return;
         }
@@ -3872,6 +4147,7 @@ public sealed class PageOrganizerItem : INotifyPropertyChanged
     private bool _isDropBefore;
     private bool _isDropAfter;
     private ImageSource? _thumbnail;
+    private PageOrganizerThumbnailRenderState _thumbnailRenderState;
     private double _thumbnailHeight = 142;
     private double _thumbnailWidth = 100;
     private double _thumbnailCardWidth = 116;
@@ -3926,6 +4202,25 @@ public sealed class PageOrganizerItem : INotifyPropertyChanged
         get => _thumbnail;
         set => SetField(ref _thumbnail, value, nameof(Thumbnail));
     }
+
+    public PageOrganizerThumbnailRenderState ThumbnailRenderState
+    {
+        get => _thumbnailRenderState;
+        set => SetField(
+            ref _thumbnailRenderState,
+            value,
+            nameof(ThumbnailRenderState),
+            nameof(IsThumbnailLoading),
+            nameof(IsThumbnailFailed));
+    }
+
+    public bool IsThumbnailLoading =>
+        ThumbnailRenderState is PageOrganizerThumbnailRenderState.Pending or
+        PageOrganizerThumbnailRenderState.Loading or
+        PageOrganizerThumbnailRenderState.Evicted;
+
+    public bool IsThumbnailFailed =>
+        ThumbnailRenderState == PageOrganizerThumbnailRenderState.Failed;
 
     public double ThumbnailHeight
     {

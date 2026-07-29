@@ -92,6 +92,12 @@ assert.match(mainWindow, /Key\.PageDown/);
 assert.match(mainWindow, /Key\.Home/);
 assert.match(mainWindow, /Key\.End/);
 assert.match(xaml, /x:Name="PageOrganizerList"[\s\S]*?Focusable="True"[\s\S]*?PreviewKeyDown="OnPageOrganizerPreviewKeyDown"/);
+assert.match(mainWindow, /PageOrganizerThumbnailScheduler/);
+assert.match(mainWindow, /OnPageOrganizerThumbnailScrollChanged/);
+assert.match(mainWindow, /RefreshPageOrganizerThumbnailViewport/);
+assert.match(mainWindow, /OnPageOrganizerThumbnailRetryClick/);
+assert.match(mainWindow, /PageOrganizerThumbnailRenderState.Failed/);
+assert.doesNotMatch(mainWindow, /pageNumbers.Take(96)/);
 
 const emittedMessages = [];
 const eventHandlers = new Map();
