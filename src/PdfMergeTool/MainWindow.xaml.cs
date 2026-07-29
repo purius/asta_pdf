@@ -2000,14 +2000,48 @@ public partial class MainWindow : Window
 
     private async void OnSplitPagesClick(object sender, RoutedEventArgs e)
     {
-        if (IsDocumentMutationInProgress || !EnsurePdfLoaded("PDF 분할"))
+        if (!CanSplitCurrentDocument())
         {
             return;
         }
 
+        await SplitCurrentDocumentAsync(PdfSplitMode.PageByPage, 1);
+    }
+
+    private async void OnSplitByIntervalClick(object sender, RoutedEventArgs e)
+    {
+        if (!CanSplitCurrentDocument())
+        {
+            return;
+        }
+
+        var intervalWindow = new SplitIntervalWindow { Owner = this };
+        if (intervalWindow.ShowDialog() != true)
+        {
+            return;
+        }
+
+        await SplitCurrentDocumentAsync(PdfSplitMode.Interval, intervalWindow.Interval);
+    }
+
+    private async void OnSplitByParityClick(object sender, RoutedEventArgs e)
+    {
+        if (!CanSplitCurrentDocument())
+        {
+            return;
+        }
+
+        await SplitCurrentDocumentAsync(PdfSplitMode.Parity, 1);
+    }
+
+    private bool CanSplitCurrentDocument()
+    {
+        return !IsDocumentMutationInProgress && EnsurePdfLoaded("PDF 분할");
+    }
+
+    private async Task SplitCurrentDocumentAsync(PdfSplitMode splitMode, int interval)
+    {
         var referencePath = _referencePdfPath ?? _currentPdfPath!;
-        var folder = Path.GetDirectoryName(referencePath) ?? Environment.GetFolderPath(Environment.SpecialFolder.MyDocuments);
-        var outputFolder = Path.Combine(folder, $"{Path.GetFileNameWithoutExtension(referencePath)}_분할");
 
         if (!TryCaptureDocumentOperation(out var operation))
         {
@@ -2018,14 +2052,22 @@ public partial class MainWindow : Window
             await ExecuteDocumentMutationAsync(operation, async currentOperation =>
             {
                 var sourcePath = _currentPdfPath ?? throw new InvalidOperationException("현재 PDF를 찾을 수 없습니다.");
-                var results = await _pdfService.SplitPagesAsync(
-                    sourcePath,
-                    GetCurrentPageTransforms(),
-                    outputFolder,
-                    Path.GetFileNameWithoutExtension(referencePath) ?? "분할",
-                    currentOperation.CancellationToken);
+                var pageTransforms = GetCurrentPageTransforms();
+                var plan = splitMode switch
+                {
+                    PdfSplitMode.PageByPage => PdfSplitPlanner.CreateIntervalPlan(sourcePath, pageTransforms, 1, referencePath),
+                    PdfSplitMode.Interval => PdfSplitPlanner.CreateIntervalPlan(sourcePath, pageTransforms, interval, referencePath),
+                    PdfSplitMode.Parity => PdfSplitPlanner.CreateParityPlan(sourcePath, pageTransforms, referencePath),
+                    _ => throw new ArgumentOutOfRangeException(nameof(splitMode))
+                };
+                var results = await _pdfService.ExecuteSplitPlanAsync(plan, currentOperation.CancellationToken);
                 _documentOperations.ThrowIfSuperseded(currentOperation);
-                MessageBox.Show(this, $"{results.Count}개 파일로 분할했습니다.\n{outputFolder}", "PDF 분할", MessageBoxButton.OK, MessageBoxImage.Information);
+                MessageBox.Show(
+                    this,
+                    $"{results.Count}개 파일로 {GetSplitDescription(splitMode, interval)} 분할했습니다.\n{plan.OutputFolder}",
+                    "PDF 분할",
+                    MessageBoxButton.OK,
+                    MessageBoxImage.Information);
             });
         }
         catch (OperationCanceledException) when (IsDocumentOperationSuperseded(operation))
@@ -2036,6 +2078,17 @@ public partial class MainWindow : Window
         {
             MessageBox.Show(this, ex.Message, "PDF 분할 실패", MessageBoxButton.OK, MessageBoxImage.Error);
         }
+    }
+
+    private static string GetSplitDescription(PdfSplitMode splitMode, int interval)
+    {
+        return splitMode switch
+        {
+            PdfSplitMode.PageByPage => "페이지별로",
+            PdfSplitMode.Interval => $"{interval}페이지마다",
+            PdfSplitMode.Parity => "홀수/짝수로",
+            _ => throw new ArgumentOutOfRangeException(nameof(splitMode))
+        };
     }
 
     private async void OnAddBlankA4PageClick(object sender, RoutedEventArgs e)

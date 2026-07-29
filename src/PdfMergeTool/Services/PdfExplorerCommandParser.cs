@@ -6,6 +6,11 @@ public static class PdfExplorerCommandParser
     {
         foreach (var argument in arguments)
         {
+            if (string.Equals(argument, "--split-pages", StringComparison.OrdinalIgnoreCase))
+            {
+                return PdfExplorerCommand.PageSplit;
+            }
+
             if (string.Equals(argument, "--split-interval", StringComparison.OrdinalIgnoreCase))
             {
                 return PdfExplorerCommand.IntervalSplit;
@@ -24,6 +29,7 @@ public static class PdfExplorerCommandParser
 public enum PdfExplorerCommand
 {
     None,
+    PageSplit,
     IntervalSplit,
     ParitySplit
 }

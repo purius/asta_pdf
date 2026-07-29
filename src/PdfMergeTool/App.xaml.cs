@@ -25,6 +25,7 @@ public partial class App : Application
         };
 
         var settings = AppSettings.Load();
+        RefreshPdfContextMenuRegistration();
 
         var args = e.Args.ToList();
         var explorerCommand = PdfExplorerCommandParser.Parse(args);
@@ -151,10 +152,29 @@ public partial class App : Application
         });
     }
 
+    private static void RefreshPdfContextMenuRegistration()
+    {
+        try
+        {
+            WindowsIntegrationService.RefreshPdfContextMenuRegistration();
+        }
+        catch (Exception ex)
+        {
+            AppLogger.Error(ex, "PDF 우클릭 메뉴 등록을 갱신하지 못했습니다.");
+        }
+    }
+
     private static async Task RunExplorerSplitAsync(PdfExplorerCommand command, IReadOnlyList<string> paths)
     {
+        var splitMode = command switch
+        {
+            PdfExplorerCommand.PageSplit => PdfSplitMode.PageByPage,
+            PdfExplorerCommand.IntervalSplit => PdfSplitMode.Interval,
+            PdfExplorerCommand.ParitySplit => PdfSplitMode.Parity,
+            _ => throw new ArgumentOutOfRangeException(nameof(command))
+        };
         var interval = 1;
-        if (command == PdfExplorerCommand.IntervalSplit)
+        if (splitMode == PdfSplitMode.Interval)
         {
             var intervalWindow = new SplitIntervalWindow();
             if (intervalWindow.ShowDialog() != true)
@@ -174,9 +194,13 @@ public partial class App : Application
             try
             {
                 var pageCount = pdfService.GetPageCount(path);
-                var plan = command == PdfExplorerCommand.IntervalSplit
-                    ? PdfSplitPlanner.CreateIntervalPlan(path, pageCount, interval)
-                    : PdfSplitPlanner.CreateParityPlan(path, pageCount);
+                var plan = splitMode switch
+                {
+                    PdfSplitMode.PageByPage => PdfSplitPlanner.CreateIntervalPlan(path, pageCount, 1),
+                    PdfSplitMode.Interval => PdfSplitPlanner.CreateIntervalPlan(path, pageCount, interval),
+                    PdfSplitMode.Parity => PdfSplitPlanner.CreateParityPlan(path, pageCount),
+                    _ => throw new ArgumentOutOfRangeException(nameof(splitMode))
+                };
                 var results = await pdfService.ExecuteSplitPlanAsync(plan, CancellationToken.None);
                 successes.Add($"{Path.GetFileName(path)}: {results.Count}개 파일\n{plan.OutputFolder}");
             }

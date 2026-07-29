@@ -140,7 +140,10 @@ begin
     RegDeleteValue(HKCU, 'Software\Microsoft\Windows\CurrentVersion\Explorer\FileExts\.pdf\OpenWithProgids', PdfProgId);
     RegDeleteValue(HKCU, 'Software\RegisteredApplications', ProductId);
     RegDeleteKeyIncludingSubkeys(HKCU, 'Software\Classes\SystemFileAssociations\.pdf\shell\' + ProductId);
+    RegDeleteKeyIncludingSubkeys(HKCU, 'Software\Classes\SystemFileAssociations\.pdf\shell\' + ProductId + 'Split');
     RegDeleteKeyIncludingSubkeys(HKCU, 'Software\Classes\.pdf\shell\' + ProductId);
+    RegDeleteKeyIncludingSubkeys(HKCU, 'Software\Classes\.pdf\shell\' + ProductId + 'Split');
+    RegDeleteKeyIncludingSubkeys(HKCU, 'Software\Classes\' + PdfProgId + '\shell\' + ProductId + 'Split');
     RegDeleteKeyIncludingSubkeys(HKCU, 'Software\Classes\' + PdfProgId);
     RegDeleteKeyIncludingSubkeys(HKCU, 'Software\Classes\Applications\{#AppExeName}');
     RegDeleteKeyIncludingSubkeys(HKCU, 'Software\' + ProductId);

@@ -74,12 +74,28 @@ internal static class WindowsIntegrationService
         foreach (var contextMenuPath in PdfSplitContextMenuPaths)
         {
             using var splitKey = Registry.CurrentUser.CreateSubKey(contextMenuPath);
-            splitKey.SetValue(null, "PDF 분리");
+            splitKey.DeleteValue(string.Empty, throwOnMissingValue: false);
+            splitKey.DeleteValue("SubCommands", throwOnMissingValue: false);
+            splitKey.DeleteSubKeyTree("SplitByPage", throwOnMissingSubKey: false);
+            splitKey.DeleteSubKeyTree("SplitByInterval", throwOnMissingSubKey: false);
+            splitKey.DeleteSubKeyTree("SplitByParity", throwOnMissingSubKey: false);
+            splitKey.SetValue("MUIVerb", "PDF 분리");
             splitKey.SetValue("Icon", appExe);
             splitKey.SetValue("MultiSelectModel", "Player");
 
-            RegisterSplitCommand(splitKey, "SplitByInterval", "N페이지마다 분리", "--split-interval", appExe);
-            RegisterSplitCommand(splitKey, "SplitByParity", "홀수/짝수 분리", "--split-parity", appExe);
+            using var extendedCommandsKey = splitKey.CreateSubKey("ExtendedSubCommandsKey");
+            using var shellKey = extendedCommandsKey.CreateSubKey("shell");
+            RegisterSplitCommand(shellKey, "SplitByPage", "페이지별 분할", "--split-pages", appExe);
+            RegisterSplitCommand(shellKey, "SplitByInterval", "N페이지마다 분리", "--split-interval", appExe);
+            RegisterSplitCommand(shellKey, "SplitByParity", "홀수/짝수 분리", "--split-parity", appExe);
+        }
+    }
+
+    public static void RefreshPdfContextMenuRegistration()
+    {
+        if (HasAnyPdfContextMenuRegistration())
+        {
+            RegisterPdfContextMenu();
         }
     }
 
@@ -93,26 +109,63 @@ internal static class WindowsIntegrationService
 
     public static bool IsPdfContextMenuRegistered()
     {
-        return PdfMergeContextMenuPaths.Concat(PdfSplitContextMenuPaths).All(contextMenuPath =>
-        {
-            using var key = Registry.CurrentUser.OpenSubKey(contextMenuPath);
-            return key is not null;
-        });
+        return PdfMergeContextMenuPaths.All(HasCommand) &&
+               PdfSplitContextMenuPaths.All(HasSplitMenu);
     }
 
     private static void RegisterSplitCommand(
-        RegistryKey splitKey,
+        RegistryKey shellKey,
         string verb,
         string label,
         string argument,
         string appExe)
     {
-        using var verbKey = splitKey.CreateSubKey(verb);
-        verbKey.SetValue(null, label);
+        using var verbKey = shellKey.CreateSubKey(verb);
+        verbKey.DeleteValue(string.Empty, throwOnMissingValue: false);
+        verbKey.SetValue("MUIVerb", label);
         verbKey.SetValue("MultiSelectModel", "Player");
 
         using var commandKey = verbKey.CreateSubKey("command");
         commandKey.SetValue(null, $"\"{appExe}\" {argument} \"%1\"");
+    }
+
+    private static bool HasAnyPdfContextMenuRegistration()
+    {
+        foreach (var contextMenuPath in PdfMergeContextMenuPaths.Concat(PdfSplitContextMenuPaths))
+        {
+            using var key = Registry.CurrentUser.OpenSubKey(contextMenuPath);
+            if (key is not null)
+            {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    private static bool HasCommand(string contextMenuPath)
+    {
+        using var commandKey = Registry.CurrentUser.OpenSubKey($"{contextMenuPath}\\command");
+        return commandKey?.GetValue(null) is string command && !string.IsNullOrWhiteSpace(command);
+    }
+
+    private static bool HasSplitMenu(string contextMenuPath)
+    {
+        using var splitKey = Registry.CurrentUser.OpenSubKey(contextMenuPath);
+        if (splitKey?.GetValue("MUIVerb") is not string { Length: > 0 })
+        {
+            return false;
+        }
+
+        return HasSplitCommand(splitKey, "SplitByPage") &&
+               HasSplitCommand(splitKey, "SplitByInterval") &&
+               HasSplitCommand(splitKey, "SplitByParity");
+    }
+
+    private static bool HasSplitCommand(RegistryKey splitKey, string verb)
+    {
+        using var commandKey = splitKey.OpenSubKey($"ExtendedSubCommandsKey\\shell\\{verb}\\command");
+        return commandKey?.GetValue(null) is string command && !string.IsNullOrWhiteSpace(command);
     }
 
     public static int CleanTempFiles()
