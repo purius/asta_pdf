@@ -115,6 +115,15 @@ if ($mainWindow -match 'SendViewerCommand\("thumbZoom(In|Out|Reset)"\)' -or
     throw 'Thumbnail zoom and A4 conversion must be owned by the WPF Page Organizer and native renderer.'
 }
 
+if ($mainWindow -match 'pageNumbers.Take(96)' -or
+    $mainWindow -notmatch 'PageOrganizerThumbnailScheduler' -or
+    $mainWindow -notmatch 'OnPageOrganizerThumbnailScrollChanged' -or
+    $mainWindow -notmatch 'RefreshPageOrganizerThumbnailViewport' -or
+    $mainWindow -notmatch 'OnPageOrganizerThumbnailRetryClick' -or
+    $mainWindow -notmatch 'PageOrganizerThumbnailRenderState.Failed') {
+    throw 'Page Organizer thumbnail scheduling, viewport refresh, and retry state must remain app-owned.'
+}
+
 if ($xaml -notmatch 'x:Name="PageOrganizerList"' -or
     $xaml -notmatch 'x:Name="PageOrganizerList"[\s\S]*?Focusable="True"' -or
     $xaml -notmatch 'PreviewMouseLeftButtonDown="OnPageOrganizerItemPreviewMouseLeftButtonDown"' -or
@@ -128,7 +137,10 @@ if ($xaml -notmatch 'x:Name="PageOrganizerList"' -or
     $xaml -notmatch 'DragLeave="OnPageOrganizerDragLeave"' -or
     $xaml -notmatch 'x:Name="DropBeforeIndicator"' -or
     $xaml -notmatch 'x:Name="DropAfterIndicator"' -or
-    $xaml -notmatch 'Drop="OnPageOrganizerDrop"') {
+    $xaml -notmatch 'Drop="OnPageOrganizerDrop"' -or
+    $xaml -notmatch 'Click="OnPageOrganizerThumbnailRetryClick"' -or
+    $xaml -notmatch 'Binding="{Binding IsThumbnailLoading}"' -or
+    $xaml -notmatch 'Binding="{Binding IsThumbnailFailed}"') {
     throw 'MainWindow must expose the app-owned Page Organizer panel and its direct input handlers.'
 }
 

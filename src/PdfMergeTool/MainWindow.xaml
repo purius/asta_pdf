@@ -1000,6 +1000,47 @@
                                                         <RotateTransform Angle="{Binding Rotation}" />
                                                     </Image.RenderTransform>
                                                 </Image>
+                                                <ProgressBar Width="34"
+                                                             Height="3"
+                                                             IsIndeterminate="True"
+                                                             VerticalAlignment="Center"
+                                                             HorizontalAlignment="Center"
+                                                             IsHitTestVisible="False">
+                                                    <ProgressBar.Style>
+                                                        <Style TargetType="{x:Type ProgressBar}">
+                                                            <Setter Property="Visibility" Value="Collapsed" />
+                                                            <Style.Triggers>
+                                                                <DataTrigger Binding="{Binding IsThumbnailLoading}" Value="True">
+                                                                    <Setter Property="Visibility" Value="Visible" />
+                                                                </DataTrigger>
+                                                            </Style.Triggers>
+                                                        </Style>
+                                                    </ProgressBar.Style>
+                                                </ProgressBar>
+                                                <Button Width="28"
+                                                        Height="28"
+                                                        Padding="0"
+                                                        HorizontalAlignment="Center"
+                                                        VerticalAlignment="Center"
+                                                        ToolTip="썸네일 다시 불러오기"
+                                                        Background="#FFF7ED"
+                                                        BorderBrush="#F59E0B"
+                                                        Click="OnPageOrganizerThumbnailRetryClick">
+                                                    <Button.Style>
+                                                        <Style TargetType="{x:Type Button}">
+                                                            <Setter Property="Visibility" Value="Collapsed" />
+                                                            <Style.Triggers>
+                                                                <DataTrigger Binding="{Binding IsThumbnailFailed}" Value="True">
+                                                                    <Setter Property="Visibility" Value="Visible" />
+                                                                </DataTrigger>
+                                                            </Style.Triggers>
+                                                        </Style>
+                                                    </Button.Style>
+                                                    <iconPacks:PackIconMaterial Kind="Refresh"
+                                                                                Width="16"
+                                                                                Height="16"
+                                                                                Foreground="#B45309" />
+                                                </Button>
                                             </Grid>
                                         </Border>
                                         <TextBlock Grid.Row="2"
