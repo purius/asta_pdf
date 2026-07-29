@@ -143,6 +143,24 @@ function assertThumbnailOverlayContract(markup) {
   assert.match(thumbnailRetryOverlay, thumbnailRetryOverlayPattern);
 }
 
+function assertActivePageIndicatorContract(markup) {
+  const thumbnailDataTemplate = getThumbnailDataTemplate(markup);
+  const activePageIndicator = getElementBlocks(thumbnailDataTemplate, "Border").find(
+    block => hasAttribute(block, "x:Name", "ActivePageIndicator")
+  );
+  const activePageBadge = getElementBlocks(thumbnailDataTemplate, "Border").find(
+    block => hasAttribute(block, "x:Name", "ActivePageBadge")
+  );
+
+  assert.ok(activePageIndicator, "Current page indicator is missing from the thumbnail DataTemplate.");
+  assert.ok(activePageBadge, "Current page badge is missing from the thumbnail DataTemplate.");
+  assert.match(activePageBadge, /<TextBlock Text="현재"/);
+  assert.match(
+    thumbnailDataTemplate,
+    /<DataTrigger Binding="\{Binding IsActive\}" Value="True">\s*<Setter TargetName="ActivePageIndicator" Property="Visibility" Value="Visible"\s*\/>\s*<Setter TargetName="ActivePageBadge" Property="Visibility" Value="Visible"\s*\/>\s*<\/DataTrigger>/s
+  );
+}
+
 assert.match(mainWindow, /EditorDocumentState\? _pageOrganizerState/);
 assert.match(mainWindow, /void ApplyPageOrganizerState\(/);
 assert.match(mainWindow, /OnPageOrganizerCheckBoxPreviewMouseLeftButtonDown/);
@@ -233,6 +251,7 @@ assert.throws(
   /interactive/
 );
 assertThumbnailOverlayContract(xaml);
+assertActivePageIndicatorContract(xaml);
 assert.match(mainWindow, /QueueActivePageFollow\(/);
 assert.match(mainWindow, /FollowActivePageOrganizerItem\(/);
 assert.match(mainWindow, /PageOrganizerList\.ScrollIntoView\(PageOrganizerRows\[rowIndex\]\);/);
@@ -243,6 +262,8 @@ assert.match(mainWindow, /Key\.PageUp/);
 assert.match(mainWindow, /Key\.PageDown/);
 assert.match(mainWindow, /Key\.Home/);
 assert.match(mainWindow, /Key\.End/);
+assert.match(mainWindow, /private static string GetPageOrganizerSummaryText\(EditorDocumentState state\)/);
+assert.match(mainWindow, /현재 \{activePage\}/);
 assert.match(xaml, /x:Name="PageOrganizerList"[\s\S]*?Focusable="True"[\s\S]*?PreviewKeyDown="OnPageOrganizerPreviewKeyDown"/);
 assert.match(mainWindow, /PageOrganizerThumbnailScheduler/);
 assert.match(mainWindow, /ObservableCollection<PageOrganizerRow> PageOrganizerRows/);

@@ -756,10 +756,20 @@ public partial class MainWindow : Window
             QueuePageOrganizerThumbnailViewportRefresh();
         }
 
-        PageOrganizerSummaryText.Text = state.PageNumbers.Count == 0
-            ? "페이지 없음"
-            : $"{state.PageNumbers.Count} 페이지 · {state.SelectedPageNumbers.Count} 선택";
+        PageOrganizerSummaryText.Text = GetPageOrganizerSummaryText(state);
 
+    }
+
+    private static string GetPageOrganizerSummaryText(EditorDocumentState state)
+    {
+        if (state.PageNumbers.Count == 0)
+        {
+            return "페이지 없음";
+        }
+
+        return state.ActivePageNumber is { } activePage
+            ? $"{state.PageNumbers.Count} 페이지 · 현재 {activePage} · {state.SelectedPageNumbers.Count} 선택"
+            : $"{state.PageNumbers.Count} 페이지 · {state.SelectedPageNumbers.Count} 선택";
     }
 
     private void OnPageOrganizerListSizeChanged(object sender, SizeChangedEventArgs e)

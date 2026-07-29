@@ -52,6 +52,10 @@ _Avoid_: PDF.js thumbnail editor, viewer page manager
 When preview navigation changes the active page, the Page Organizer scrolls only when that page's thumbnail is outside its visible viewport. Rapid preview changes are coalesced so only the latest active page is followed after layout. It pauses during a Page Move Group drag or Document Mutation, then resumes on the next preview navigation after that work finishes. It never changes Page Selection, page order, or a currently visible thumbnail's position.
 _Avoid_: forced centering, selection sync
 
+**Current Page Indicator**:
+The persistent thumbnail marker for the page currently rendered in the preview. It is independent from Page Selection, so both markers remain visible when the current page is also selected; the Page Organizer summary repeats the current page number.
+_Avoid_: selected page, checkbox state
+
 **Page Organizer Keyboard Navigation**:
 When Page Organizer has keyboard focus, each arrow key moves only the active page by one position in current document order. Page Up and Page Down move it by 10 positions, and Home and End move it to the first and last positions. Navigation never replaces Page Selection; copy, paste, cut, undo, redo, and delete operate on that retained selection. Other app surfaces retain their own keyboard behavior when Page Organizer does not have focus.
 _Avoid_: grid-direction navigation, selection replacement
