@@ -82,7 +82,7 @@ public sealed class PageOrganizerThumbnailScheduler
             }
         }
 
-        for (var index = promotedPageNumbers.Count - 1; index >= 0; index--)
+        for (var index = promotedPageNumbers.Length - 1; index >= 0; index--)
         {
             var pageNumber = promotedPageNumbers[index];
             _priorityPageSet.Add(pageNumber);
