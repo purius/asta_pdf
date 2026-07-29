@@ -21,6 +21,23 @@ public sealed class PageOrganizerThumbnailSchedulerTests
     }
 
     [Fact]
+    public void Prioritize_promotes_later_visible_pages_ahead_of_stale_cache_priority()
+    {
+        var scheduler = new PageOrganizerThumbnailScheduler(Enumerable.Range(1, 200).ToArray());
+        scheduler.Prioritize(Enumerable.Range(1, 24));
+        scheduler.Prioritize(Enumerable.Range(73, 52));
+        scheduler.Prioritize([97, 98, 99]);
+
+        Assert.True(scheduler.TryTakeNext(out var first));
+        scheduler.Complete(first);
+        Assert.True(scheduler.TryTakeNext(out var second));
+        scheduler.Complete(second);
+        Assert.True(scheduler.TryTakeNext(out var third));
+
+        Assert.Equal(new[] { 97, 98, 99 }, new[] { first, second, third });
+    }
+
+    [Fact]
     public void RegisterFailure_retries_once_then_leaves_the_failed_page_out_of_the_queue()
     {
         var scheduler = new PageOrganizerThumbnailScheduler([1, 2, 3]);

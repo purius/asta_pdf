@@ -109,6 +109,19 @@ assert.match(
   /item\.ThumbnailRenderState is PageOrganizerThumbnailRenderState\.Pending or\s+PageOrganizerThumbnailRenderState\.Evicted/s
 );
 assert.doesNotMatch(mainWindow, /item\.ThumbnailRenderState != PageOrganizerThumbnailRenderState\.Failed/);
+assert.match(mainWindow, /scheduler\.Request\(item\.PageNumber, priority: false\)/);
+assert.match(
+  mainWindow,
+  /scheduler\.Prioritize\(cacheWindow\);\s*scheduler\.Prioritize\(visiblePageNumbers\);/s
+);
+assert.match(
+  mainWindow,
+  /if \(orderChanged\)[\s\S]*?PageOrganizerItems\.Add\(item\);[\s\S]*?QueuePageOrganizerThumbnailViewportRefresh\(\);/s
+);
+assert.match(
+  mainWindow,
+  /private void QueuePageOrganizerThumbnailViewportRefresh\(\)[\s\S]*?IsCurrentPageOrganizerThumbnailRequest\([\s\S]*?DispatcherPriority\.Loaded[\s\S]*?IsCurrentPageOrganizerThumbnailRequest\(/s
+);
 
 const emittedMessages = [];
 const eventHandlers = new Map();

@@ -752,6 +752,8 @@ public partial class MainWindow : Window
             {
                 PageOrganizerItems.Add(item);
             }
+
+            QueuePageOrganizerThumbnailViewportRefresh();
         }
 
         PageOrganizerSummaryText.Text = state.PageNumbers.Count == 0
@@ -770,6 +772,32 @@ public partial class MainWindow : Window
         {
             // The organizer can refresh before its ListBox finishes item generation.
         }
+    }
+
+    private void QueuePageOrganizerThumbnailViewportRefresh()
+    {
+        var scheduler = _pageOrganizerThumbnailScheduler;
+        var cancellation = _pageOrganizerThumbnailCancellation;
+        var generation = _pageOrganizerThumbnailGeneration;
+        if (IsDocumentMutationInProgress ||
+            scheduler is null ||
+            cancellation is null ||
+            !IsCurrentPageOrganizerThumbnailRequest(generation, cancellation))
+        {
+            return;
+        }
+
+        _ = Dispatcher.BeginInvoke(new Action(() =>
+        {
+            if (IsDocumentMutationInProgress ||
+                !IsCurrentPageOrganizerThumbnailRequest(generation, cancellation) ||
+                !ReferenceEquals(_pageOrganizerThumbnailScheduler, scheduler))
+            {
+                return;
+            }
+
+            RefreshPageOrganizerThumbnailViewport();
+        }), DispatcherPriority.Loaded);
     }
 
     private void RefreshDirtyState()
@@ -1092,7 +1120,7 @@ public partial class MainWindow : Window
                          PageOrganizerThumbnailRenderState.Evicted)
             {
                 item.ThumbnailRenderState = PageOrganizerThumbnailRenderState.Pending;
-                scheduler.Request(item.PageNumber, priority: true);
+                scheduler.Request(item.PageNumber, priority: false);
             }
         }
 
@@ -1103,6 +1131,7 @@ public partial class MainWindow : Window
         }
 
         scheduler.Prioritize(cacheWindow);
+        scheduler.Prioritize(visiblePageNumbers);
         EnsurePageOrganizerThumbnailWorker(generation, cancellation);
     }
 

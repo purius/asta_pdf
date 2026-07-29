@@ -34,12 +34,29 @@ public sealed class PageOrganizerThumbnailScheduler
 
     public void Prioritize(IEnumerable<int> pageNumbers)
     {
+        var promotedPageNumbers = new List<int>();
+        var seenPageNumbers = new HashSet<int>();
         foreach (var pageNumber in pageNumbers)
         {
-            if (_pendingPages.Contains(pageNumber) && _priorityPageSet.Add(pageNumber))
+            if (_pendingPages.Contains(pageNumber) && seenPageNumbers.Add(pageNumber))
             {
-                _priorityPages.AddLast(pageNumber);
+                promotedPageNumbers.Add(pageNumber);
             }
+        }
+
+        foreach (var pageNumber in promotedPageNumbers)
+        {
+            if (_priorityPageSet.Remove(pageNumber))
+            {
+                _priorityPages.Remove(pageNumber);
+            }
+        }
+
+        for (var index = promotedPageNumbers.Count - 1; index >= 0; index--)
+        {
+            var pageNumber = promotedPageNumbers[index];
+            _priorityPageSet.Add(pageNumber);
+            _priorityPages.AddFirst(pageNumber);
         }
     }
 
