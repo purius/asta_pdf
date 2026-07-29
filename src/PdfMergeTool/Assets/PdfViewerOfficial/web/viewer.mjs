@@ -11206,31 +11206,47 @@ class PDFThumbnailViewer {
       const {
         target
       } = e;
-      if (target instanceof HTMLInputElement) {
-        const pageNumber = parseInt(target.parentElement.getAttribute("page-number"), 10);
-        if (e.shiftKey && this.#selectionAnchorPage) {
-          this.#clearSelection();
-          const start = Math.min(this.#selectionAnchorPage, pageNumber);
-          const end = Math.max(this.#selectionAnchorPage, pageNumber);
-          for (let selectedPage = start; selectedPage <= end; selectedPage++) {
-            const thumbnail = this._thumbnails[selectedPage - 1];
-            thumbnail.checkbox.checked = true;
-            this.#selectPage(selectedPage, true);
-          }
-        } else if (e.ctrlKey || e.metaKey) {
-          this.#selectPage(pageNumber, target.checked);
-          this.#selectionAnchorPage = pageNumber;
-        } else {
-          this.#clearSelection();
-          target.checked = true;
-          this.#selectPage(pageNumber, true);
-          this.#selectionAnchorPage = pageNumber;
-        }
+      const thumbnail = target.closest?.(".thumbnail[page-number]");
+      if (!thumbnail) {
+        return;
+      }
+
+      const pageNumber = parseInt(thumbnail.getAttribute("page-number"), 10);
+      if (target instanceof HTMLInputElement || e.shiftKey || e.ctrlKey || e.metaKey) {
+        e.preventDefault();
+        this.#selectThumbnailPages(pageNumber, e);
         return;
       }
       this.#goToPage(e);
     });
     this.#addDragListeners();
+  }
+  #selectThumbnailPages(pageNumber, event) {
+    if (event.shiftKey && this.#selectionAnchorPage) {
+      this.#clearSelection();
+      const start = Math.min(this.#selectionAnchorPage, pageNumber);
+      const end = Math.max(this.#selectionAnchorPage, pageNumber);
+      for (let selectedPage = start; selectedPage <= end; selectedPage++) {
+        const thumbnail = this._thumbnails[selectedPage - 1];
+        thumbnail.checkbox.checked = true;
+        this.#selectPage(selectedPage, true);
+      }
+      return;
+    }
+
+    const thumbnail = this._thumbnails[pageNumber - 1];
+    if (event.ctrlKey || event.metaKey) {
+      const checked = !this.#selectedPages?.has(pageNumber);
+      thumbnail.checkbox.checked = checked;
+      this.#selectPage(pageNumber, checked);
+      this.#selectionAnchorPage = pageNumber;
+      return;
+    }
+
+    this.#clearSelection();
+    thumbnail.checkbox.checked = true;
+    this.#selectPage(pageNumber, true);
+    this.#selectionAnchorPage = pageNumber;
   }
   #selectPage(pageNumber, checked) {
     if (this.#hasUndoBarVisible) {
