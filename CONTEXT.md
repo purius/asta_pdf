@@ -56,6 +56,22 @@ _Avoid_: forced centering, selection sync
 When Page Organizer has keyboard focus, each arrow key moves only the active page by one position in current document order. Page Up and Page Down move it by 10 positions, and Home and End move it to the first and last positions. Navigation never replaces Page Selection; copy, paste, cut, undo, redo, and delete operate on that retained selection. Other app surfaces retain their own keyboard behavior when Page Organizer does not have focus.
 _Avoid_: grid-direction navigation, selection replacement
 
+**Lazy Thumbnail Loading**:
+The Page Organizer renders thumbnail images according to their current relevance instead of imposing a fixed page-count cap. It renders the visible region and nearby pages first, reprioritizes when the user scrolls, then completes remaining pages in small background batches. Opening a new PDF cancels the old document's thumbnail work; every page becomes renderable as the user reaches it.
+_Avoid_: first-96-page limit, permanently empty thumbnail
+
+**Thumbnail Render Failure**:
+A failed thumbnail is isolated to its page: it receives one automatic retry, then remains visibly retryable while the queue continues rendering other pages. A single damaged or transiently failing page never terminates the document's thumbnail work.
+_Avoid_: document-wide thumbnail abort, silent permanent placeholder
+
+**Bounded Thumbnail Cache**:
+The Page Organizer keeps rendered images for the visible region and a limited nearby window in memory. Images far outside that window may be released and restored from cached output or re-rendered when they become relevant again, so large documents cannot accumulate unbounded image memory.
+_Avoid_: retain every rendered bitmap forever, unbounded thumbnail memory
+
+**Thumbnail Render State**:
+Each Page Organizer thumbnail visibly distinguishes loading, ready, and retryable-failure states. Loading feedback never changes Page Selection, and retry is a dedicated control rather than a thumbnail-selection click.
+_Avoid_: ambiguous PDF placeholder, retry by accidental selection
+
 **Document Mutation**:
 A long-running operation that produces or replaces PDF content, such as save, extract, split, insert, cut, or A4 conversion. Only one Document Mutation can run for the active PDF. While it runs, Page Organizer and overlay-edit input are temporarily unavailable; opening another PDF cancels the old mutation before it can publish a result.
 _Avoid_: background page edit, concurrent save
