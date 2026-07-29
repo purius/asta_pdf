@@ -98,6 +98,17 @@ assert.match(mainWindow, /RefreshPageOrganizerThumbnailViewport/);
 assert.match(mainWindow, /OnPageOrganizerThumbnailRetryClick/);
 assert.match(mainWindow, /PageOrganizerThumbnailRenderState.Failed/);
 assert.doesNotMatch(mainWindow, /pageNumbers.Take(96)/);
+assert.match(mainWindow, /_pageOrganizerThumbnailCacheWindow = cacheWindow\.ToHashSet\(\)/);
+assert.match(mainWindow, /item\.ThumbnailRenderState = PageOrganizerThumbnailRenderState\.Loading/);
+assert.match(
+  mainWindow,
+  /!cacheWindow\.Contains\(item\.PageNumber\)[\s\S]*?item\.ThumbnailRenderState = PageOrganizerThumbnailRenderState\.Evicted/
+);
+assert.match(
+  mainWindow,
+  /item\.ThumbnailRenderState is PageOrganizerThumbnailRenderState\.Pending or\s+PageOrganizerThumbnailRenderState\.Evicted/s
+);
+assert.doesNotMatch(mainWindow, /item\.ThumbnailRenderState != PageOrganizerThumbnailRenderState\.Failed/);
 
 const emittedMessages = [];
 const eventHandlers = new Map();

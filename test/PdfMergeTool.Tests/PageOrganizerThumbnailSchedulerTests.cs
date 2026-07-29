@@ -64,4 +64,22 @@ public sealed class PageOrganizerThumbnailSchedulerTests
         Assert.DoesNotContain(72, window);
         Assert.DoesNotContain(125, window);
     }
+
+    [Fact]
+    public void GetCacheWindow_unions_bounded_ranges_for_distant_visible_pages_after_reorder()
+    {
+        var scheduler = new PageOrganizerThumbnailScheduler(Enumerable.Range(1, 200).ToArray());
+
+        var window = scheduler.GetCacheWindow([200, 1]);
+
+        Assert.Equal(50, window.Count);
+        Assert.All(window, page => Assert.True(
+            (page >= 1 && page <= 25) || (page >= 176 && page <= 200)));
+        Assert.Contains(1, window);
+        Assert.Contains(25, window);
+        Assert.Contains(176, window);
+        Assert.Contains(200, window);
+        Assert.DoesNotContain(26, window);
+        Assert.DoesNotContain(175, window);
+    }
 }

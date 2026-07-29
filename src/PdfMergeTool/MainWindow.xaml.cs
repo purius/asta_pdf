@@ -1088,7 +1088,8 @@ public partial class MainWindow : Window
             }
             else if (cacheWindow.Contains(item.PageNumber) &&
                      item.Thumbnail is null &&
-                     item.ThumbnailRenderState != PageOrganizerThumbnailRenderState.Failed)
+                     item.ThumbnailRenderState is PageOrganizerThumbnailRenderState.Pending or
+                         PageOrganizerThumbnailRenderState.Evicted)
             {
                 item.ThumbnailRenderState = PageOrganizerThumbnailRenderState.Pending;
                 scheduler.Request(item.PageNumber, priority: true);

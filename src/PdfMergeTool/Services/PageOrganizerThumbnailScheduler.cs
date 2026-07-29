@@ -118,12 +118,18 @@ public sealed class PageOrganizerThumbnailScheduler
         }
 
         var radius = Math.Max(MinimumCacheRadius, visibleIndexes.Length * 2);
-        var firstIndex = Math.Max(0, visibleIndexes[0] - radius);
-        var lastIndex = Math.Min(_pageNumbers.Length - 1, visibleIndexes[^1] + radius);
-        return _pageNumbers
-            .Skip(firstIndex)
-            .Take(lastIndex - firstIndex + 1)
-            .ToHashSet();
+        var cacheWindow = new HashSet<int>();
+        foreach (var visibleIndex in visibleIndexes)
+        {
+            var firstIndex = Math.Max(0, visibleIndex - radius);
+            var lastIndex = Math.Min(_pageNumbers.Length - 1, visibleIndex + radius);
+            for (var index = firstIndex; index <= lastIndex; index++)
+            {
+                cacheWindow.Add(_pageNumbers[index]);
+            }
+        }
+
+        return cacheWindow;
     }
 
     private bool TryStart(int pageNumber, out int nextPageNumber)
