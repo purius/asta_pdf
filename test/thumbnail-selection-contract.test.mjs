@@ -39,6 +39,10 @@ const thumbnailScheduler = await readFile(
   new URL("../src/PdfMergeTool/Services/PageOrganizerThumbnailScheduler.cs", import.meta.url),
   "utf8"
 );
+const pageOrganizerViewport = await readFile(
+  new URL("../src/PdfMergeTool/Services/PageOrganizerViewport.cs", import.meta.url),
+  "utf8"
+);
 
 const pageOrganizerThumbnailCapPattern =
   /pageNumbers\s*\.\s*Take\s*\(\s*96\s*\)/;
@@ -296,6 +300,19 @@ const queueViewportRefresh = getMethodBlock(
 );
 assert.match(queueViewportRefresh, /if \(_pageOrganizerThumbnailViewportRefreshQueued\)/);
 assert.match(queueViewportRefresh, /_pageOrganizerThumbnailViewportRefreshQueued = true/);
+
+const activePageFollow = getMethodBlock(
+  mainWindow,
+  "private void FollowActivePageOrganizerItem(int pageNumber, int followRevision)",
+  "private bool TryRevealPageOrganizerRowIfRealized"
+);
+assert.doesNotMatch(activePageFollow, /ScrollIntoView/);
+assert.match(activePageFollow, /ScrollToEstimatedPageOrganizerRow\(rowIndex\)/);
+assert.match(activePageFollow, /followRevision == _pageOrganizerFollowRevision/);
+assert.match(
+  pageOrganizerViewport,
+  /GetVerticalOffsetToRevealIndexedRow\(\s*double currentOffset,\s*double viewportHeight,\s*int rowIndex,\s*double estimatedRowHeight,\s*double scrollableHeight\s*\)/s
+);
 
 const pageOrganizerColumnCount = getMethodBlock(
   mainWindow,

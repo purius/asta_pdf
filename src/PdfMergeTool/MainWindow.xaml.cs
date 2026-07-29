@@ -81,6 +81,7 @@ public partial class MainWindow : Window
     private int? _pendingPageOrganizerFollowPage;
     private int _pendingPageOrganizerFollowLoadGeneration;
     private int _pageOrganizerFollowRequestId;
+    private int _pageOrganizerFollowRevision;
     private bool _pageOrganizerFollowQueued;
     private bool _isPageOrganizerDragInProgress;
     private double _pageOrganizerThumbnailHeight = DefaultPageOrganizerThumbnailHeight;
@@ -425,6 +426,7 @@ public partial class MainWindow : Window
             return;
         }
 
+        _pageOrganizerFollowRevision++;
         _pendingPageOrganizerFollowPage = pageNumber;
         _pendingPageOrganizerFollowLoadGeneration = _documentLoadGeneration;
         if (_pageOrganizerFollowQueued)
@@ -444,13 +446,14 @@ public partial class MainWindow : Window
             _pageOrganizerFollowQueued = false;
             var page = _pendingPageOrganizerFollowPage;
             var loadGeneration = _pendingPageOrganizerFollowLoadGeneration;
+            var followRevision = _pageOrganizerFollowRevision;
             _pendingPageOrganizerFollowPage = null;
             if (page is null || loadGeneration != _documentLoadGeneration || IsActivePageFollowSuspended())
             {
                 return;
             }
 
-            FollowActivePageOrganizerItem(page.Value);
+            FollowActivePageOrganizerItem(page.Value, followRevision);
         }), DispatcherPriority.Loaded);
     }
 
@@ -460,12 +463,13 @@ public partial class MainWindow : Window
         _pendingPageOrganizerFollowLoadGeneration = 0;
         _pageOrganizerFollowQueued = false;
         _pageOrganizerFollowRequestId++;
+        _pageOrganizerFollowRevision++;
     }
 
     private bool IsActivePageFollowSuspended() =>
         IsDocumentMutationInProgress || _isPageOrganizerDragInProgress;
 
-    private void FollowActivePageOrganizerItem(int pageNumber)
+    private void FollowActivePageOrganizerItem(int pageNumber, int followRevision)
     {
         if (!_pageOrganizerRowIndexesByPageNumber.TryGetValue(pageNumber, out var rowIndex) ||
             rowIndex < 0 ||
@@ -474,31 +478,39 @@ public partial class MainWindow : Window
             return;
         }
 
-        PageOrganizerList.ScrollIntoView(PageOrganizerRows[rowIndex]);
+        if (TryRevealPageOrganizerRowIfRealized(pageNumber))
+        {
+            return;
+        }
+
+        ScrollToEstimatedPageOrganizerRow(rowIndex);
         var loadGeneration = _documentLoadGeneration;
         _ = Dispatcher.BeginInvoke(new Action(() =>
         {
-            if (loadGeneration == _documentLoadGeneration)
+            if (followRevision == _pageOrganizerFollowRevision &&
+                loadGeneration == _documentLoadGeneration &&
+                !IsActivePageFollowSuspended() &&
+                _activePage == pageNumber)
             {
-                RevealPageOrganizerRowIfRealized(pageNumber);
+                TryRevealPageOrganizerRowIfRealized(pageNumber);
             }
         }), DispatcherPriority.Loaded);
     }
 
-    private void RevealPageOrganizerRowIfRealized(int pageNumber)
+    private bool TryRevealPageOrganizerRowIfRealized(int pageNumber)
     {
         if (!_pageOrganizerRowIndexesByPageNumber.TryGetValue(pageNumber, out var rowIndex) ||
             rowIndex < 0 ||
             rowIndex >= PageOrganizerRows.Count ||
             PageOrganizerList.ItemContainerGenerator.ContainerFromIndex(rowIndex) is not FrameworkElement container)
         {
-            return;
+            return false;
         }
 
         var scrollViewer = FindVisualDescendant<ScrollViewer>(PageOrganizerList);
         if (scrollViewer is null || scrollViewer.ViewportHeight <= 0 || container.ActualHeight <= 0)
         {
-            return;
+            return false;
         }
 
         try
@@ -514,10 +526,37 @@ public partial class MainWindow : Window
             {
                 scrollViewer.ScrollToVerticalOffset(offset);
             }
+
+            return true;
         }
         catch (InvalidOperationException)
         {
             // The item can be regenerated while the PDF viewer is changing pages.
+            return false;
+        }
+    }
+
+    private void ScrollToEstimatedPageOrganizerRow(int rowIndex)
+    {
+        var scrollViewer = FindVisualDescendant<ScrollViewer>(PageOrganizerList);
+        if (scrollViewer is null ||
+            scrollViewer.ViewportHeight <= 0 ||
+            scrollViewer.ExtentHeight <= 0 ||
+            PageOrganizerRows.Count == 0)
+        {
+            return;
+        }
+
+        var estimatedRowHeight = scrollViewer.ExtentHeight / PageOrganizerRows.Count;
+        var targetOffset = PageOrganizerViewport.GetVerticalOffsetToRevealIndexedRow(
+            scrollViewer.VerticalOffset,
+            scrollViewer.ViewportHeight,
+            rowIndex,
+            estimatedRowHeight,
+            scrollViewer.ScrollableHeight);
+        if (targetOffset is { } offset)
+        {
+            scrollViewer.ScrollToVerticalOffset(offset);
         }
     }
 
