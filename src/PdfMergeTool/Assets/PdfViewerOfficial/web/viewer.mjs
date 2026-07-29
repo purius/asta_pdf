@@ -11212,7 +11212,12 @@ class PDFThumbnailViewer {
       }
 
       const pageNumber = parseInt(thumbnail.getAttribute("page-number"), 10);
-      if (target instanceof HTMLInputElement || e.shiftKey || e.ctrlKey || e.metaKey) {
+      if (target instanceof HTMLInputElement) {
+        this.#selectThumbnailPages(pageNumber, e);
+        return;
+      }
+
+      if (e.shiftKey || e.ctrlKey || e.metaKey) {
         e.preventDefault();
         this.#selectThumbnailPages(pageNumber, e);
         return;
