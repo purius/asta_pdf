@@ -856,10 +856,16 @@ public partial class MainWindow : Window
 
     private int GetPageOrganizerColumnCount()
     {
-        var scrollViewer = FindVisualDescendant<ScrollViewer>(PageOrganizerList);
+        var pageOrganizerList = PageOrganizerList;
+        if (pageOrganizerList is null)
+        {
+            return Math.Max(1, _pageOrganizerColumnCount);
+        }
+
+        var scrollViewer = FindVisualDescendant<ScrollViewer>(pageOrganizerList);
         var availableWidth = scrollViewer?.ViewportWidth > 0
             ? scrollViewer.ViewportWidth
-            : PageOrganizerList.ActualWidth;
+            : pageOrganizerList.ActualWidth;
         if (availableWidth <= 0)
         {
             return Math.Max(1, _pageOrganizerColumnCount);

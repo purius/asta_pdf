@@ -297,6 +297,18 @@ const queueViewportRefresh = getMethodBlock(
 assert.match(queueViewportRefresh, /if \(_pageOrganizerThumbnailViewportRefreshQueued\)/);
 assert.match(queueViewportRefresh, /_pageOrganizerThumbnailViewportRefreshQueued = true/);
 
+const pageOrganizerColumnCount = getMethodBlock(
+  mainWindow,
+  "private int GetPageOrganizerColumnCount()",
+  "private void QueuePageOrganizerThumbnailViewportRefresh()"
+);
+assert.match(
+  pageOrganizerColumnCount,
+  /var pageOrganizerList = PageOrganizerList;\s*if \(pageOrganizerList is null\)\s*\{\s*return Math\.Max\(1, _pageOrganizerColumnCount\);\s*\}/s
+);
+assert.match(pageOrganizerColumnCount, /FindVisualDescendant<ScrollViewer>\(pageOrganizerList\)/);
+assert.match(pageOrganizerColumnCount, /: pageOrganizerList\.ActualWidth/);
+
 const thumbnailScrollHandler = getMethodBlock(
   mainWindow,
   "private void OnPageOrganizerThumbnailScrollChanged(",
