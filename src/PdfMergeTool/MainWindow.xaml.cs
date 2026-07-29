@@ -38,6 +38,7 @@ public partial class MainWindow : Window
     private bool _viewerReady;
     private string? _currentPdfPath;
     private string? _referencePdfPath;
+    private string? _workingSaveTargetPath;
     private string? _pendingPdfPath;
     private string? _pendingReferencePdfPath;
     private bool _pendingDirtyAfterLoad;
@@ -375,9 +376,19 @@ public partial class MainWindow : Window
             : _selectedPages;
     }
 
-    private async void LoadPdf(string path, string? referencePath = null, bool dirtyAfterLoad = false, int? initialPage = null)
+    private async void LoadPdf(
+        string path,
+        string? referencePath = null,
+        bool dirtyAfterLoad = false,
+        int? initialPage = null,
+        bool preserveWorkingSaveTarget = false)
     {
         CleanupCompatibilityState();
+        if (!preserveWorkingSaveTarget)
+        {
+            _workingSaveTargetPath = null;
+        }
+
         _currentPdfPath = path;
         _referencePdfPath = referencePath ?? path;
         _pageOrder = [];
@@ -1485,7 +1496,7 @@ public partial class MainWindow : Window
     {
         if (!string.IsNullOrWhiteSpace(_currentPdfPath))
         {
-            LoadPdf(_currentPdfPath);
+            LoadPdf(_currentPdfPath, preserveWorkingSaveTarget: true);
         }
     }
 
@@ -1497,28 +1508,32 @@ public partial class MainWindow : Window
             return;
         }
 
-        var referencePath = _referencePdfPath ?? _currentPdfPath;
-        var outputPath = SavePathPromptService.ResolveOutputPath(this, referencePath, "PDF 저장");
+        var outputPath = ResolveWorkingSaveTarget();
         if (outputPath is null)
         {
             return;
         }
 
         string? transformedTempPath = null;
+        string? publicationTempPath = null;
         try
         {
             var editorState = await CollectEditorStateAsync();
             var pageTransforms = GetCurrentPageTransforms();
             var remappedEditorState = RemapEditorStateToOutputPageOrder(editorState, pageTransforms);
-            var outputTarget = remappedEditorState.Edits.Count > 0 ? CreateTempPdfPath("editor-source") : outputPath;
+            publicationTempPath = CreatePublicationTempPath(outputPath);
+            var outputTarget = remappedEditorState.Edits.Count > 0 ? CreateTempPdfPath("editor-source") : publicationTempPath;
             var result = await _pdfService.SaveTransformedPagesAsync(_currentPdfPath, pageTransforms, outputTarget, CancellationToken.None);
             transformedTempPath = remappedEditorState.Edits.Count > 0 ? result.OutputPath : null;
             if (remappedEditorState.Edits.Count > 0)
             {
                 var exportedBase64 = await ExportOverlayPdfAsync(result.OutputPath, remappedEditorState);
-                await File.WriteAllBytesAsync(outputPath, Convert.FromBase64String(exportedBase64));
-                result = result with { OutputPath = outputPath };
+                await File.WriteAllBytesAsync(publicationTempPath, Convert.FromBase64String(exportedBase64));
             }
+            VerifySavedPdf(publicationTempPath, pageTransforms.Count);
+            PdfSavePublisher.Publish(publicationTempPath, outputPath);
+            publicationTempPath = null;
+            result = result with { OutputPath = outputPath };
             var message = string.IsNullOrWhiteSpace(result.WarningMessage)
                 ? $"저장 완료:\n{result.OutputPath}"
                 : $"저장 완료:\n{result.OutputPath}\n\n참고: {result.WarningMessage}";
@@ -1526,7 +1541,7 @@ public partial class MainWindow : Window
             _isDirty = false;
             UpdateWindowTitle();
             SendViewerCommand("markClean");
-            LoadPdf(result.OutputPath);
+            LoadPdf(result.OutputPath, preserveWorkingSaveTarget: true);
             MessageBox.Show(this, message, "PDF 저장", MessageBoxButton.OK, MessageBoxImage.Information);
         }
         catch (Exception ex)
@@ -1539,6 +1554,57 @@ public partial class MainWindow : Window
             {
                 TryDeleteTempFile(transformedTempPath);
             }
+
+            if (publicationTempPath is not null)
+            {
+                TryDeleteTempFile(publicationTempPath);
+            }
+        }
+    }
+
+    private string? ResolveWorkingSaveTarget()
+    {
+        if (!string.IsNullOrWhiteSpace(_workingSaveTargetPath))
+        {
+            return _workingSaveTargetPath;
+        }
+
+        var referencePath = _referencePdfPath ?? _currentPdfPath!;
+        var folder = Path.GetDirectoryName(referencePath) ?? Environment.GetFolderPath(Environment.SpecialFolder.MyDocuments);
+        var defaultPath = Path.Combine(folder, $"{Path.GetFileNameWithoutExtension(referencePath)}_편집본.pdf");
+        var dialog = SavePathPromptService.CreateSaveDialog(defaultPath, "PDF 다른 이름으로 저장");
+        if (dialog.ShowDialog(this) != true)
+        {
+            return null;
+        }
+
+        var outputPath = SavePathPromptService.ResolveOutputPath(this, dialog.FileName, "PDF 다른 이름으로 저장");
+        if (outputPath is not null)
+        {
+            _workingSaveTargetPath = outputPath;
+        }
+
+        return outputPath;
+    }
+
+    private static string CreatePublicationTempPath(string outputPath)
+    {
+        var folder = Path.GetDirectoryName(outputPath) ?? Path.GetTempPath();
+        var name = Path.GetFileNameWithoutExtension(outputPath);
+        return Path.Combine(folder, $".{name}.{Guid.NewGuid():N}.pending.pdf");
+    }
+
+    private void VerifySavedPdf(string outputPath, int expectedPageCount)
+    {
+        if (!File.Exists(outputPath) || new FileInfo(outputPath).Length == 0)
+        {
+            throw new InvalidOperationException("저장된 임시 PDF 파일을 찾을 수 없습니다.");
+        }
+
+        var savedPageCount = _pdfService.GetPageCount(outputPath);
+        if (savedPageCount != expectedPageCount)
+        {
+            throw new InvalidOperationException($"저장 검증 실패: 페이지 수가 예상과 다릅니다. 예상 {expectedPageCount}, 실제 {savedPageCount}");
         }
     }
 
