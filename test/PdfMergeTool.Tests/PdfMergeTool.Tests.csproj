@@ -26,5 +26,7 @@
              Link="Services/PdfSavePublisher.cs" />
     <Compile Include="../../src/PdfMergeTool/Services/PageOrganizerViewport.cs"
              Link="Services/PageOrganizerViewport.cs" />
+    <Compile Include="../../src/PdfMergeTool/Services/PageOrganizerThumbnailScheduler.cs"
+             Link="Services/PageOrganizerThumbnailScheduler.cs" />
   </ItemGroup>
 </Project>
