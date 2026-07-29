@@ -23,3 +23,23 @@ _Avoid_: bulk split, batch split
 **Split Interval**:
 The positive integer N used by every-N-pages split. It defaults to 1, accepts values larger than the source page count, and rejects non-integers and values below 1.
 _Avoid_: page count, split size
+
+**Page Selection**:
+The explicit set of page thumbnails targeted by a page operation. A plain click selects one page, Shift-click selects the inclusive range from the selection anchor, and Ctrl-click toggles one page without changing other selections.
+_Avoid_: checkbox state, current page
+
+**Page Move Group**:
+The ordered set moved when a selected thumbnail is dragged. Dragging an unselected thumbnail moves only that page; dragging any member of a Page Selection moves every selected page together, preserving their relative order.
+_Avoid_: checked pages, drag selection
+
+**Working Save Target**:
+The user-chosen PDF file that receives subsequent saves for the currently open editing session. The original source PDF remains unchanged unless the user explicitly chooses to overwrite it.
+_Avoid_: current PDF, save path
+
+**Edit History**:
+The chronological sequence of user-visible page and overlay edits for one editing session. Each completed action, including a multi-page move, is one undoable step; a successful save establishes a new clean baseline.
+_Avoid_: editor-only undo, page undo
+
+**Recovery Snapshot**:
+An internal, non-source copy of unsaved editing state used only to offer recovery after an interrupted session. It never replaces a Working Save Target or the original source PDF without a user decision.
+_Avoid_: auto-save to original, backup PDF
