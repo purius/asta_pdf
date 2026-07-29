@@ -79,7 +79,7 @@ if ($mainWindow -notmatch 'RemapEditorStateToOutputPageOrder' -or
     $mainWindow -notmatch 'TryGetProperty\("page"' -or
     $mainWindow -notmatch 'pageToOutputIndex' -or
     $mainWindow -notmatch 'remappedEditorState' -or
-    $mainWindow -notmatch 'remappedEditorState\.Edits\.Count > 0 \? CreateTempPdfPath\("editor-source"\) : outputPath') {
+    $mainWindow -notmatch 'remappedEditorState\.Edits\.Count > 0 \? CreateTempPdfPath\("editor-source"\) : publicationTempPath') {
     throw 'Overlay edits must be remapped from original PDF page numbers to saved output page order before export.'
 }
 
