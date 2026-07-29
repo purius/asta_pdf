@@ -3635,6 +3635,12 @@ public partial class MainWindow : Window
 
     private void OnPageOrganizerItemPreviewMouseLeftButtonUp(object sender, MouseButtonEventArgs e)
     {
+        if (e.OriginalSource is DependencyObject source &&
+            FindVisualAncestor<Button>(source) is not null)
+        {
+            return;
+        }
+
         if (IsDocumentMutationInProgress)
         {
             ClearPageOrganizerPointerState();

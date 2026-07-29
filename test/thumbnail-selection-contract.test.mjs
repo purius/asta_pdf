@@ -135,6 +135,14 @@ assert.match(mainWindow, /EditorDocumentState\? _pageOrganizerState/);
 assert.match(mainWindow, /void ApplyPageOrganizerState\(/);
 assert.match(mainWindow, /OnPageOrganizerCheckBoxPreviewMouseLeftButtonDown/);
 assert.match(mainWindow, /OnPageOrganizerItemPreviewMouseLeftButtonDown/);
+assert.match(
+  mainWindow,
+  /private void OnPageOrganizerItemPreviewMouseLeftButtonDown\(object sender, MouseButtonEventArgs e\)[\s\S]*?FindVisualAncestor<CheckBox>\(source\) is not null\s*\|\|\s*FindVisualAncestor<Button>\(source\) is not null\s*\)\s*\{\s*return;\s*\}/
+);
+assert.match(
+  mainWindow,
+  /private void OnPageOrganizerItemPreviewMouseLeftButtonUp\(object sender, MouseButtonEventArgs e\)\s*\{\s*if\s*\(\s*e\.OriginalSource is DependencyObject source\s*&&\s*FindVisualAncestor<Button>\(source\) is not null\s*\)\s*\{\s*return;\s*\}/s
+);
 assert.match(mainWindow, /void HandleNativePageTransferDrop\(/);
 assert.match(mainWindow, /void HandleNativeFileDrop\(/);
 assert.match(mainWindow, /int _pendingLoadGeneration/);

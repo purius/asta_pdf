@@ -112,11 +112,16 @@ if ($operationCoordinator -notmatch 'StartNewDocument\(' -or
     throw 'Document operations must cancel stale work and serialize mutations for the active PDF.'
 }
 
+$pageOrganizerMouseDownButtonBypassPattern = 'private void OnPageOrganizerItemPreviewMouseLeftButtonDown\(object sender, MouseButtonEventArgs e\)[\s\S]*?FindVisualAncestor<CheckBox>\(source\) is not null\s*\|\|\s*FindVisualAncestor<Button>\(source\) is not null\s*\)\s*\{\s*return;\s*\}'
+$pageOrganizerMouseUpButtonBypassPattern = 'private void OnPageOrganizerItemPreviewMouseLeftButtonUp\(object sender, MouseButtonEventArgs e\)\s*\{\s*if\s*\(\s*e\.OriginalSource is DependencyObject source\s*&&\s*FindVisualAncestor<Button>\(source\) is not null\s*\)\s*\{\s*return;\s*\}'
+
 if ($mainWindow -notmatch 'EditorDocumentState\? _pageOrganizerState' -or
     $mainWindow -notmatch 'InitializePageOrganizerStateAsync\(' -or
     $mainWindow -notmatch 'ApplyPageOrganizerState\(' -or
     $mainWindow -notmatch 'OnPageOrganizerCheckBoxPreviewMouseLeftButtonDown' -or
     $mainWindow -notmatch 'OnPageOrganizerItemPreviewMouseLeftButtonDown' -or
+    $mainWindow -notmatch $pageOrganizerMouseDownButtonBypassPattern -or
+    $mainWindow -notmatch $pageOrganizerMouseUpButtonBypassPattern -or
     $mainWindow -notmatch 'OnPageOrganizerDrop' -or
     $mainWindow -notmatch '_pendingLoadGeneration' -or
     $mainWindow -notmatch 'IsCurrentViewerLoadMessage\(' -or
