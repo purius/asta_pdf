@@ -37,7 +37,7 @@ The user-chosen PDF file that receives subsequent saves for the currently open e
 _Avoid_: current PDF, save path
 
 **Edit History**:
-The chronological sequence of user-visible page and overlay edits for one editing session. Each completed action, including a multi-page move, is one undoable step; a successful save establishes a new clean baseline.
+The chronological sequence of user-visible edits for one editing session. The Page Organizer records structural page actions, including a multi-page move, as undoable steps; the existing overlay editor retains its own history when no page action is pending. A successful save establishes a new clean baseline for page actions.
 _Avoid_: editor-only undo, page undo
 
 **Recovery Snapshot**:
@@ -47,3 +47,7 @@ _Avoid_: auto-save to original, backup PDF
 **Page Organizer**:
 The app-owned page management panel that is the sole authority for page selection, order, rotations, structural edits, and Edit History. The embedded PDF viewer renders the current document but does not own page-editing interactions.
 _Avoid_: PDF.js thumbnail editor, viewer page manager
+
+**Document Mutation**:
+A long-running operation that produces or replaces PDF content, such as save, extract, split, insert, cut, or A4 conversion. Only one Document Mutation can run for the active PDF. While it runs, Page Organizer and overlay-edit input are temporarily unavailable; opening another PDF cancels the old mutation before it can publish a result.
+_Avoid_: background page edit, concurrent save

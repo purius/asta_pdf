@@ -25,7 +25,7 @@ jobs:
       - name: Verify viewer and stability contracts
         shell: pwsh
         run: |
-          .\scripts\verify-viewer-thumbnails.ps1
+          .\scripts\verify-page-organizer.ps1
           .\scripts\verify-stability.ps1
 
       - name: Syntax-check viewer adapters
@@ -34,10 +34,15 @@ jobs:
           node --check src/PdfMergeTool/Assets/PdfViewerOfficial/web/app-adapter.js
           node --check src/PdfMergeTool/Assets/PdfViewerOfficial/web/editor-adapter.js
           node --check src/PdfMergeTool/Assets/PdfViewerOfficial/web/pdf-lib-adapter.js
+          node test/thumbnail-selection-contract.test.mjs
 
       - name: Build installer
         shell: pwsh
         run: .\scripts\build-installer.ps1
+
+      - name: Smoke-test packaged application startup
+        shell: pwsh
+        run: .\scripts\verify-packaged-startup.ps1
 
       - name: Create GitHub release
         uses: softprops/action-gh-release@v2

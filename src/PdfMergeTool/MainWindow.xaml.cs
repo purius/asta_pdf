@@ -1,5 +1,6 @@
+using System.Collections.ObjectModel;
+using System.ComponentModel;
 using System.IO;
-using System.Globalization;
 using System.Printing;
 using System.Runtime.InteropServices;
 using System.Text.Json;
@@ -26,6 +27,10 @@ public partial class MainWindow : Window
     private const int A4OptimizedMaxWidthPixels = 2200;
     private const int A4OptimizedMaxHeightPixels = 3112;
     private const string PageTransferClipboardFormat = "PdfMergeTool.Pages.v1";
+    private const string PageOrganizerDragDataFormat = "PdfMergeTool.PageOrganizerPage.v1";
+    private const double DefaultPageOrganizerThumbnailHeight = 142;
+    private const double MinimumPageOrganizerThumbnailHeight = 106;
+    private const double MaximumPageOrganizerThumbnailHeight = 238;
     private static readonly JsonSerializerOptions PageTransferJsonOptions = new()
     {
         PropertyNameCaseInsensitive = true,
@@ -35,6 +40,8 @@ public partial class MainWindow : Window
     private readonly AppSettings _settings = AppSettings.Load();
     private readonly PdfMergeService _pdfService = new();
     private readonly PdfFallbackRenderService _fallbackRenderService = new();
+    private readonly PdfFallbackRenderService _pageOrganizerRenderService = new();
+    private readonly DocumentOperationCoordinator _documentOperations = new();
     private bool _viewerReady;
     private string? _currentPdfPath;
     private string? _referencePdfPath;
@@ -43,16 +50,24 @@ public partial class MainWindow : Window
     private string? _pendingReferencePdfPath;
     private bool _pendingDirtyAfterLoad;
     private int? _pendingInitialPage;
+    private int _pendingLoadGeneration;
     private IReadOnlyList<int> _pageOrder = [];
     private IReadOnlyDictionary<int, int> _pageRotations = new Dictionary<int, int>();
     private IReadOnlyList<int> _selectedPages = [];
     private int? _activePage;
     private bool _isDirty;
+    private bool _editorDirty;
+    private EditorDocumentState? _pageOrganizerState;
+    private CancellationTokenSource? _pageOrganizerThumbnailCancellation;
+    private int _pageOrganizerThumbnailGeneration;
+    private int _documentLoadGeneration;
+    private int? _documentMutationGeneration;
+    private int? _pageOrganizerDragPageNumber;
+    private Point? _pageOrganizerDragStartPosition;
+    private int? _pageOrganizerPendingPlainSelectionPageNumber;
+    private double _pageOrganizerThumbnailHeight = DefaultPageOrganizerThumbnailHeight;
     private MergeWindow? _mergeWindow;
     private TaskCompletionSource<bool>? _printReadyCompletion;
-    private TaskCompletionSource<IReadOnlyList<PdfImagePage>>? _a4ExportCompletion;
-    private readonly List<ExportedA4Page> _a4ExportedPages = [];
-    private int _a4ExportExpectedPages;
     private readonly List<NativeFileDropTarget> _viewerDropTargets = [];
     private int? _lastLoggedPageCount;
     private string? _servedPdfLinkPath;
@@ -65,6 +80,8 @@ public partial class MainWindow : Window
     private TaskCompletionSource<string>? _overlayPdfExportCompletion;
     private string? _overlayPdfExportRequestId;
 
+    public ObservableCollection<PageOrganizerItem> PageOrganizerItems { get; } = [];
+
     public MainWindow(IEnumerable<string> initialFiles, bool openMergeWindow)
     {
         InitializeComponent();
@@ -76,7 +93,6 @@ public partial class MainWindow : Window
         OpenFiles(initialFiles, openMergeWindow);
     }
 
-    private sealed record ExportedA4Page(int Index, PdfImagePage Image);
     private sealed record PageTransferPayload(string SourcePath, List<PdfPageTransform> Pages, bool Cut);
     private sealed record ExternalPagesDropMessage(string SourcePath, List<PdfPageTransform> Pages, int InsertionIndex);
     private sealed record ExternalFilesDropMessage(List<string> Paths, int InsertionIndex);
@@ -150,6 +166,7 @@ public partial class MainWindow : Window
         PdfViewer.AllowExternalDrop = false;
         PdfViewer.CoreWebView2.Settings.AreDefaultContextMenusEnabled = false;
         PdfViewer.CoreWebView2.Settings.IsZoomControlEnabled = false;
+        PdfViewer.CoreWebView2.Settings.AreBrowserAcceleratorKeysEnabled = false;
         RegisterNativeViewerDropTargets();
         PdfViewer.CoreWebView2.NavigationCompleted += (_, _) => RegisterNativeViewerDropTargets();
         PdfViewer.CoreWebView2.WebMessageReceived += async (_, args) =>
@@ -174,12 +191,19 @@ public partial class MainWindow : Window
                 var pendingReference = _pendingReferencePdfPath;
                 var pendingDirty = _pendingDirtyAfterLoad;
                 var pendingInitialPage = _pendingInitialPage;
+                var pendingLoadGeneration = _pendingLoadGeneration;
                 _pendingPdfPath = null;
                 _pendingReferencePdfPath = null;
                 _pendingDirtyAfterLoad = false;
                 _pendingInitialPage = null;
+                _pendingLoadGeneration = 0;
+                if (pendingLoadGeneration != _documentLoadGeneration)
+                {
+                    return;
+                }
+
                 _referencePdfPath = pendingReference ?? pending;
-                await SendPdfToViewerAsync(pending, pendingDirty, pendingInitialPage);
+                await SendPdfToViewerAsync(pending, pendingLoadGeneration, pendingDirty, pendingInitialPage);
                 return;
             }
 
@@ -245,18 +269,6 @@ public partial class MainWindow : Window
                 return;
             }
 
-            if (type == "a4PageImage")
-            {
-                ReceiveA4PageImage(document.RootElement);
-                return;
-            }
-
-            if (type == "a4ExportComplete")
-            {
-                CompleteA4PageImageExport(document.RootElement);
-                return;
-            }
-
             if (type == "viewerDiagnostic")
             {
                 LogViewerDiagnostic(document.RootElement);
@@ -271,79 +283,81 @@ public partial class MainWindow : Window
 
             if (type == "viewerLoadFailed")
             {
+                if (!IsCurrentViewerLoadMessage(document.RootElement))
+                {
+                    return;
+                }
+
                 var message = document.RootElement.TryGetProperty("message", out var messageElement)
                     ? messageElement.GetString()
                     : "알 수 없는 오류";
-                await HandleViewerLoadFailedAsync(message);
+                await HandleViewerLoadFailedAsync(message, _documentLoadGeneration);
                 return;
             }
 
             if (type == "viewerFirstPageRendered")
             {
-                ViewerLoading.Visibility = Visibility.Collapsed;
+                if (IsCurrentViewerLoadMessage(document.RootElement))
+                {
+                    ViewerLoading.Visibility = Visibility.Collapsed;
+                }
+
                 return;
             }
 
             if (type == "editorStateChanged")
             {
-                _isDirty = document.RootElement.TryGetProperty("isDirty", out var dirtyElement) &&
-                           dirtyElement.GetBoolean();
-                UpdateWindowTitle();
+                if (!IsCurrentViewerLoadMessage(document.RootElement))
+                {
+                    return;
+                }
+
+                _editorDirty = document.RootElement.TryGetProperty("isDirty", out var dirtyElement) &&
+                               dirtyElement.GetBoolean();
+                RefreshDirtyState();
                 return;
             }
 
             if (type == "editorStateCollected")
             {
-                CompleteEditorStateCollection(document.RootElement);
+                if (IsCurrentViewerLoadMessage(document.RootElement))
+                {
+                    CompleteEditorStateCollection(document.RootElement);
+                }
+
                 return;
             }
 
             if (type == "overlayPdfExported")
             {
-                CompleteOverlayPdfExport(document.RootElement);
+                if (IsCurrentViewerLoadMessage(document.RootElement))
+                {
+                    CompleteOverlayPdfExport(document.RootElement);
+                }
+
                 return;
             }
 
             if (type == "overlayPdfExportFailed")
             {
-                CompleteOverlayPdfExportFailure(document.RootElement);
+                if (IsCurrentViewerLoadMessage(document.RootElement))
+                {
+                    CompleteOverlayPdfExportFailure(document.RootElement);
+                }
+
                 return;
             }
 
             if (type == "activePageChanged")
             {
-                ReceiveActivePageChanged(document.RootElement);
+                if (IsCurrentViewerLoadMessage(document.RootElement))
+                {
+                    ReceiveActivePageChanged(document.RootElement);
+                }
+
                 return;
             }
 
-            if (type == "pageOrderChanged" &&
-                document.RootElement.TryGetProperty("pageOrder", out var pageOrderElement))
-            {
-                _pageOrder = pageOrderElement
-                    .EnumerateArray()
-                    .Select(element => element.GetInt32())
-                    .ToList();
-                _selectedPages = document.RootElement.TryGetProperty("selectedPages", out var selectedElement)
-                    ? selectedElement.EnumerateArray().Select(element => element.GetInt32()).ToList()
-                    : [];
-                _pageRotations = document.RootElement.TryGetProperty("rotations", out var rotationsElement) &&
-                                 rotationsElement.ValueKind == JsonValueKind.Object
-                    ? ReadPageRotations(rotationsElement)
-                    : new Dictionary<int, int>();
-                _activePage = document.RootElement.TryGetProperty("activePage", out var activeElement) &&
-                              activeElement.ValueKind == JsonValueKind.Number
-                    ? activeElement.GetInt32()
-                    : null;
-                _isDirty = document.RootElement.TryGetProperty("isDirty", out var dirtyElement) &&
-                           dirtyElement.GetBoolean();
-                if (_pageOrder.Count > 0 && _lastLoggedPageCount != _pageOrder.Count)
-                {
-                    _lastLoggedPageCount = _pageOrder.Count;
-                    AppLogger.Info($"PDF 로드 완료: {_pageOrder.Count}페이지, {_referencePdfPath ?? _currentPdfPath}");
-                }
-
-                UpdateWindowTitle();
-            }
         };
 
         var viewerFolder = Path.Combine(AppContext.BaseDirectory, "Assets", ViewerAssetFolderName);
@@ -366,14 +380,116 @@ public partial class MainWindow : Window
 
     private void ReceiveActivePageChanged(JsonElement root)
     {
-        _activePage = root.TryGetProperty("activePage", out var activeElement) &&
-                      activeElement.ValueKind == JsonValueKind.Number
-            ? activeElement.GetInt32()
-            : _activePage;
-        _selectedPages = root.TryGetProperty("selectedPages", out var selectedElement) &&
-                         selectedElement.ValueKind == JsonValueKind.Array
-            ? selectedElement.EnumerateArray().Select(element => element.GetInt32()).ToList()
-            : _selectedPages;
+        if (_pageOrganizerState is null ||
+            !root.TryGetProperty("activePage", out var activeElement) ||
+            activeElement.ValueKind != JsonValueKind.Number)
+        {
+            return;
+        }
+
+        var activePage = activeElement.GetInt32();
+        if (_pageOrganizerState.PageNumbers.Contains(activePage))
+        {
+            ApplyPageOrganizerState(_pageOrganizerState.ActivatePage(activePage));
+        }
+    }
+
+    private bool IsCurrentViewerLoadMessage(JsonElement root)
+    {
+        return root.TryGetProperty("loadId", out var loadIdElement) &&
+               loadIdElement.ValueKind == JsonValueKind.Number &&
+               loadIdElement.TryGetInt32(out var loadId) &&
+               loadId == _documentLoadGeneration;
+    }
+
+    private async Task ExecuteDocumentMutationAsync(
+        DocumentOperationToken operation,
+        Func<DocumentOperationToken, Task> mutation)
+    {
+        using var lease = await _documentOperations.EnterMutationAsync(operation);
+        SetDocumentMutationUiState(operation, isBusy: true);
+        try
+        {
+            _documentOperations.ThrowIfSuperseded(operation);
+            await mutation(operation);
+        }
+        finally
+        {
+            SetDocumentMutationUiState(operation, isBusy: false);
+        }
+    }
+
+    private async Task RunCurrentDocumentMutationAsync(
+        string operationName,
+        string errorTitle,
+        Func<DocumentOperationToken, Task> mutation)
+    {
+        if (!TryCaptureDocumentOperation(out var operation))
+        {
+            return;
+        }
+        try
+        {
+            await ExecuteDocumentMutationAsync(operation, mutation);
+        }
+        catch (OperationCanceledException) when (IsDocumentOperationSuperseded(operation))
+        {
+            AppLogger.Info($"Ignored {operationName} after the active document changed.");
+        }
+        catch (Exception ex)
+        {
+            MessageBox.Show(this, ex.Message, errorTitle, MessageBoxButton.OK, MessageBoxImage.Error);
+        }
+    }
+
+    private DocumentOperationToken CaptureDocumentOperation()
+    {
+        return _documentOperations.Capture();
+    }
+
+    private bool TryCaptureDocumentOperation(out DocumentOperationToken operation)
+    {
+        if (IsDocumentMutationInProgress)
+        {
+            operation = default;
+            return false;
+        }
+
+        operation = CaptureDocumentOperation();
+        return true;
+    }
+
+    private bool IsDocumentMutationInProgress => _documentMutationGeneration is not null;
+
+    private void SetDocumentMutationUiState(DocumentOperationToken operation, bool isBusy)
+    {
+        if (isBusy)
+        {
+            _documentMutationGeneration = operation.Generation;
+            PageOrganizerList.IsHitTestVisible = false;
+            PdfViewer.IsHitTestVisible = false;
+            return;
+        }
+
+        if (_documentMutationGeneration != operation.Generation)
+        {
+            return;
+        }
+
+        _documentMutationGeneration = null;
+        PageOrganizerList.IsHitTestVisible = true;
+        PdfViewer.IsHitTestVisible = true;
+    }
+
+    private bool IsDocumentOperationSuperseded(DocumentOperationToken operation)
+    {
+        return !_documentOperations.IsCurrent(operation);
+    }
+
+    private void CancelPendingViewerDocumentOperations()
+    {
+        _editorStateCompletion?.TrySetCanceled();
+        _overlayPdfExportCompletion?.TrySetCanceled();
     }
 
     private async void LoadPdf(
@@ -383,7 +499,15 @@ public partial class MainWindow : Window
         int? initialPage = null,
         bool preserveWorkingSaveTarget = false)
     {
+        var loadGeneration = _documentOperations.StartNewDocument();
+        _documentLoadGeneration = loadGeneration;
+        CancelPendingViewerDocumentOperations();
         CleanupCompatibilityState();
+        _pendingPdfPath = null;
+        _pendingReferencePdfPath = null;
+        _pendingDirtyAfterLoad = false;
+        _pendingInitialPage = null;
+        _pendingLoadGeneration = 0;
         if (!preserveWorkingSaveTarget)
         {
             _workingSaveTargetPath = null;
@@ -395,13 +519,21 @@ public partial class MainWindow : Window
         _pageRotations = new Dictionary<int, int>();
         _selectedPages = [];
         _activePage = null;
+        _editorDirty = false;
         _isDirty = dirtyAfterLoad;
+        _pageOrganizerState = null;
         _lastLoggedPageCount = null;
         CurrentFileText.Text = IsSamePath(path, _referencePdfPath)
             ? path
             : $"{_referencePdfPath} (편집 중)";
         ViewerLoading.Visibility = Visibility.Visible;
-        UpdateWindowTitle();
+        await InitializePageOrganizerStateAsync(path, dirtyAfterLoad, initialPage, loadGeneration);
+        if (loadGeneration != _documentLoadGeneration)
+        {
+            return;
+        }
+
+        RefreshDirtyState();
         if (!dirtyAfterLoad)
         {
             _settings.AddRecentFile(path);
@@ -415,10 +547,219 @@ public partial class MainWindow : Window
             _pendingReferencePdfPath = _referencePdfPath;
             _pendingDirtyAfterLoad = dirtyAfterLoad;
             _pendingInitialPage = initialPage;
+            _pendingLoadGeneration = loadGeneration;
             return;
         }
 
-        await SendPdfToViewerAsync(path, dirtyAfterLoad, initialPage);
+        await SendPdfToViewerAsync(path, loadGeneration, dirtyAfterLoad, initialPage);
+    }
+
+    private async Task InitializePageOrganizerStateAsync(
+        string path,
+        bool dirtyAfterLoad,
+        int? initialPage,
+        int loadGeneration)
+    {
+        CancelPageOrganizerThumbnailRendering();
+        PageOrganizerItems.Clear();
+
+        try
+        {
+            var pageCount = await Task.Run(() => _pdfService.GetPageCount(path));
+            if (loadGeneration != _documentLoadGeneration)
+            {
+                return;
+            }
+
+            var state = EditorDocumentState.Create(pageCount, dirtyAfterLoad);
+            if (initialPage is { } pageNumber && state.PageNumbers.Contains(pageNumber))
+            {
+                state = state.SelectPage(pageNumber, PageSelectionMode.Replace);
+            }
+
+            ApplyPageOrganizerState(state);
+            _lastLoggedPageCount = pageCount;
+            AppLogger.Info($"Page Organizer initialized: {pageCount} pages, {_referencePdfPath ?? path}");
+            StartPageOrganizerThumbnailRendering(path, state.PageNumbers);
+        }
+        catch (Exception ex)
+        {
+            if (loadGeneration != _documentLoadGeneration)
+            {
+                return;
+            }
+
+            AppLogger.Error(ex, $"Page Organizer initialization failed: {path}");
+            PageOrganizerSummaryText.Text = "페이지 정보를 읽는 중 오류가 발생했습니다.";
+        }
+    }
+
+    private void ApplyPageOrganizerState(
+        EditorDocumentState state,
+        bool navigatePreview = false,
+        bool allowDuringDocumentMutation = false)
+    {
+        _pageOrganizerState = state;
+        _pageOrder = state.PageNumbers.ToArray();
+        _pageRotations = state.PageRotations.ToDictionary(pair => pair.Key, pair => pair.Value);
+        _selectedPages = state.SelectedPageNumbers.ToArray();
+        _activePage = state.ActivePageNumber;
+        RefreshPageOrganizerItems(state);
+        RefreshDirtyState();
+
+        if (navigatePreview && state.ActivePageNumber is { } activePage)
+        {
+            SendViewerCommand(
+                "goToPage",
+                new { pageNumber = activePage },
+                allowDuringDocumentMutation);
+        }
+    }
+
+    private void RefreshPageOrganizerItems(EditorDocumentState state)
+    {
+        var existing = PageOrganizerItems.ToDictionary(item => item.PageNumber);
+        var orderChanged = PageOrganizerItems.Count != state.PageNumbers.Count ||
+                           !PageOrganizerItems.Select(item => item.PageNumber).SequenceEqual(state.PageNumbers);
+        var selected = state.SelectedPageNumbers.ToHashSet();
+        var next = new List<PageOrganizerItem>(state.PageNumbers.Count);
+        for (var index = 0; index < state.PageNumbers.Count; index++)
+        {
+            var pageNumber = state.PageNumbers[index];
+            if (!existing.TryGetValue(pageNumber, out var item))
+            {
+                item = new PageOrganizerItem(pageNumber);
+            }
+
+            item.Position = index + 1;
+            item.Rotation = state.GetRotation(pageNumber);
+            item.IsSelected = selected.Contains(pageNumber);
+            item.IsActive = state.ActivePageNumber == pageNumber;
+            item.ThumbnailHeight = _pageOrganizerThumbnailHeight;
+            next.Add(item);
+        }
+
+        if (orderChanged)
+        {
+            PageOrganizerItems.Clear();
+            foreach (var item in next)
+            {
+                PageOrganizerItems.Add(item);
+            }
+        }
+
+        PageOrganizerSummaryText.Text = state.PageNumbers.Count == 0
+            ? "페이지 없음"
+            : $"{state.PageNumbers.Count} 페이지 · {state.SelectedPageNumbers.Count} 선택";
+
+        try
+        {
+            PageOrganizerList.SelectedItems.Clear();
+            foreach (var item in next.Where(item => item.IsSelected))
+            {
+                PageOrganizerList.SelectedItems.Add(item);
+            }
+        }
+        catch (InvalidOperationException)
+        {
+            // The organizer can refresh before its ListBox finishes item generation.
+        }
+    }
+
+    private void RefreshDirtyState()
+    {
+        if (_pageOrganizerState is not null)
+        {
+            _isDirty = _pageOrganizerState.IsDirty || _editorDirty;
+        }
+        else
+        {
+            _isDirty = _isDirty || _editorDirty;
+        }
+
+        UpdateWindowTitle();
+    }
+
+    private void StartPageOrganizerThumbnailRendering(string path, IReadOnlyList<int> pageNumbers)
+    {
+        var cancellation = new CancellationTokenSource();
+        _pageOrganizerThumbnailCancellation = cancellation;
+        var generation = ++_pageOrganizerThumbnailGeneration;
+        _ = RenderPageOrganizerThumbnailsAsync(path, pageNumbers.ToArray(), generation, cancellation);
+    }
+
+    private async Task RenderPageOrganizerThumbnailsAsync(
+        string path,
+        IReadOnlyList<int> pageNumbers,
+        int generation,
+        CancellationTokenSource cancellation)
+    {
+        string? sessionId = null;
+        var cancellationToken = cancellation.Token;
+        try
+        {
+            var session = await Task.Run(() => _pageOrganizerRenderService.OpenDocument(path), cancellationToken);
+            sessionId = session.SessionId;
+
+            foreach (var pageNumber in pageNumbers.Take(96))
+            {
+                cancellationToken.ThrowIfCancellationRequested();
+                var rendered = await _pageOrganizerRenderService.RenderPageAsync(
+                    sessionId,
+                    pageNumber,
+                    targetWidth: 132,
+                    rotationDegrees: 0,
+                    thumbnail: true,
+                    cancellationToken: cancellationToken);
+                cancellationToken.ThrowIfCancellationRequested();
+
+                if (generation != _pageOrganizerThumbnailGeneration)
+                {
+                    return;
+                }
+
+                var item = PageOrganizerItems.FirstOrDefault(candidate => candidate.PageNumber == pageNumber);
+                if (item is not null)
+                {
+                    item.Thumbnail = LoadPageOrganizerThumbnail(rendered.ImagePath);
+                }
+            }
+        }
+        catch (OperationCanceledException)
+        {
+            // A newer document replaced this organizer rendering request.
+        }
+        catch (Exception ex)
+        {
+            AppLogger.Error(ex, $"Page Organizer thumbnail rendering failed: {path}");
+        }
+        finally
+        {
+            _pageOrganizerRenderService.CloseSession(sessionId);
+            cancellation.Dispose();
+            if (ReferenceEquals(_pageOrganizerThumbnailCancellation, cancellation))
+            {
+                _pageOrganizerThumbnailCancellation = null;
+            }
+        }
+    }
+
+    private static BitmapImage LoadPageOrganizerThumbnail(string path)
+    {
+        var image = new BitmapImage();
+        image.BeginInit();
+        image.CacheOption = BitmapCacheOption.OnLoad;
+        image.UriSource = new Uri(path, UriKind.Absolute);
+        image.EndInit();
+        image.Freeze();
+        return image;
+    }
+
+    private void CancelPageOrganizerThumbnailRendering()
+    {
+        _pageOrganizerThumbnailGeneration++;
+        _pageOrganizerThumbnailCancellation?.Cancel();
+        _pageOrganizerThumbnailCancellation = null;
     }
 
     private void UpdateWindowTitle()
@@ -454,8 +795,13 @@ public partial class MainWindow : Window
         return IsPdfFile(path) || IsSupportedImageFile(path);
     }
 
-    private Task SendPdfToViewerAsync(string path, bool dirtyAfterLoad = false, int? initialPage = null)
+    private Task SendPdfToViewerAsync(string path, int loadGeneration, bool dirtyAfterLoad = false, int? initialPage = null)
     {
+        if (loadGeneration != _documentLoadGeneration || !_viewerReady || PdfViewer.CoreWebView2 is null)
+        {
+            return Task.CompletedTask;
+        }
+
         var servedPath = PrepareServedPdfPath(path);
         var servedFileName = Path.GetFileName(servedPath);
         var pdfUrl = $"https://{ViewerHost}/web/ServedPdf/{Uri.EscapeDataString(servedFileName)}?v={Guid.NewGuid():N}";
@@ -468,15 +814,21 @@ public partial class MainWindow : Window
             sourcePath = _referencePdfPath ?? path,
             largeDocumentHint = fileLength >= 80L * 1024 * 1024,
             fileLength,
-            initialPage
+            initialPage,
+            loadId = loadGeneration
         });
         PdfViewer.CoreWebView2.PostWebMessageAsJson(message);
         AppLogger.Info($"PDF 뷰어 로드 요청: {path}, {fileLength:N0} bytes");
         return Task.CompletedTask;
     }
 
-    private async Task HandleViewerLoadFailedAsync(string? message)
+    private async Task HandleViewerLoadFailedAsync(string? message, int loadGeneration)
     {
+        if (loadGeneration != _documentLoadGeneration)
+        {
+            return;
+        }
+
         var failureMessage = string.IsNullOrWhiteSpace(message) ? "알 수 없는 오류" : message;
         AppLogger.Info($"PDF 뷰어 로드 실패: {_currentPdfPath}, {failureMessage}");
 
@@ -492,13 +844,19 @@ public partial class MainWindow : Window
             try
             {
                 await _pdfService.NormalizeForViewingAsync(_currentPdfPath, recoveredPath, CancellationToken.None);
+                if (loadGeneration != _documentLoadGeneration)
+                {
+                    TryDeleteFile(recoveredPath);
+                    return;
+                }
+
                 if (File.Exists(recoveredPath) && new FileInfo(recoveredPath).Length > 0)
                 {
                     CleanupRecoveredPdf();
                     _recoveredPdfPath = recoveredPath;
                     _currentPdfPath = recoveredPath;
                     AppLogger.Info($"PDF 자동 복구 후 재로드: {_referencePdfPath} -> {recoveredPath}");
-                    await SendPdfToViewerAsync(recoveredPath, _isDirty);
+                    await SendPdfToViewerAsync(recoveredPath, loadGeneration, _isDirty);
                     return;
                 }
             }
@@ -509,7 +867,7 @@ public partial class MainWindow : Window
             }
         }
 
-        if (await TryOpenFallbackViewerAsync(failureMessage))
+        if (await TryOpenFallbackViewerAsync(failureMessage, loadGeneration))
         {
             return;
         }
@@ -522,9 +880,11 @@ public partial class MainWindow : Window
             MessageBoxImage.Error);
     }
 
-    private async Task<bool> TryOpenFallbackViewerAsync(string failureMessage)
+    private async Task<bool> TryOpenFallbackViewerAsync(string failureMessage, int loadGeneration)
     {
-        if (string.IsNullOrWhiteSpace(_currentPdfPath) || !File.Exists(_currentPdfPath))
+        if (loadGeneration != _documentLoadGeneration ||
+            string.IsNullOrWhiteSpace(_currentPdfPath) ||
+            !File.Exists(_currentPdfPath))
         {
             return false;
         }
@@ -543,6 +903,7 @@ public partial class MainWindow : Window
                 sessionId = session.SessionId,
                 isDirty = _isDirty,
                 sourcePath = _referencePdfPath ?? _currentPdfPath,
+                loadId = loadGeneration,
                 largeDocumentMode = session.LargeDocumentMode,
                 pages = session.Pages.Select(page => new
                 {
@@ -762,25 +1123,6 @@ public partial class MainWindow : Window
     [DllImport("kernel32.dll", SetLastError = true, CharSet = CharSet.Unicode)]
     private static extern bool CreateHardLink(string lpFileName, string lpExistingFileName, IntPtr lpSecurityAttributes);
 
-    private static IReadOnlyDictionary<int, int> ReadPageRotations(JsonElement rotationsElement)
-    {
-        var rotations = new Dictionary<int, int>();
-        foreach (var property in rotationsElement.EnumerateObject())
-        {
-            try
-            {
-                var pageNumber = Convert.ToInt32(property.Name, CultureInfo.InvariantCulture);
-                rotations[pageNumber] = property.Value.GetInt32();
-            }
-            catch
-            {
-                // Ignore malformed viewer state keys.
-            }
-        }
-
-        return rotations;
-    }
-
     private void OnClosing(object? sender, System.ComponentModel.CancelEventArgs e)
     {
         if (_isDirty)
@@ -803,7 +1145,11 @@ public partial class MainWindow : Window
         DisposeNativeViewerDropTargets();
         CleanupServedPdfLink();
         CleanupCompatibilityState();
+        _documentLoadGeneration++;
+        _documentOperations.Dispose();
+        CancelPageOrganizerThumbnailRendering();
         _fallbackRenderService.Dispose();
+        _pageOrganizerRenderService.Dispose();
     }
 
     private void ApplyWindowSettings()
@@ -854,11 +1200,11 @@ public partial class MainWindow : Window
             {
                 var dropTarget = new NativeFileDropTarget(
                     hwnd,
-                    (paths, screenPoint) => Dispatcher.BeginInvoke(() => HandleNativeFileDragOver(paths, screenPoint)),
-                    (paths, screenPoint) => Dispatcher.BeginInvoke(() => HandleNativeFileDrop(paths, screenPoint)),
-                    (payload, screenPoint) => Dispatcher.BeginInvoke(() => SendNativePageTransferMessage("nativePageTransferDragOver", payload, screenPoint)),
-                    () => Dispatcher.BeginInvoke(SendNativeDropLeaveMessage),
-                    (payload, screenPoint) => Dispatcher.BeginInvoke(() => SendNativePageTransferMessage("nativePageTransferDrop", payload, screenPoint)));
+                    static (_, _) => { },
+                    (paths, _) => Dispatcher.BeginInvoke(() => HandleNativeFileDrop(paths)),
+                    static (_, _) => { },
+                    static () => { },
+                    (payload, _) => Dispatcher.BeginInvoke(() => HandleNativePageTransferDrop(payload)));
                 dropTarget.Register();
                 _viewerDropTargets.Add(dropTarget);
             }
@@ -879,67 +1225,35 @@ public partial class MainWindow : Window
         _viewerDropTargets.Clear();
     }
 
-    private void SendNativePageTransferMessage(string type, string payload, Point screenPoint)
+    private void HandleNativePageTransferDrop(string payload)
     {
-        if (!_viewerReady || PdfViewer.CoreWebView2 is null)
+        if (!CanInsertDroppedFilesIntoCurrentDocument())
         {
             return;
         }
 
-        var clientPoint = PdfViewer.PointFromScreen(screenPoint);
-        var message = JsonSerializer.Serialize(new
+        try
         {
-            type,
-            payload,
-            clientX = clientPoint.X,
-            clientY = clientPoint.Y
-        });
-        PdfViewer.CoreWebView2.PostWebMessageAsJson(message);
-    }
-
-    private void SendNativeFileDropMessage(string type, IReadOnlyList<string> paths, Point screenPoint)
-    {
-        if (!_viewerReady || PdfViewer.CoreWebView2 is null)
-        {
-            return;
+            var transfer = JsonSerializer.Deserialize<PageTransferPayload>(payload, PageTransferJsonOptions)
+                ?? throw new InvalidOperationException("드롭한 페이지 정보를 읽을 수 없습니다.");
+            _ = InsertExternalPagesAsync(new ExternalPagesDropMessage(
+                transfer.SourcePath,
+                transfer.Pages,
+                GetInsertionIndexAfterSelection()));
         }
-
-        var clientPoint = PdfViewer.PointFromScreen(screenPoint);
-        var message = JsonSerializer.Serialize(new
+        catch (Exception ex)
         {
-            type,
-            paths,
-            clientX = clientPoint.X,
-            clientY = clientPoint.Y
-        });
-        PdfViewer.CoreWebView2.PostWebMessageAsJson(message);
-    }
-
-    private void SendNativeDropLeaveMessage()
-    {
-        if (!_viewerReady || PdfViewer.CoreWebView2 is null)
-        {
-            return;
+            MessageBox.Show(this, ex.Message, "페이지 드롭 실패", MessageBoxButton.OK, MessageBoxImage.Error);
         }
-
-        PdfViewer.CoreWebView2.PostWebMessageAsJson("""
-            {"type":"nativePageTransferDragLeave"}
-            """);
     }
 
-    private void HandleNativeFileDragOver(IReadOnlyList<string> paths, Point screenPoint)
+    private void HandleNativeFileDrop(IReadOnlyList<string> paths)
     {
         if (CanInsertDroppedFilesIntoCurrentDocument())
         {
-            SendNativeFileDropMessage("nativeFileDragOver", paths, screenPoint);
-        }
-    }
-
-    private void HandleNativeFileDrop(IReadOnlyList<string> paths, Point screenPoint)
-    {
-        if (CanInsertDroppedFilesIntoCurrentDocument())
-        {
-            SendNativeFileDropMessage("nativeFileDrop", paths, screenPoint);
+            _ = InsertExternalFilesAsync(new ExternalFilesDropMessage(
+                paths.ToList(),
+                GetInsertionIndexAfterSelection()));
             return;
         }
 
@@ -948,15 +1262,16 @@ public partial class MainWindow : Window
 
     private bool CanInsertDroppedFilesIntoCurrentDocument()
     {
-        return _viewerReady &&
-               PdfViewer.CoreWebView2 is not null &&
+        return !IsDocumentMutationInProgress &&
                !string.IsNullOrWhiteSpace(_currentPdfPath) &&
-               _pageOrder.Count > 0;
+               _pageOrganizerState is { PageNumbers.Count: > 0 };
     }
 
-    private void SendViewerCommand(string command, object? options = null)
+    private void SendViewerCommand(string command, object? options = null, bool allowDuringDocumentMutation = false)
     {
-        if (!_viewerReady || PdfViewer.CoreWebView2 is null)
+        if ((!allowDuringDocumentMutation && IsDocumentMutationInProgress) ||
+            !_viewerReady ||
+            PdfViewer.CoreWebView2 is null)
         {
             return;
         }
@@ -965,7 +1280,8 @@ public partial class MainWindow : Window
         {
             type = "command",
             command,
-            options
+            options,
+            loadId = _documentLoadGeneration
         });
         PdfViewer.CoreWebView2.PostWebMessageAsJson(message);
     }
@@ -995,8 +1311,9 @@ public partial class MainWindow : Window
         }
     }
 
-    private async Task<EditorExportState> CollectEditorStateAsync()
+    private async Task<EditorExportState> CollectEditorStateAsync(CancellationToken cancellationToken)
     {
+        cancellationToken.ThrowIfCancellationRequested();
         if (!_viewerReady || PdfViewer.CoreWebView2 is null)
         {
             return new EditorExportState([], [], false);
@@ -1009,19 +1326,32 @@ public partial class MainWindow : Window
         var message = JsonSerializer.Serialize(new
         {
             type = "collectEditorState",
-            requestId
+            requestId,
+            loadId = _documentLoadGeneration
         });
         PdfViewer.CoreWebView2.PostWebMessageAsJson(message);
 
-        var completed = await Task.WhenAny(completion.Task, Task.Delay(TimeSpan.FromSeconds(15)));
-        if (completed != completion.Task)
+        try
         {
-            _editorStateCompletion = null;
-            _editorStateRequestId = null;
-            throw new TimeoutException("PDF editor state collection timed out.");
-        }
+            var completed = await Task.WhenAny(
+                completion.Task,
+                Task.Delay(TimeSpan.FromSeconds(15), cancellationToken));
+            if (completed != completion.Task)
+            {
+                cancellationToken.ThrowIfCancellationRequested();
+                throw new TimeoutException("PDF editor state collection timed out.");
+            }
 
-        return await completion.Task;
+            return await completion.Task;
+        }
+        finally
+        {
+            if (ReferenceEquals(_editorStateCompletion, completion))
+            {
+                _editorStateCompletion = null;
+                _editorStateRequestId = null;
+            }
+        }
     }
 
     private void CompleteEditorStateCollection(JsonElement root)
@@ -1054,13 +1384,20 @@ public partial class MainWindow : Window
         }
         finally
         {
-            _editorStateCompletion = null;
-            _editorStateRequestId = null;
+            if (ReferenceEquals(_editorStateCompletion, completion))
+            {
+                _editorStateCompletion = null;
+                _editorStateRequestId = null;
+            }
         }
     }
 
-    private async Task<string> ExportOverlayPdfAsync(string sourcePath, EditorExportState editorState)
+    private async Task<string> ExportOverlayPdfAsync(
+        string sourcePath,
+        EditorExportState editorState,
+        CancellationToken cancellationToken)
     {
+        cancellationToken.ThrowIfCancellationRequested();
         if (!_viewerReady || PdfViewer.CoreWebView2 is null)
         {
             throw new InvalidOperationException("PDF viewer is not ready.");
@@ -1074,21 +1411,34 @@ public partial class MainWindow : Window
         {
             type = "exportOverlayPdf",
             requestId,
+            loadId = _documentLoadGeneration,
             sourceBase64 = Convert.ToBase64String(File.ReadAllBytes(sourcePath)),
             edits = editorState.Edits,
             fonts = WindowsFontService.ReadFontBase64(editorState.UsedFontNames)
         });
         PdfViewer.CoreWebView2.PostWebMessageAsJson(message);
 
-        var completed = await Task.WhenAny(completion.Task, Task.Delay(TimeSpan.FromSeconds(60)));
-        if (completed != completion.Task)
+        try
         {
-            _overlayPdfExportCompletion = null;
-            _overlayPdfExportRequestId = null;
-            throw new TimeoutException("PDF editor export timed out.");
-        }
+            var completed = await Task.WhenAny(
+                completion.Task,
+                Task.Delay(TimeSpan.FromSeconds(60), cancellationToken));
+            if (completed != completion.Task)
+            {
+                cancellationToken.ThrowIfCancellationRequested();
+                throw new TimeoutException("PDF editor export timed out.");
+            }
 
-        return await completion.Task;
+            return await completion.Task;
+        }
+        finally
+        {
+            if (ReferenceEquals(_overlayPdfExportCompletion, completion))
+            {
+                _overlayPdfExportCompletion = null;
+                _overlayPdfExportRequestId = null;
+            }
+        }
     }
 
     private void CompleteOverlayPdfExport(JsonElement root)
@@ -1117,8 +1467,11 @@ public partial class MainWindow : Window
         }
         finally
         {
-            _overlayPdfExportCompletion = null;
-            _overlayPdfExportRequestId = null;
+            if (ReferenceEquals(_overlayPdfExportCompletion, completion))
+            {
+                _overlayPdfExportCompletion = null;
+                _overlayPdfExportRequestId = null;
+            }
         }
     }
 
@@ -1147,8 +1500,11 @@ public partial class MainWindow : Window
         }
         finally
         {
-            _overlayPdfExportCompletion = null;
-            _overlayPdfExportRequestId = null;
+            if (ReferenceEquals(_overlayPdfExportCompletion, completion))
+            {
+                _overlayPdfExportCompletion = null;
+                _overlayPdfExportRequestId = null;
+            }
         }
     }
 
@@ -1167,116 +1523,40 @@ public partial class MainWindow : Window
         return false;
     }
 
-    private void ReceiveA4PageImage(JsonElement root)
+    private async Task<IReadOnlyList<PdfImagePage>> ExportCurrentPagesAsA4ImagesAsync(
+        bool optimizeSize,
+        CancellationToken cancellationToken)
     {
-        if (_a4ExportCompletion is null)
+        cancellationToken.ThrowIfCancellationRequested();
+        var sessionId = _fallbackModeActive && !string.IsNullOrWhiteSpace(_fallbackSessionId)
+            ? _fallbackSessionId
+            : null;
+        var ownsSession = false;
+        if (sessionId is null)
         {
-            return;
+            var sourcePath = _currentPdfPath ?? throw new InvalidOperationException("현재 PDF를 찾을 수 없습니다.");
+            sessionId = _fallbackRenderService.OpenDocument(sourcePath).SessionId;
+            ownsSession = true;
         }
 
         try
         {
-            var index = root.GetProperty("index").GetInt32();
-            _a4ExportExpectedPages = root.GetProperty("total").GetInt32();
-            var width = root.GetProperty("width").GetInt32();
-            var height = root.GetProperty("height").GetInt32();
-            var base64 = root.GetProperty("base64").GetString() ?? string.Empty;
-            var commaIndex = base64.IndexOf(',', StringComparison.Ordinal);
-            if (commaIndex >= 0)
-            {
-                base64 = base64[(commaIndex + 1)..];
-            }
-
-            _a4ExportedPages.RemoveAll(page => page.Index == index);
-            _a4ExportedPages.Add(new ExportedA4Page(
-                index,
-                new PdfImagePage(Convert.FromBase64String(base64), width, height)));
-        }
-        catch (Exception ex)
-        {
-            _a4ExportCompletion.TrySetException(ex);
-        }
-    }
-
-    private void CompleteA4PageImageExport(JsonElement root)
-    {
-        if (_a4ExportCompletion is null)
-        {
-            return;
-        }
-
-        var success = !root.TryGetProperty("success", out var successElement) || successElement.GetBoolean();
-        if (!success)
-        {
-            var message = root.TryGetProperty("message", out var messageElement)
-                ? messageElement.GetString()
-                : null;
-            _a4ExportCompletion.TrySetException(new InvalidOperationException(message ?? "A4 페이지 변환에 실패했습니다."));
-            return;
-        }
-
-        if (_a4ExportExpectedPages > 0 && _a4ExportedPages.Count != _a4ExportExpectedPages)
-        {
-            _a4ExportCompletion.TrySetException(new InvalidOperationException("일부 페이지 이미지를 받지 못했습니다."));
-            return;
-        }
-
-        _a4ExportCompletion.TrySetResult(
-            _a4ExportedPages
-                .OrderBy(page => page.Index)
-                .Select(page => page.Image)
-                .ToList());
-    }
-
-    private async Task<IReadOnlyList<PdfImagePage>> ExportCurrentPagesAsA4ImagesAsync(bool optimizeSize = false)
-    {
-        if (_fallbackModeActive && !string.IsNullOrWhiteSpace(_fallbackSessionId))
-        {
-            AppLogger.Info($"PDFium fallback A4 이미지 내보내기: {_referencePdfPath ?? _currentPdfPath}");
+            AppLogger.Info($"PDFium A4 이미지 내보내기: {_referencePdfPath ?? _currentPdfPath}");
             return await _fallbackRenderService.ExportPagesAsImagesAsync(
-                _fallbackSessionId,
+                sessionId,
                 _pageOrder,
                 _pageRotations,
                 optimizeSize ? A4OptimizedMaxWidthPixels : A4ImageMaxWidthPixels,
                 optimizeSize ? A4OptimizedMaxHeightPixels : A4ImageMaxHeightPixels,
                 optimizeSize ? 86 : 92,
-                CancellationToken.None);
-        }
-
-        _a4ExportedPages.Clear();
-        _a4ExportExpectedPages = 0;
-        _a4ExportCompletion = new TaskCompletionSource<IReadOnlyList<PdfImagePage>>(TaskCreationOptions.RunContinuationsAsynchronously);
-
-        try
-        {
-            SendViewerCommand("exportA4PageImages", optimizeSize
-                ? new
-                {
-                    quality = 0.86,
-                    maxWidth = A4OptimizedMaxWidthPixels,
-                    maxHeight = A4OptimizedMaxHeightPixels,
-                    statusText = "A4 기준 용량 최적화 중..."
-                }
-                : new
-                {
-                    quality = 0.92,
-                    maxWidth = A4ImageMaxWidthPixels,
-                    maxHeight = A4ImageMaxHeightPixels,
-                    statusText = "A4 맞춤 이미지 생성 중..."
-                });
-            var completed = await Task.WhenAny(_a4ExportCompletion.Task, Task.Delay(TimeSpan.FromMinutes(5)));
-            if (completed != _a4ExportCompletion.Task)
-            {
-                throw new TimeoutException("A4 페이지 변환 시간이 초과되었습니다.");
-            }
-
-            return await _a4ExportCompletion.Task;
+                cancellationToken);
         }
         finally
         {
-            _a4ExportCompletion = null;
-            _a4ExportedPages.Clear();
-            _a4ExportExpectedPages = 0;
+            if (ownsSession)
+            {
+                _fallbackRenderService.CloseSession(sessionId);
+            }
         }
     }
 
@@ -1467,6 +1747,8 @@ public partial class MainWindow : Window
             _pendingPdfPath = currentPath;
             _pendingReferencePdfPath = referencePath ?? currentPath;
             _pendingDirtyAfterLoad = dirtyAfterLoad;
+            _pendingInitialPage = _activePage;
+            _pendingLoadGeneration = _documentLoadGeneration;
         }
 
         PdfViewer.CoreWebView2.Navigate(BuildViewerUrl());
@@ -1502,6 +1784,11 @@ public partial class MainWindow : Window
 
     private async void OnSavePageOrderClick(object sender, RoutedEventArgs e)
     {
+        if (IsDocumentMutationInProgress)
+        {
+            return;
+        }
+
         if (string.IsNullOrWhiteSpace(_currentPdfPath) || _pageOrder.Count == 0)
         {
             MessageBox.Show(this, "먼저 PDF를 열어주세요.", "PDF 저장", MessageBoxButton.OK, MessageBoxImage.Information);
@@ -1514,35 +1801,74 @@ public partial class MainWindow : Window
             return;
         }
 
+        if (!TryCaptureDocumentOperation(out var operation))
+        {
+            return;
+        }
         string? transformedTempPath = null;
         string? publicationTempPath = null;
         try
         {
-            var editorState = await CollectEditorStateAsync();
-            var pageTransforms = GetCurrentPageTransforms();
-            var remappedEditorState = RemapEditorStateToOutputPageOrder(editorState, pageTransforms);
-            publicationTempPath = CreatePublicationTempPath(outputPath);
-            var outputTarget = remappedEditorState.Edits.Count > 0 ? CreateTempPdfPath("editor-source") : publicationTempPath;
-            var result = await _pdfService.SaveTransformedPagesAsync(_currentPdfPath, pageTransforms, outputTarget, CancellationToken.None);
-            transformedTempPath = remappedEditorState.Edits.Count > 0 ? result.OutputPath : null;
-            if (remappedEditorState.Edits.Count > 0)
+            await ExecuteDocumentMutationAsync(operation, async currentOperation =>
             {
-                var exportedBase64 = await ExportOverlayPdfAsync(result.OutputPath, remappedEditorState);
-                await File.WriteAllBytesAsync(publicationTempPath, Convert.FromBase64String(exportedBase64));
-            }
-            VerifySavedPdf(publicationTempPath, pageTransforms.Count);
-            PdfSavePublisher.Publish(publicationTempPath, outputPath);
-            publicationTempPath = null;
-            result = result with { OutputPath = outputPath };
-            var message = string.IsNullOrWhiteSpace(result.WarningMessage)
-                ? $"저장 완료:\n{result.OutputPath}"
-                : $"저장 완료:\n{result.OutputPath}\n\n참고: {result.WarningMessage}";
+                var sourcePath = _currentPdfPath ?? throw new InvalidOperationException("저장할 PDF를 찾을 수 없습니다.");
+                var editorState = await CollectEditorStateAsync(currentOperation.CancellationToken);
+                _documentOperations.ThrowIfSuperseded(currentOperation);
 
-            _isDirty = false;
-            UpdateWindowTitle();
-            SendViewerCommand("markClean");
-            LoadPdf(result.OutputPath, preserveWorkingSaveTarget: true);
-            MessageBox.Show(this, message, "PDF 저장", MessageBoxButton.OK, MessageBoxImage.Information);
+                var pageTransforms = GetCurrentPageTransforms();
+                var remappedEditorState = RemapEditorStateToOutputPageOrder(editorState, pageTransforms);
+                publicationTempPath = CreatePublicationTempPath(outputPath);
+                var outputTarget = remappedEditorState.Edits.Count > 0 ? CreateTempPdfPath("editor-source") : publicationTempPath;
+                var result = await _pdfService.SaveTransformedPagesAsync(
+                    sourcePath,
+                    pageTransforms,
+                    outputTarget,
+                    currentOperation.CancellationToken);
+                _documentOperations.ThrowIfSuperseded(currentOperation);
+
+                transformedTempPath = remappedEditorState.Edits.Count > 0 ? result.OutputPath : null;
+                if (remappedEditorState.Edits.Count > 0)
+                {
+                    var exportedBase64 = await ExportOverlayPdfAsync(
+                        result.OutputPath,
+                        remappedEditorState,
+                        currentOperation.CancellationToken);
+                    _documentOperations.ThrowIfSuperseded(currentOperation);
+                    await File.WriteAllBytesAsync(
+                        publicationTempPath,
+                        Convert.FromBase64String(exportedBase64),
+                        currentOperation.CancellationToken);
+                }
+
+                _documentOperations.ThrowIfSuperseded(currentOperation);
+                VerifySavedPdf(publicationTempPath, pageTransforms.Count);
+                _documentOperations.ThrowIfSuperseded(currentOperation);
+                PdfSavePublisher.Publish(publicationTempPath, outputPath);
+                publicationTempPath = null;
+                result = result with { OutputPath = outputPath };
+                var message = string.IsNullOrWhiteSpace(result.WarningMessage)
+                    ? $"저장 완료:\n{result.OutputPath}"
+                    : $"저장 완료:\n{result.OutputPath}\n\n참고: {result.WarningMessage}";
+
+                _editorDirty = false;
+                if (_pageOrganizerState is not null)
+                {
+                    ApplyPageOrganizerState(_pageOrganizerState.MarkClean());
+                }
+                else
+                {
+                    _isDirty = false;
+                    UpdateWindowTitle();
+                }
+
+                SendViewerCommand("markClean", allowDuringDocumentMutation: true);
+                LoadPdf(result.OutputPath, preserveWorkingSaveTarget: true);
+                MessageBox.Show(this, message, "PDF 저장", MessageBoxButton.OK, MessageBoxImage.Information);
+            });
+        }
+        catch (OperationCanceledException) when (IsDocumentOperationSuperseded(operation))
+        {
+            AppLogger.Info("Ignored a save result from a document that was replaced while saving.");
         }
         catch (Exception ex)
         {
@@ -1610,7 +1936,7 @@ public partial class MainWindow : Window
 
     private async void OnExtractSelectedPagesClick(object sender, RoutedEventArgs e)
     {
-        if (!EnsurePdfLoaded("PDF 추출"))
+        if (IsDocumentMutationInProgress || !EnsurePdfLoaded("PDF 추출"))
         {
             return;
         }
@@ -1637,14 +1963,31 @@ public partial class MainWindow : Window
             return;
         }
 
+        if (!TryCaptureDocumentOperation(out var operation))
+        {
+            return;
+        }
         try
         {
-            var selected = _pageOrder
-                .Where(page => _selectedPages.Contains(page))
-                .Select(page => new PdfPageTransform(page, GetRotation(page)))
-                .ToList();
-            var result = await _pdfService.SaveTransformedPagesAsync(_currentPdfPath!, selected, outputPath, CancellationToken.None);
-            MessageBox.Show(this, $"저장 완료:\n{result.OutputPath}", "PDF 추출", MessageBoxButton.OK, MessageBoxImage.Information);
+            await ExecuteDocumentMutationAsync(operation, async currentOperation =>
+            {
+                var sourcePath = _currentPdfPath ?? throw new InvalidOperationException("현재 PDF를 찾을 수 없습니다.");
+                var selected = _pageOrder
+                    .Where(page => _selectedPages.Contains(page))
+                    .Select(page => new PdfPageTransform(page, GetRotation(page)))
+                    .ToList();
+                var result = await _pdfService.SaveTransformedPagesAsync(
+                    sourcePath,
+                    selected,
+                    outputPath,
+                    currentOperation.CancellationToken);
+                _documentOperations.ThrowIfSuperseded(currentOperation);
+                MessageBox.Show(this, $"저장 완료:\n{result.OutputPath}", "PDF 추출", MessageBoxButton.OK, MessageBoxImage.Information);
+            });
+        }
+        catch (OperationCanceledException) when (IsDocumentOperationSuperseded(operation))
+        {
+            AppLogger.Info("Ignored an extract result from a document that was replaced while extracting.");
         }
         catch (Exception ex)
         {
@@ -1654,7 +1997,7 @@ public partial class MainWindow : Window
 
     private async void OnSplitPagesClick(object sender, RoutedEventArgs e)
     {
-        if (!EnsurePdfLoaded("PDF 분할"))
+        if (IsDocumentMutationInProgress || !EnsurePdfLoaded("PDF 분할"))
         {
             return;
         }
@@ -1663,16 +2006,28 @@ public partial class MainWindow : Window
         var folder = Path.GetDirectoryName(referencePath) ?? Environment.GetFolderPath(Environment.SpecialFolder.MyDocuments);
         var outputFolder = Path.Combine(folder, $"{Path.GetFileNameWithoutExtension(referencePath)}_분할");
 
+        if (!TryCaptureDocumentOperation(out var operation))
+        {
+            return;
+        }
         try
         {
-            var results = await _pdfService.SplitPagesAsync(
-                _currentPdfPath!,
-                GetCurrentPageTransforms(),
-                outputFolder,
-                Path.GetFileNameWithoutExtension(referencePath) ?? "분할",
-                CancellationToken.None);
-
-            MessageBox.Show(this, $"{results.Count}개 파일로 분할했습니다.\n{outputFolder}", "PDF 분할", MessageBoxButton.OK, MessageBoxImage.Information);
+            await ExecuteDocumentMutationAsync(operation, async currentOperation =>
+            {
+                var sourcePath = _currentPdfPath ?? throw new InvalidOperationException("현재 PDF를 찾을 수 없습니다.");
+                var results = await _pdfService.SplitPagesAsync(
+                    sourcePath,
+                    GetCurrentPageTransforms(),
+                    outputFolder,
+                    Path.GetFileNameWithoutExtension(referencePath) ?? "분할",
+                    currentOperation.CancellationToken);
+                _documentOperations.ThrowIfSuperseded(currentOperation);
+                MessageBox.Show(this, $"{results.Count}개 파일로 분할했습니다.\n{outputFolder}", "PDF 분할", MessageBoxButton.OK, MessageBoxImage.Information);
+            });
+        }
+        catch (OperationCanceledException) when (IsDocumentOperationSuperseded(operation))
+        {
+            AppLogger.Info("Ignored a split result from a document that was replaced while splitting.");
         }
         catch (Exception ex)
         {
@@ -1687,20 +2042,19 @@ public partial class MainWindow : Window
             return;
         }
 
-        var insertPath = CreateTempPdfPath("blank");
-        try
+        await RunCurrentDocumentMutationAsync("blank A4 page insertion", "빈 페이지 추가 실패", async operation =>
         {
-            _pdfService.CreateBlankA4Pdf(insertPath);
-            await InsertGeneratedPdfPageAsync(insertPath, "빈 A4 페이지 추가");
-        }
-        catch (Exception ex)
-        {
-            MessageBox.Show(this, ex.Message, "빈 페이지 추가 실패", MessageBoxButton.OK, MessageBoxImage.Error);
-        }
-        finally
-        {
-            TryDeleteTempFile(insertPath);
-        }
+            var insertPath = CreateTempPdfPath("blank");
+            try
+            {
+                _pdfService.CreateBlankA4Pdf(insertPath);
+                await InsertGeneratedPdfPageAsync(insertPath, "빈 A4 페이지 추가", operation);
+            }
+            finally
+            {
+                TryDeleteTempFile(insertPath);
+            }
+        });
     }
 
     private async void OnPasteClipboardImageClick(object sender, RoutedEventArgs e)
@@ -1723,25 +2077,24 @@ public partial class MainWindow : Window
             return;
         }
 
-        var insertPath = CreateTempPdfPath("clipboard-image");
-        try
+        await RunCurrentDocumentMutationAsync("clipboard image insertion", "이미지 붙여넣기 실패", async operation =>
         {
-            var encodedImage = EncodeJpegForA4(image);
-            _pdfService.CreateImageA4Pdf(
-                insertPath,
-                encodedImage.JpegBytes,
-                encodedImage.Width,
-                encodedImage.Height);
-            await InsertGeneratedPdfPageAsync(insertPath, "클립보드 이미지 붙여넣기");
-        }
-        catch (Exception ex)
-        {
-            MessageBox.Show(this, ex.Message, "이미지 붙여넣기 실패", MessageBoxButton.OK, MessageBoxImage.Error);
-        }
-        finally
-        {
-            TryDeleteTempFile(insertPath);
-        }
+            var insertPath = CreateTempPdfPath("clipboard-image");
+            try
+            {
+                var encodedImage = EncodeJpegForA4(image);
+                _pdfService.CreateImageA4Pdf(
+                    insertPath,
+                    encodedImage.JpegBytes,
+                    encodedImage.Width,
+                    encodedImage.Height);
+                await InsertGeneratedPdfPageAsync(insertPath, "클립보드 이미지 붙여넣기", operation);
+            }
+            finally
+            {
+                TryDeleteTempFile(insertPath);
+            }
+        });
     }
 
     private async Task PastePagesOrImageAsync()
@@ -1757,50 +2110,83 @@ public partial class MainWindow : Window
 
     private async Task CopySelectedPagesToClipboardAsync(bool cut)
     {
-        if (!EnsurePdfLoaded(cut ? "페이지 잘라내기" : "페이지 복사"))
+        if (IsDocumentMutationInProgress ||
+            !EnsurePdfLoaded(cut ? "페이지 잘라내기" : "페이지 복사"))
         {
             return;
         }
 
-        var pages = GetSelectedPageTransforms();
-        if (pages.Count == 0)
+        if (!TryCaptureDocumentOperation(out var operation))
         {
-            MessageBox.Show(this, "복사할 썸네일 페이지를 선택하세요.", cut ? "페이지 잘라내기" : "페이지 복사", MessageBoxButton.OK, MessageBoxImage.Information);
             return;
         }
-
-        if (cut && pages.Count >= _pageOrder.Count)
-        {
-            MessageBox.Show(this, "모든 페이지는 잘라낼 수 없습니다. 복사를 사용하거나 새 PDF로 저장하세요.", "페이지 잘라내기", MessageBoxButton.OK, MessageBoxImage.Information);
-            return;
-        }
-
-        var tempPath = CreateTempPdfPath(cut ? "cut-pages" : "copy-pages");
         try
         {
-            await _pdfService.SaveTransformedPagesAsync(_currentPdfPath!, pages, tempPath, CancellationToken.None);
-            var payload = new PageTransferPayload(
-                tempPath,
-                [new PdfPageTransform(1, 0)],
-                cut);
-            var data = new DataObject();
-            data.SetData(PageTransferClipboardFormat, JsonSerializer.Serialize(payload, PageTransferJsonOptions));
-
-            var fileDrop = new System.Collections.Specialized.StringCollection
+            await ExecuteDocumentMutationAsync(operation, async currentOperation =>
             {
-                tempPath
-            };
-            data.SetFileDropList(fileDrop);
-            Clipboard.SetDataObject(data, copy: true);
+                var pages = GetSelectedPageTransforms();
+                if (pages.Count == 0)
+                {
+                    MessageBox.Show(this, "복사할 썸네일 페이지를 선택하세요.", cut ? "페이지 잘라내기" : "페이지 복사", MessageBoxButton.OK, MessageBoxImage.Information);
+                    return;
+                }
 
-            if (cut)
-            {
-                SendViewerCommand("deleteSelectedPages");
-            }
+                if (cut && pages.Count >= _pageOrder.Count)
+                {
+                    MessageBox.Show(this, "모든 페이지는 잘라낼 수 없습니다. 복사를 사용하거나 새 PDF로 저장하세요.", "페이지 잘라내기", MessageBoxButton.OK, MessageBoxImage.Information);
+                    return;
+                }
 
-            CurrentFileText.Text = cut
-                ? $"{pages.Count}개 페이지를 잘라냈습니다."
-                : $"{pages.Count}개 페이지를 복사했습니다.";
+                var sourcePath = _currentPdfPath ?? throw new InvalidOperationException("현재 PDF를 찾을 수 없습니다.");
+                var tempPath = CreateTempPdfPath(cut ? "cut-pages" : "copy-pages");
+                var keepTempPathForClipboard = false;
+                try
+                {
+                    await _pdfService.SaveTransformedPagesAsync(
+                        sourcePath,
+                        pages,
+                        tempPath,
+                        currentOperation.CancellationToken);
+                    _documentOperations.ThrowIfSuperseded(currentOperation);
+
+                    var payload = new PageTransferPayload(
+                        tempPath,
+                        [new PdfPageTransform(1, 0)],
+                        cut);
+                    var data = new DataObject();
+                    data.SetData(PageTransferClipboardFormat, JsonSerializer.Serialize(payload, PageTransferJsonOptions));
+
+                    var fileDrop = new System.Collections.Specialized.StringCollection
+                    {
+                        tempPath
+                    };
+                    data.SetFileDropList(fileDrop);
+                    Clipboard.SetDataObject(data, copy: true);
+                    keepTempPathForClipboard = true;
+
+                    if (cut)
+                    {
+                        ApplyPageOrganizerEdit(
+                            state => state.DeleteSelectedPages(),
+                            allowDuringDocumentMutation: true);
+                    }
+
+                    CurrentFileText.Text = cut
+                        ? $"{pages.Count}개 페이지를 잘라냈습니다."
+                        : $"{pages.Count}개 페이지를 복사했습니다.";
+                }
+                finally
+                {
+                    if (!keepTempPathForClipboard)
+                    {
+                        TryDeleteTempFile(tempPath);
+                    }
+                }
+            });
+        }
+        catch (OperationCanceledException) when (IsDocumentOperationSuperseded(operation))
+        {
+            AppLogger.Info("Ignored a copy or cut result from a document that was replaced while processing.");
         }
         catch (Exception ex)
         {
@@ -1815,63 +2201,31 @@ public partial class MainWindow : Window
             return;
         }
 
-        try
+        var json = Clipboard.GetData(PageTransferClipboardFormat) as string;
+        var payload = string.IsNullOrWhiteSpace(json)
+            ? null
+            : JsonSerializer.Deserialize<PageTransferPayload>(json, PageTransferJsonOptions);
+        if (payload is null || !File.Exists(payload.SourcePath))
         {
-            var json = Clipboard.GetData(PageTransferClipboardFormat) as string;
-            var payload = string.IsNullOrWhiteSpace(json)
-                ? null
-                : JsonSerializer.Deserialize<PageTransferPayload>(json, PageTransferJsonOptions);
-            if (payload is null || !File.Exists(payload.SourcePath))
-            {
-                MessageBox.Show(this, "붙여넣을 페이지 데이터를 찾을 수 없습니다.", "페이지 붙여넣기", MessageBoxButton.OK, MessageBoxImage.Warning);
-                return;
-            }
+            MessageBox.Show(this, "붙여넣을 페이지 데이터를 찾을 수 없습니다.", "페이지 붙여넣기", MessageBoxButton.OK, MessageBoxImage.Warning);
+            return;
+        }
 
-            await InsertPreparedPdfPagesAsync(payload.SourcePath, GetInsertionIndexAfterSelection(), "페이지 붙여넣기", showMessage: false);
-            CurrentFileText.Text = payload.Cut ? "페이지를 이동했습니다." : "페이지를 붙여넣었습니다.";
-        }
-        catch (Exception ex)
+        var insertionIndex = GetInsertionIndexAfterSelection();
+        await RunCurrentDocumentMutationAsync("page paste", "페이지 붙여넣기 실패", async operation =>
         {
-            MessageBox.Show(this, ex.Message, "페이지 붙여넣기 실패", MessageBoxButton.OK, MessageBoxImage.Error);
-        }
+            await InsertPreparedPdfPagesAsync(payload.SourcePath, insertionIndex, "페이지 붙여넣기", showMessage: false, operation);
+            CurrentFileText.Text = payload.Cut ? "페이지를 이동했습니다." : "페이지를 붙여넣었습니다.";
+        });
     }
 
     private async Task InsertExternalPagesAsync(JsonElement root)
     {
-        if (!EnsurePdfLoaded("페이지 드롭"))
-        {
-            return;
-        }
-
         try
         {
             var message = JsonSerializer.Deserialize<ExternalPagesDropMessage>(root.GetRawText(), PageTransferJsonOptions)
                 ?? throw new InvalidOperationException("드롭한 페이지 정보를 읽을 수 없습니다.");
-            if (!File.Exists(message.SourcePath))
-            {
-                throw new FileNotFoundException("원본 PDF 파일을 찾을 수 없습니다.", message.SourcePath);
-            }
-
-            if (message.Pages.Count == 0)
-            {
-                throw new InvalidOperationException("드롭한 페이지가 없습니다.");
-            }
-
-            var selectedPath = CreateTempPdfPath("drag-pages");
-            try
-            {
-                await _pdfService.SaveTransformedPagesAsync(message.SourcePath, message.Pages, selectedPath, CancellationToken.None);
-                await InsertPreparedPdfPagesAsync(
-                    selectedPath,
-                    Math.Clamp(message.InsertionIndex, 0, _pageOrder.Count),
-                    "페이지 드롭",
-                    showMessage: false);
-                CurrentFileText.Text = $"{message.Pages.Count}개 페이지를 드롭해서 복사했습니다.";
-            }
-            finally
-            {
-                TryDeleteTempFile(selectedPath);
-            }
+            await InsertExternalPagesAsync(message);
         }
         catch (Exception ex)
         {
@@ -1879,84 +2233,141 @@ public partial class MainWindow : Window
         }
     }
 
+    private async Task InsertExternalPagesAsync(ExternalPagesDropMessage message)
+    {
+        if (!EnsurePdfLoaded("페이지 드롭"))
+        {
+            return;
+        }
+
+        if (!File.Exists(message.SourcePath))
+        {
+            MessageBox.Show(this, "원본 PDF 파일을 찾을 수 없습니다.", "페이지 드롭 실패", MessageBoxButton.OK, MessageBoxImage.Error);
+            return;
+        }
+
+        if (message.Pages.Count == 0)
+        {
+            MessageBox.Show(this, "드롭한 페이지가 없습니다.", "페이지 드롭 실패", MessageBoxButton.OK, MessageBoxImage.Error);
+            return;
+        }
+
+        await RunCurrentDocumentMutationAsync("external page insertion", "페이지 드롭 실패", async operation =>
+        {
+            var selectedPath = CreateTempPdfPath("drag-pages");
+            try
+            {
+                await _pdfService.SaveTransformedPagesAsync(
+                    message.SourcePath,
+                    message.Pages,
+                    selectedPath,
+                    operation.CancellationToken);
+                _documentOperations.ThrowIfSuperseded(operation);
+                await InsertPreparedPdfPagesAsync(
+                    selectedPath,
+                    Math.Clamp(message.InsertionIndex, 0, _pageOrder.Count),
+                    "페이지 드롭",
+                    showMessage: false,
+                    operation);
+                CurrentFileText.Text = $"{message.Pages.Count}개 페이지를 드롭해서 복사했습니다.";
+            }
+            finally
+            {
+                TryDeleteTempFile(selectedPath);
+            }
+        });
+    }
+
     private async Task InsertExternalFilesAsync(JsonElement root)
+    {
+        try
+        {
+            var message = JsonSerializer.Deserialize<ExternalFilesDropMessage>(root.GetRawText(), PageTransferJsonOptions)
+                ?? throw new InvalidOperationException("드롭한 파일 정보를 읽을 수 없습니다.");
+            await InsertExternalFilesAsync(message);
+        }
+        catch (Exception ex)
+        {
+            MessageBox.Show(this, ex.Message, "파일 삽입 실패", MessageBoxButton.OK, MessageBoxImage.Error);
+        }
+    }
+
+    private async Task InsertExternalFilesAsync(ExternalFilesDropMessage message)
     {
         if (!EnsurePdfLoaded("파일 삽입"))
         {
             return;
         }
 
-        var tempPaths = new List<string>();
-        try
+        await RunCurrentDocumentMutationAsync("external file insertion", "파일 삽입 실패", async operation =>
         {
-            var message = JsonSerializer.Deserialize<ExternalFilesDropMessage>(root.GetRawText(), PageTransferJsonOptions)
-                ?? throw new InvalidOperationException("드롭한 파일 정보를 읽을 수 없습니다.");
-
-            var paths = message.Paths
-                .Where(File.Exists)
-                .Where(IsSupportedInsertionFile)
-                .Select(Path.GetFullPath)
-                .ToList();
-
-            if (paths.Count == 0)
+            var tempPaths = new List<string>();
+            try
             {
-                throw new InvalidOperationException("삽입할 수 있는 PDF 또는 이미지 파일이 없습니다.");
-            }
+                var paths = message.Paths
+                    .Where(File.Exists)
+                    .Where(IsSupportedInsertionFile)
+                    .Select(Path.GetFullPath)
+                    .ToList();
 
-            var pdfParts = new List<string>();
-            foreach (var path in paths)
-            {
-                if (IsPdfFile(path))
+                if (paths.Count == 0)
                 {
-                    pdfParts.Add(path);
-                    continue;
+                    throw new InvalidOperationException("삽입할 수 있는 PDF 또는 이미지 파일이 없습니다.");
                 }
 
-                var imagePdfPath = CreateTempPdfPath("dropped-image");
-                var image = LoadBitmapFromFile(path);
-                var encodedImage = EncodeJpegForA4(image);
-                _pdfService.CreateImageA4Pdf(
-                    imagePdfPath,
-                    encodedImage.JpegBytes,
-                    encodedImage.Width,
-                    encodedImage.Height);
-                tempPaths.Add(imagePdfPath);
-                pdfParts.Add(imagePdfPath);
+                var pdfParts = new List<string>();
+                foreach (var path in paths)
+                {
+                    if (IsPdfFile(path))
+                    {
+                        pdfParts.Add(path);
+                        continue;
+                    }
+
+                    var imagePdfPath = CreateTempPdfPath("dropped-image");
+                    var image = LoadBitmapFromFile(path);
+                    var encodedImage = EncodeJpegForA4(image);
+                    _pdfService.CreateImageA4Pdf(
+                        imagePdfPath,
+                        encodedImage.JpegBytes,
+                        encodedImage.Width,
+                        encodedImage.Height);
+                    tempPaths.Add(imagePdfPath);
+                    pdfParts.Add(imagePdfPath);
+                }
+
+                var insertPath = pdfParts.Count == 1
+                    ? pdfParts[0]
+                    : CreateTempPdfPath("dropped-files");
+
+                if (pdfParts.Count > 1)
+                {
+                    tempPaths.Add(insertPath);
+                    await _pdfService.CombinePdfFilesAsync(pdfParts, insertPath, operation.CancellationToken);
+                    _documentOperations.ThrowIfSuperseded(operation);
+                }
+
+                await InsertPreparedPdfPagesAsync(
+                    insertPath,
+                    Math.Clamp(message.InsertionIndex, 0, _pageOrder.Count),
+                    "파일 삽입",
+                    showMessage: false,
+                    operation);
+                CurrentFileText.Text = $"{paths.Count}개 파일을 현재 PDF에 삽입했습니다.";
             }
-
-            var insertPath = pdfParts.Count == 1
-                ? pdfParts[0]
-                : CreateTempPdfPath("dropped-files");
-
-            if (pdfParts.Count > 1)
+            finally
             {
-                tempPaths.Add(insertPath);
-                await _pdfService.CombinePdfFilesAsync(pdfParts, insertPath, CancellationToken.None);
+                foreach (var tempPath in tempPaths)
+                {
+                    TryDeleteTempFile(tempPath);
+                }
             }
-
-            await InsertPreparedPdfPagesAsync(
-                insertPath,
-                Math.Clamp(message.InsertionIndex, 0, _pageOrder.Count),
-                "파일 삽입",
-                showMessage: false);
-            CurrentFileText.Text = $"{paths.Count}개 파일을 현재 PDF에 삽입했습니다.";
-        }
-        catch (Exception ex)
-        {
-            MessageBox.Show(this, ex.Message, "파일 삽입 실패", MessageBoxButton.OK, MessageBoxImage.Error);
-        }
-        finally
-        {
-            foreach (var tempPath in tempPaths)
-            {
-                TryDeleteTempFile(tempPath);
-            }
-        }
+        });
     }
 
     private async void OnFitAllPagesToA4Click(object sender, RoutedEventArgs e)
     {
-        if (!EnsurePdfLoaded("A4 맞춤"))
+        if (IsDocumentMutationInProgress || !EnsurePdfLoaded("A4 맞춤"))
         {
             return;
         }
@@ -1977,14 +2388,30 @@ public partial class MainWindow : Window
             return;
         }
 
+        if (!TryCaptureDocumentOperation(out var operation))
+        {
+            return;
+        }
         try
         {
-            ViewerLoading.Visibility = Visibility.Visible;
-            CurrentFileText.Text = "A4 페이지로 변환 중입니다...";
-            var images = await ExportCurrentPagesAsA4ImagesAsync();
-            var result = await _pdfService.CreateA4ImagePagesPdfAsync(images, outputPath, CancellationToken.None);
-            LoadPdf(result.OutputPath);
-            MessageBox.Show(this, $"저장 완료:\n{result.OutputPath}", "A4 맞춤", MessageBoxButton.OK, MessageBoxImage.Information);
+            await ExecuteDocumentMutationAsync(operation, async currentOperation =>
+            {
+                ViewerLoading.Visibility = Visibility.Visible;
+                CurrentFileText.Text = "A4 페이지로 변환 중입니다...";
+                var images = await ExportCurrentPagesAsA4ImagesAsync(false, currentOperation.CancellationToken);
+                _documentOperations.ThrowIfSuperseded(currentOperation);
+                var result = await _pdfService.CreateA4ImagePagesPdfAsync(
+                    images,
+                    outputPath,
+                    currentOperation.CancellationToken);
+                _documentOperations.ThrowIfSuperseded(currentOperation);
+                LoadPdf(result.OutputPath);
+                MessageBox.Show(this, $"저장 완료:\n{result.OutputPath}", "A4 맞춤", MessageBoxButton.OK, MessageBoxImage.Information);
+            });
+        }
+        catch (OperationCanceledException) when (IsDocumentOperationSuperseded(operation))
+        {
+            AppLogger.Info("Ignored an A4 conversion result from a document that was replaced while converting.");
         }
         catch (Exception ex)
         {
@@ -1996,7 +2423,7 @@ public partial class MainWindow : Window
 
     private async void OnOptimizeA4FileSizeClick(object sender, RoutedEventArgs e)
     {
-        if (!EnsurePdfLoaded("A4 기준 용량 최적화"))
+        if (IsDocumentMutationInProgress || !EnsurePdfLoaded("A4 기준 용량 최적화"))
         {
             return;
         }
@@ -2017,19 +2444,36 @@ public partial class MainWindow : Window
             return;
         }
 
+        if (!TryCaptureDocumentOperation(out var operation))
+        {
+            return;
+        }
         try
         {
-            ViewerLoading.Visibility = Visibility.Visible;
-            CurrentFileText.Text = "A4 기준으로 용량 최적화 중입니다...";
-            var originalSize = File.Exists(_currentPdfPath!) ? new FileInfo(_currentPdfPath!).Length : 0;
-            var images = await ExportCurrentPagesAsA4ImagesAsync(optimizeSize: true);
-            var result = await _pdfService.CreateA4ImagePagesPdfAsync(images, outputPath, CancellationToken.None);
-            LoadPdf(result.OutputPath);
-            var outputSize = new FileInfo(result.OutputPath).Length;
-            var sizeMessage = originalSize > 0
-                ? $"\n원본: {FormatFileSize(originalSize)}\n결과: {FormatFileSize(outputSize)}"
-                : $"\n결과: {FormatFileSize(outputSize)}";
-            MessageBox.Show(this, $"저장 완료:\n{result.OutputPath}{sizeMessage}", "A4 기준 용량 최적화", MessageBoxButton.OK, MessageBoxImage.Information);
+            await ExecuteDocumentMutationAsync(operation, async currentOperation =>
+            {
+                var sourcePath = _currentPdfPath ?? throw new InvalidOperationException("현재 PDF를 찾을 수 없습니다.");
+                ViewerLoading.Visibility = Visibility.Visible;
+                CurrentFileText.Text = "A4 기준으로 용량 최적화 중입니다...";
+                var originalSize = File.Exists(sourcePath) ? new FileInfo(sourcePath).Length : 0;
+                var images = await ExportCurrentPagesAsA4ImagesAsync(true, currentOperation.CancellationToken);
+                _documentOperations.ThrowIfSuperseded(currentOperation);
+                var result = await _pdfService.CreateA4ImagePagesPdfAsync(
+                    images,
+                    outputPath,
+                    currentOperation.CancellationToken);
+                _documentOperations.ThrowIfSuperseded(currentOperation);
+                LoadPdf(result.OutputPath);
+                var outputSize = new FileInfo(result.OutputPath).Length;
+                var sizeMessage = originalSize > 0
+                    ? $"\n원본: {FormatFileSize(originalSize)}\n결과: {FormatFileSize(outputSize)}"
+                    : $"\n결과: {FormatFileSize(outputSize)}";
+                MessageBox.Show(this, $"저장 완료:\n{result.OutputPath}{sizeMessage}", "A4 기준 용량 최적화", MessageBoxButton.OK, MessageBoxImage.Information);
+            });
+        }
+        catch (OperationCanceledException) when (IsDocumentOperationSuperseded(operation))
+        {
+            AppLogger.Info("Ignored an A4 optimization result from a document that was replaced while optimizing.");
         }
         catch (Exception ex)
         {
@@ -2039,25 +2483,37 @@ public partial class MainWindow : Window
         }
     }
 
-    private async Task InsertGeneratedPdfPageAsync(string insertPath, string title)
+    private async Task InsertGeneratedPdfPageAsync(
+        string insertPath,
+        string title,
+        DocumentOperationToken operation)
     {
         var insertionIndex = GetInsertionIndexAfterSelection();
-        await InsertPreparedPdfPagesAsync(insertPath, insertionIndex, title, showMessage: true);
+        await InsertPreparedPdfPagesAsync(insertPath, insertionIndex, title, showMessage: true, operation);
     }
 
-    private async Task InsertPreparedPdfPagesAsync(string insertPath, int insertionIndex, string title, bool showMessage)
+    private async Task InsertPreparedPdfPagesAsync(
+        string insertPath,
+        int insertionIndex,
+        string title,
+        bool showMessage,
+        DocumentOperationToken operation)
     {
+        _documentOperations.ThrowIfSuperseded(operation);
         var outputPath = CreateTempPdfPath("edited");
         var referencePath = _referencePdfPath ?? _currentPdfPath!;
         var restorePageNumber = _activePage.GetValueOrDefault(_selectedPages.FirstOrDefault());
+        var sourcePath = _currentPdfPath ?? throw new InvalidOperationException("현재 PDF를 찾을 수 없습니다.");
+        var pageTransforms = GetCurrentPageTransforms();
 
         await _pdfService.InsertPdfPagesAsync(
-            _currentPdfPath!,
-            GetCurrentPageTransforms(),
+            sourcePath,
+            pageTransforms,
             insertPath,
             insertionIndex,
             outputPath,
-            CancellationToken.None);
+            operation.CancellationToken);
+        _documentOperations.ThrowIfSuperseded(operation);
 
         LoadPdf(outputPath, referencePath, true, restorePageNumber > 0 ? restorePageNumber : null);
         if (showMessage)
@@ -2233,20 +2689,10 @@ public partial class MainWindow : Window
 
     private List<PdfPageTransform> GetSelectedPageTransforms()
     {
-        if (_selectedPages.Count > 0)
-        {
-            return _pageOrder
-                .Where(page => _selectedPages.Contains(page))
-                .Select(page => new PdfPageTransform(page, GetRotation(page)))
-                .ToList();
-        }
-
-        if (_activePage is { } activePage && _pageOrder.Contains(activePage))
-        {
-            return [new PdfPageTransform(activePage, GetRotation(activePage))];
-        }
-
-        return [];
+        return _pageOrder
+            .Where(page => _selectedPages.Contains(page))
+            .Select(page => new PdfPageTransform(page, GetRotation(page)))
+            .ToList();
     }
 
     private int GetRotation(int pageNumber)
@@ -2261,6 +2707,11 @@ public partial class MainWindow : Window
 
     private async void OnPrintClick(object sender, RoutedEventArgs e)
     {
+        if (IsDocumentMutationInProgress)
+        {
+            return;
+        }
+
         if (!_viewerReady || PdfViewer.CoreWebView2 is null || string.IsNullOrWhiteSpace(_currentPdfPath))
         {
             MessageBox.Show(this, "먼저 PDF를 열어주세요.", "PDF 인쇄", MessageBoxButton.OK, MessageBoxImage.Information);
@@ -2454,23 +2905,72 @@ public partial class MainWindow : Window
 
     private void OnFitPageClick(object sender, RoutedEventArgs e) => SendViewerCommand("fitPage");
 
-    private void OnThumbZoomInClick(object sender, RoutedEventArgs e) => SendViewerCommand("thumbZoomIn");
+    private void OnThumbZoomInClick(object sender, RoutedEventArgs e) => AdjustPageOrganizerThumbnailHeight(18);
 
-    private void OnThumbZoomOutClick(object sender, RoutedEventArgs e) => SendViewerCommand("thumbZoomOut");
+    private void OnThumbZoomOutClick(object sender, RoutedEventArgs e) => AdjustPageOrganizerThumbnailHeight(-18);
 
-    private void OnThumbZoomResetClick(object sender, RoutedEventArgs e) => SendViewerCommand("thumbZoomReset");
+    private void OnThumbZoomResetClick(object sender, RoutedEventArgs e)
+    {
+        _pageOrganizerThumbnailHeight = DefaultPageOrganizerThumbnailHeight;
+        RefreshPageOrganizerThumbnailHeight();
+    }
 
-    private void OnPrevPageClick(object sender, RoutedEventArgs e) => SendViewerCommand("prevPage");
+    private void AdjustPageOrganizerThumbnailHeight(double delta)
+    {
+        _pageOrganizerThumbnailHeight = Math.Clamp(
+            _pageOrganizerThumbnailHeight + delta,
+            MinimumPageOrganizerThumbnailHeight,
+            MaximumPageOrganizerThumbnailHeight);
+        RefreshPageOrganizerThumbnailHeight();
+    }
 
-    private void OnNextPageClick(object sender, RoutedEventArgs e) => SendViewerCommand("nextPage");
+    private void RefreshPageOrganizerThumbnailHeight()
+    {
+        foreach (var item in PageOrganizerItems)
+        {
+            item.ThumbnailHeight = _pageOrganizerThumbnailHeight;
+        }
+    }
 
-    private void OnFirstPageClick(object sender, RoutedEventArgs e) => SendViewerCommand("firstPage");
+    private void OnPrevPageClick(object sender, RoutedEventArgs e) => NavigatePageOrganizer(-1);
 
-    private void OnLastPageClick(object sender, RoutedEventArgs e) => SendViewerCommand("lastPage");
+    private void OnNextPageClick(object sender, RoutedEventArgs e) => NavigatePageOrganizer(1);
 
-    private void OnUndoClick(object sender, RoutedEventArgs e) => SendViewerCommand("undo");
+    private void OnFirstPageClick(object sender, RoutedEventArgs e) => NavigatePageOrganizerBoundary(last: false);
 
-    private void OnRedoClick(object sender, RoutedEventArgs e) => SendViewerCommand("redo");
+    private void OnLastPageClick(object sender, RoutedEventArgs e) => NavigatePageOrganizerBoundary(last: true);
+
+    private void OnUndoClick(object sender, RoutedEventArgs e)
+    {
+        if (IsDocumentMutationInProgress)
+        {
+            return;
+        }
+
+        if (_pageOrganizerState?.CanUndo == true)
+        {
+            ApplyPageOrganizerState(_pageOrganizerState.Undo(), navigatePreview: true);
+            return;
+        }
+
+        SendViewerCommand("undo");
+    }
+
+    private void OnRedoClick(object sender, RoutedEventArgs e)
+    {
+        if (IsDocumentMutationInProgress)
+        {
+            return;
+        }
+
+        if (_pageOrganizerState?.CanRedo == true)
+        {
+            ApplyPageOrganizerState(_pageOrganizerState.Redo(), navigatePreview: true);
+            return;
+        }
+
+        SendViewerCommand("redo");
+    }
 
     private void OnEditorTextClick(object sender, RoutedEventArgs e) => SendViewerCommand("editorText");
 
@@ -2518,15 +3018,311 @@ public partial class MainWindow : Window
 
     private async void OnPastePagesClick(object sender, RoutedEventArgs e) => await PastePagesOrImageAsync();
 
-    private void OnDeleteSelectedPagesClick(object sender, RoutedEventArgs e) => SendViewerCommand("deleteSelectedPages");
+    private void OnDeleteSelectedPagesClick(object sender, RoutedEventArgs e) =>
+        ApplyPageOrganizerEdit(state => state.DeleteSelectedPages());
 
-    private void OnRotateClockwiseClick(object sender, RoutedEventArgs e) => SendViewerCommand("rotateSelectedClockwise");
+    private void OnRotateClockwiseClick(object sender, RoutedEventArgs e) =>
+        ApplyPageOrganizerEdit(state => state.RotateSelectedPages(90));
 
-    private void OnRotateCounterClockwiseClick(object sender, RoutedEventArgs e) => SendViewerCommand("rotateSelectedCounterClockwise");
+    private void OnRotateCounterClockwiseClick(object sender, RoutedEventArgs e) =>
+        ApplyPageOrganizerEdit(state => state.RotateSelectedPages(-90));
 
-    private void OnReversePageOrderClick(object sender, RoutedEventArgs e) => SendViewerCommand("reversePageOrder");
+    private void OnReversePageOrderClick(object sender, RoutedEventArgs e) =>
+        ApplyPageOrganizerEdit(state => state.ReversePageOrder());
+
+    private void ApplyPageOrganizerEdit(
+        Func<EditorDocumentState, EditorDocumentState> edit,
+        bool allowDuringDocumentMutation = false)
+    {
+        if ((!allowDuringDocumentMutation && IsDocumentMutationInProgress) ||
+            _pageOrganizerState is null)
+        {
+            return;
+        }
+
+        var next = edit(_pageOrganizerState);
+        if (ReferenceEquals(next, _pageOrganizerState))
+        {
+            return;
+        }
+
+        ApplyPageOrganizerState(
+            next,
+            navigatePreview: true,
+            allowDuringDocumentMutation);
+    }
+
+    private void NavigatePageOrganizer(int delta)
+    {
+        if (IsDocumentMutationInProgress ||
+            _pageOrganizerState is not { PageNumbers.Count: > 0 } state)
+        {
+            return;
+        }
+
+        var current = state.ActivePageNumber ?? state.SelectedPageNumbers.FirstOrDefault(state.PageNumbers[0]);
+        var currentIndex = state.PageNumbers.ToList().IndexOf(current);
+        var nextIndex = Math.Clamp(currentIndex + delta, 0, state.PageNumbers.Count - 1);
+        ApplyPageOrganizerState(state.ActivatePage(state.PageNumbers[nextIndex]), navigatePreview: true);
+    }
+
+    private void NavigatePageOrganizerBoundary(bool last)
+    {
+        if (IsDocumentMutationInProgress ||
+            _pageOrganizerState is not { PageNumbers.Count: > 0 } state)
+        {
+            return;
+        }
+
+        var pageNumber = last ? state.PageNumbers[^1] : state.PageNumbers[0];
+        ApplyPageOrganizerState(state.ActivatePage(pageNumber), navigatePreview: true);
+    }
+
+    private void OnPageOrganizerCheckBoxPreviewMouseLeftButtonDown(object sender, MouseButtonEventArgs e)
+    {
+        if (IsDocumentMutationInProgress)
+        {
+            e.Handled = true;
+            return;
+        }
+
+        if (_pageOrganizerState is null || sender is not CheckBox { DataContext: PageOrganizerItem item })
+        {
+            ClearPageOrganizerPointerState();
+            return;
+        }
+
+        ClearPageOrganizerPointerState();
+        ApplyPageOrganizerState(
+            _pageOrganizerState.SelectPage(item.PageNumber, PageSelectionMode.Toggle),
+            navigatePreview: true);
+        e.Handled = true;
+    }
+
+    private void OnPageOrganizerItemPreviewMouseLeftButtonDown(object sender, MouseButtonEventArgs e)
+    {
+        if (IsDocumentMutationInProgress)
+        {
+            e.Handled = true;
+            return;
+        }
+
+        if (_pageOrganizerState is null || e.OriginalSource is not DependencyObject source)
+        {
+            ClearPageOrganizerPointerState();
+            return;
+        }
+
+        if (FindVisualAncestor<CheckBox>(source) is not null)
+        {
+            return;
+        }
+
+        var item = FindPageOrganizerItem(source);
+        if (item is null)
+        {
+            ClearPageOrganizerPointerState();
+            return;
+        }
+
+        var modifiers = Keyboard.Modifiers;
+        var selectionMode = modifiers.HasFlag(ModifierKeys.Shift)
+            ? PageSelectionMode.Range
+            : modifiers.HasFlag(ModifierKeys.Control)
+                ? PageSelectionMode.Toggle
+                : PageSelectionMode.Replace;
+        var preserveCurrentGroupForDrag = selectionMode == PageSelectionMode.Replace &&
+                                          _pageOrganizerState.SelectedPageNumbers.Count > 1 &&
+                                          _pageOrganizerState.SelectedPageNumbers.Contains(item.PageNumber);
+        _pageOrganizerDragPageNumber = item.PageNumber;
+        _pageOrganizerDragStartPosition = e.GetPosition(PageOrganizerList);
+        _pageOrganizerPendingPlainSelectionPageNumber = preserveCurrentGroupForDrag
+            ? item.PageNumber
+            : null;
+        Mouse.Capture(PageOrganizerList, CaptureMode.SubTree);
+        if (!preserveCurrentGroupForDrag)
+        {
+            ApplyPageOrganizerState(
+                _pageOrganizerState.SelectPage(item.PageNumber, selectionMode),
+                navigatePreview: true);
+        }
+
+        e.Handled = true;
+    }
+
+    private void OnPageOrganizerItemPreviewMouseLeftButtonUp(object sender, MouseButtonEventArgs e)
+    {
+        if (IsDocumentMutationInProgress)
+        {
+            ClearPageOrganizerPointerState();
+            e.Handled = true;
+            return;
+        }
+
+        if (_pageOrganizerPendingPlainSelectionPageNumber is { } pageNumber &&
+            _pageOrganizerState is not null &&
+            _pageOrganizerState.PageNumbers.Contains(pageNumber))
+        {
+            ApplyPageOrganizerState(
+                _pageOrganizerState.SelectPage(pageNumber, PageSelectionMode.Replace),
+                navigatePreview: true);
+        }
+
+        ClearPageOrganizerPointerState();
+        e.Handled = true;
+    }
+
+    private void OnPageOrganizerItemPreviewMouseMove(object sender, MouseEventArgs e)
+    {
+        if (IsDocumentMutationInProgress ||
+            _pageOrganizerDragPageNumber is not { } pageNumber ||
+            e.LeftButton != MouseButtonState.Pressed ||
+            _pageOrganizerState is null ||
+            !_pageOrganizerState.PageNumbers.Contains(pageNumber))
+        {
+            return;
+        }
+
+        if (_pageOrganizerDragStartPosition is not { } startPosition)
+        {
+            return;
+        }
+
+        var currentPosition = e.GetPosition(PageOrganizerList);
+        var movedFarEnough = Math.Abs(currentPosition.X - startPosition.X) >= SystemParameters.MinimumHorizontalDragDistance ||
+                               Math.Abs(currentPosition.Y - startPosition.Y) >= SystemParameters.MinimumVerticalDragDistance;
+        if (!movedFarEnough)
+        {
+            return;
+        }
+
+        _pageOrganizerPendingPlainSelectionPageNumber = null;
+        try
+        {
+            var data = new DataObject(PageOrganizerDragDataFormat, pageNumber);
+            DragDrop.DoDragDrop(PageOrganizerList, data, DragDropEffects.Move);
+        }
+        finally
+        {
+            ClearPageOrganizerPointerState();
+        }
+    }
+
+    private void OnPageOrganizerDragOver(object sender, DragEventArgs e)
+    {
+        e.Effects = !IsDocumentMutationInProgress && e.Data.GetDataPresent(PageOrganizerDragDataFormat)
+            ? DragDropEffects.Move
+            : DragDropEffects.None;
+        e.Handled = true;
+    }
+
+    private void OnPageOrganizerDrop(object sender, DragEventArgs e)
+    {
+        if (IsDocumentMutationInProgress ||
+            _pageOrganizerState is null ||
+            !e.Data.GetDataPresent(PageOrganizerDragDataFormat) ||
+            e.Data.GetData(PageOrganizerDragDataFormat) is not int draggedPageNumber)
+        {
+            ClearPageOrganizerPointerState();
+            return;
+        }
+
+        var insertionIndex = GetPageOrganizerInsertionIndex(e);
+        ApplyPageOrganizerEdit(state => state.MovePageGroup(draggedPageNumber, insertionIndex));
+        ClearPageOrganizerPointerState();
+        e.Handled = true;
+    }
+
+    private void ClearPageOrganizerPointerState()
+    {
+        if (Mouse.Captured == PageOrganizerList)
+        {
+            Mouse.Capture(null);
+        }
+
+        _pageOrganizerDragPageNumber = null;
+        _pageOrganizerDragStartPosition = null;
+        _pageOrganizerPendingPlainSelectionPageNumber = null;
+    }
+
+    private int GetPageOrganizerInsertionIndex(DragEventArgs e)
+    {
+        if (_pageOrganizerState is null || e.OriginalSource is not DependencyObject source)
+        {
+            return _pageOrganizerState?.PageNumbers.Count ?? 0;
+        }
+
+        var target = FindPageOrganizerItem(source);
+        if (target is null)
+        {
+            return _pageOrganizerState.PageNumbers.Count;
+        }
+
+        var targetIndex = _pageOrganizerState.PageNumbers.ToList().IndexOf(target.PageNumber);
+        if (targetIndex < 0)
+        {
+            return _pageOrganizerState.PageNumbers.Count;
+        }
+
+        if (PageOrganizerList.ItemContainerGenerator.ContainerFromItem(target) is not FrameworkElement container)
+        {
+            return targetIndex;
+        }
+
+        var position = e.GetPosition(container);
+        return position.Y < container.ActualHeight / 2d ? targetIndex : targetIndex + 1;
+    }
+
+    private static PageOrganizerItem? FindPageOrganizerItem(DependencyObject source)
+    {
+        for (DependencyObject? current = source; current is not null; current = GetVisualParent(current))
+        {
+            if (current is FrameworkElement { DataContext: PageOrganizerItem item })
+            {
+                return item;
+            }
+        }
+
+        return null;
+    }
+
+    private static T? FindVisualAncestor<T>(DependencyObject source)
+        where T : DependencyObject
+    {
+        for (DependencyObject? current = source; current is not null; current = GetVisualParent(current))
+        {
+            if (current is T typed)
+            {
+                return typed;
+            }
+        }
+
+        return null;
+    }
+
+    private static DependencyObject? GetVisualParent(DependencyObject current)
+    {
+        try
+        {
+            return VisualTreeHelper.GetParent(current) ?? LogicalTreeHelper.GetParent(current);
+        }
+        catch (InvalidOperationException)
+        {
+            return LogicalTreeHelper.GetParent(current);
+        }
+    }
 
     private void OnWindowKeyDown(object sender, KeyEventArgs e)
+    {
+        HandleApplicationKeyDown(sender, e);
+    }
+
+    private void OnViewerPreviewKeyDown(object sender, KeyEventArgs e)
+    {
+        HandleApplicationKeyDown(sender, e);
+    }
+
+    private void HandleApplicationKeyDown(object sender, KeyEventArgs e)
     {
         var modifiers = Keyboard.Modifiers;
         var control = modifiers.HasFlag(ModifierKeys.Control);
@@ -2559,12 +3355,12 @@ public partial class MainWindow : Window
         }
         else if (control && !shift && e.Key == Key.Z)
         {
-            SendViewerCommand("undo");
+            OnUndoClick(sender, e);
             e.Handled = true;
         }
         else if (control && !shift && e.Key == Key.Y)
         {
-            SendViewerCommand("redo");
+            OnRedoClick(sender, e);
             e.Handled = true;
         }
         else if (control && !shift && e.Key == Key.C)
@@ -2599,12 +3395,12 @@ public partial class MainWindow : Window
         }
         else if (control && !shift && e.Key == Key.R)
         {
-            SendViewerCommand("rotateSelectedClockwise");
+            OnRotateClockwiseClick(sender, e);
             e.Handled = true;
         }
         else if (e.Key == Key.Delete)
         {
-            SendViewerCommand("deleteSelectedPages");
+            OnDeleteSelectedPagesClick(sender, e);
             e.Handled = true;
         }
         else if (control && !shift && (e.Key == Key.OemPlus || e.Key == Key.Add))
@@ -2629,17 +3425,17 @@ public partial class MainWindow : Window
         }
         else if (control && shift && (e.Key == Key.OemPlus || e.Key == Key.Add))
         {
-            SendViewerCommand("thumbZoomIn");
+            OnThumbZoomInClick(sender, e);
             e.Handled = true;
         }
         else if (control && shift && (e.Key == Key.OemMinus || e.Key == Key.Subtract))
         {
-            SendViewerCommand("thumbZoomOut");
+            OnThumbZoomOutClick(sender, e);
             e.Handled = true;
         }
         else if (control && shift && (e.Key == Key.D0 || e.Key == Key.NumPad0))
         {
-            SendViewerCommand("thumbZoomReset");
+            OnThumbZoomResetClick(sender, e);
             e.Handled = true;
         }
     }
@@ -2650,7 +3446,6 @@ public partial class MainWindow : Window
             TryGetDroppedInsertionPaths(e, out var insertionPaths))
         {
             e.Effects = DragDropEffects.Copy;
-            SendNativeFileDropMessage("nativeFileDragOver", insertionPaths, PdfViewer.PointToScreen(e.GetPosition(PdfViewer)));
             e.Handled = true;
             return;
         }
@@ -2667,7 +3462,9 @@ public partial class MainWindow : Window
         if (CanInsertDroppedFilesIntoCurrentDocument() &&
             TryGetDroppedInsertionPaths(e, out var insertionPaths))
         {
-            SendNativeFileDropMessage("nativeFileDrop", insertionPaths, PdfViewer.PointToScreen(e.GetPosition(PdfViewer)));
+            _ = InsertExternalFilesAsync(new ExternalFilesDropMessage(
+                insertionPaths.ToList(),
+                GetInsertionIndexAfterSelection()));
             e.Handled = true;
             return;
         }
@@ -2713,5 +3510,78 @@ public partial class MainWindow : Window
             .ToArray();
 
         return paths.Length > 0;
+    }
+}
+
+public sealed class PageOrganizerItem : INotifyPropertyChanged
+{
+    private int _position;
+    private int _rotation;
+    private bool _isSelected;
+    private bool _isActive;
+    private ImageSource? _thumbnail;
+    private double _thumbnailHeight = 142;
+
+    public PageOrganizerItem(int pageNumber)
+    {
+        PageNumber = pageNumber;
+    }
+
+    public event PropertyChangedEventHandler? PropertyChanged;
+
+    public int PageNumber { get; }
+
+    public int Position
+    {
+        get => _position;
+        set => SetField(ref _position, value, nameof(Position), nameof(PositionLabel));
+    }
+
+    public int Rotation
+    {
+        get => _rotation;
+        set => SetField(ref _rotation, value, nameof(Rotation), nameof(RotationLabel));
+    }
+
+    public bool IsSelected
+    {
+        get => _isSelected;
+        set => SetField(ref _isSelected, value, nameof(IsSelected));
+    }
+
+    public bool IsActive
+    {
+        get => _isActive;
+        set => SetField(ref _isActive, value, nameof(IsActive));
+    }
+
+    public ImageSource? Thumbnail
+    {
+        get => _thumbnail;
+        set => SetField(ref _thumbnail, value, nameof(Thumbnail));
+    }
+
+    public double ThumbnailHeight
+    {
+        get => _thumbnailHeight;
+        set => SetField(ref _thumbnailHeight, value, nameof(ThumbnailHeight));
+    }
+
+    public string PositionLabel => $"{Position}";
+
+    public string RotationLabel => Rotation == 0 ? string.Empty : $"{Rotation}°";
+
+    private void SetField<T>(ref T field, T value, params string[] propertyNames)
+    {
+        if (EqualityComparer<T>.Default.Equals(field, value))
+        {
+            return;
+        }
+
+        field = value;
+        foreach (var propertyName in propertyNames)
+        {
+            PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(propertyName));
+        }
     }
 }

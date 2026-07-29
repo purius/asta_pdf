@@ -10,6 +10,7 @@ $buildScriptPath = Join-Path $root 'scripts\build.ps1'
 $publishScriptPath = Join-Path $root 'scripts\publish.ps1'
 $releaseWorkflowPath = Join-Path $root '.github\workflows\release.yml'
 $releaseVerificationPath = Join-Path $root 'scripts\verify-latest-release.ps1'
+$packagedStartupVerificationPath = Join-Path $root 'scripts\verify-packaged-startup.ps1'
 $officialViewerPlanPath = Join-Path $root 'docs\superpowers\plans\2026-06-18-pdfjs-official-viewer-editor.md'
 $officialViewerSpecPath = Join-Path $root 'docs\superpowers\specs\2026-06-18-pdfjs-official-viewer-editor-design.md'
 $fallback = Get-Content -Raw $fallbackPath
@@ -20,6 +21,7 @@ $buildScript = Get-Content -Raw $buildScriptPath
 $publishScript = Get-Content -Raw $publishScriptPath
 $releaseWorkflow = Get-Content -Raw $releaseWorkflowPath
 $releaseVerification = if (Test-Path $releaseVerificationPath) { Get-Content -Raw $releaseVerificationPath } else { '' }
+$packagedStartupVerification = if (Test-Path $packagedStartupVerificationPath) { Get-Content -Raw $packagedStartupVerificationPath } else { '' }
 $officialViewerPlan = Get-Content -Raw $officialViewerPlanPath
 $officialViewerSpec = Get-Content -Raw $officialViewerSpecPath
 
@@ -118,9 +120,9 @@ if ($buildScript -notmatch 'AstaPdf\.DotNetBuild' -or
     throw 'Build and publish scripts must serialize dotnet restore/build/publish operations with the same mutex.'
 }
 
-if ($releaseWorkflow -notmatch 'verify-viewer-thumbnails\.ps1' -or
+if ($releaseWorkflow -notmatch 'verify-page-organizer\.ps1' -or
     $releaseWorkflow -notmatch 'verify-stability\.ps1') {
-    throw 'Release workflow must run viewer thumbnail and stability verifications before publishing an installer.'
+    throw 'Release workflow must run Page Organizer and stability verifications before publishing an installer.'
 }
 
 if ($releaseWorkflow -notmatch 'name: Test PDF split planning' -or
@@ -134,8 +136,16 @@ if ($releaseWorkflow -notmatch 'node --check src/PdfMergeTool/Assets/PdfViewerOf
     throw 'Release workflow must syntax-check official viewer adapter JavaScript before publishing an installer.'
 }
 
-if ($releaseWorkflow -match '(?s)name: Build installer.*?(Test PDF split planning|verify-viewer-thumbnails\.ps1)') {
+if ($releaseWorkflow -match '(?s)name: Build installer.*?(Test PDF split planning|verify-page-organizer\.ps1)') {
     throw 'Release workflow must run verification steps before building the installer.'
+}
+
+if (-not (Test-Path $packagedStartupVerificationPath) -or
+    $packagedStartupVerification -notmatch 'Start-Process -FilePath \$ApplicationPath' -or
+    $packagedStartupVerification -notmatch '\$process\.HasExited' -or
+    $packagedStartupVerification -notmatch 'Stop-Process -Id \$process\.Id -Force' -or
+    $releaseWorkflow -notmatch 'verify-packaged-startup\.ps1') {
+    throw 'Release workflow must verify that the packaged application stays alive during startup.'
 }
 
 if (-not (Test-Path $releaseVerificationPath) -or

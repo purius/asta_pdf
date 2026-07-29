@@ -793,48 +793,196 @@
                 Padding="10"
                 AllowDrop="True">
             <Grid>
-                <wv2:WebView2 x:Name="PdfViewer"
-                              AllowDrop="True"
-                              AllowExternalDrop="False" />
-                <Border x:Name="ViewerLoading"
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="272" MinWidth="220" MaxWidth="420" />
+                    <ColumnDefinition Width="8" />
+                    <ColumnDefinition Width="*" />
+                </Grid.ColumnDefinitions>
+
+                <Border Grid.Column="0"
                         Background="#F8FAFC"
-                        CornerRadius="8"
-                        AllowDrop="True">
-                    <StackPanel HorizontalAlignment="Center"
-                                VerticalAlignment="Center"
-                                Width="420">
-                        <Border Width="58"
-                                Height="58"
-                                CornerRadius="8"
-                                Background="#EAF1FF"
-                                HorizontalAlignment="Center"
-                                Margin="0,0,0,14">
-                            <TextBlock Text="PDF"
-                                       HorizontalAlignment="Center"
-                                       VerticalAlignment="Center"
-                                       FontWeight="Bold"
-                                       Foreground="#1D4ED8" />
-                        </Border>
-                        <TextBlock Text="PDF를 여기에 놓으세요."
-                                   TextAlignment="Center"
-                                   FontSize="22"
-                                   FontWeight="Bold"
-                                   Foreground="{StaticResource InkBrush}" />
-                        <TextBlock Text="창의 빈 영역, 헤더, 본문 어디에 놓아도 PDF가 열립니다."
-                                   TextAlignment="Center"
-                                   TextWrapping="Wrap"
-                                   Margin="0,8,0,0"
-                                   Foreground="{StaticResource MutedBrush}" />
-                        <Button Style="{StaticResource ToolbarButtonStyle}"
-                                HorizontalAlignment="Center"
-                                Margin="0,18,0,0"
-                                ToolTip="PDF 열기 (Ctrl+O)"
-                                Click="OnOpenPdfClick">
-                            <iconPacks:PackIconMaterial Kind="FolderOpen"
-                                                        Style="{StaticResource FileIconStyle}" />
-                        </Button>
-                    </StackPanel>
+                        BorderBrush="{StaticResource LineBrush}"
+                        BorderThickness="1"
+                        CornerRadius="6"
+                        Padding="8">
+                    <DockPanel>
+                        <StackPanel DockPanel.Dock="Top">
+                            <DockPanel LastChildFill="False">
+                                <TextBlock Text="페이지 구성"
+                                           DockPanel.Dock="Left"
+                                           FontWeight="Bold"
+                                           FontSize="14"
+                                           Foreground="{StaticResource InkBrush}" />
+                                <StackPanel DockPanel.Dock="Right"
+                                            Orientation="Horizontal">
+                                    <Button Style="{StaticResource ToolbarButtonStyle}"
+                                            ToolTip="실행 취소 (Ctrl+Z)"
+                                            Click="OnUndoClick">
+                                        <iconPacks:PackIconMaterial Kind="Undo"
+                                                                    Style="{StaticResource EditIconStyle}" />
+                                    </Button>
+                                    <Button Style="{StaticResource ToolbarButtonStyle}"
+                                            ToolTip="다시 실행 (Ctrl+Y)"
+                                            Click="OnRedoClick">
+                                        <iconPacks:PackIconMaterial Kind="Redo"
+                                                                    Style="{StaticResource EditIconStyle}" />
+                                    </Button>
+                                </StackPanel>
+                            </DockPanel>
+                            <TextBlock x:Name="PageOrganizerSummaryText"
+                                       Text="페이지 없음"
+                                       Margin="0,4,0,8"
+                                       FontSize="12"
+                                       Foreground="{StaticResource MutedBrush}" />
+                        </StackPanel>
+
+                        <ListBox x:Name="PageOrganizerList"
+                                 Background="Transparent"
+                                 BorderThickness="0"
+                                 Padding="0"
+                                 SelectionMode="Multiple"
+                                 Focusable="False"
+                                 AllowDrop="True"
+                                 PreviewMouseLeftButtonDown="OnPageOrganizerItemPreviewMouseLeftButtonDown"
+                                 PreviewMouseLeftButtonUp="OnPageOrganizerItemPreviewMouseLeftButtonUp"
+                                 PreviewMouseMove="OnPageOrganizerItemPreviewMouseMove"
+                                 DragOver="OnPageOrganizerDragOver"
+                                 Drop="OnPageOrganizerDrop"
+                                 ItemsSource="{Binding PageOrganizerItems, RelativeSource={RelativeSource AncestorType={x:Type Window}}}">
+                            <ListBox.ItemContainerStyle>
+                                <Style TargetType="{x:Type ListBoxItem}">
+                                    <Setter Property="HorizontalContentAlignment" Value="Stretch" />
+                                    <Setter Property="Padding" Value="0" />
+                                    <Setter Property="Margin" Value="0,0,0,6" />
+                                    <Setter Property="Template">
+                                        <Setter.Value>
+                                            <ControlTemplate TargetType="{x:Type ListBoxItem}">
+                                                <Border x:Name="OrganizerItemBorder"
+                                                        Background="#FFFFFF"
+                                                        BorderBrush="#D9E1EC"
+                                                        BorderThickness="1"
+                                                        CornerRadius="5"
+                                                        Padding="5">
+                                                    <ContentPresenter />
+                                                </Border>
+                                                <ControlTemplate.Triggers>
+                                                    <Trigger Property="IsSelected" Value="True">
+                                                        <Setter TargetName="OrganizerItemBorder" Property="Background" Value="#EAF1FF" />
+                                                        <Setter TargetName="OrganizerItemBorder" Property="BorderBrush" Value="#2563EB" />
+                                                    </Trigger>
+                                                </ControlTemplate.Triggers>
+                                            </ControlTemplate>
+                                        </Setter.Value>
+                                    </Setter>
+                                </Style>
+                            </ListBox.ItemContainerStyle>
+                            <ListBox.ItemTemplate>
+                                <DataTemplate>
+                                    <Grid Height="{Binding ThumbnailHeight}">
+                                        <Grid.ColumnDefinitions>
+                                            <ColumnDefinition Width="24" />
+                                            <ColumnDefinition Width="*" />
+                                            <ColumnDefinition Width="40" />
+                                        </Grid.ColumnDefinitions>
+                                        <CheckBox Grid.Column="0"
+                                                  VerticalAlignment="Top"
+                                                  Margin="0,3,0,0"
+                                                  IsChecked="{Binding IsSelected, Mode=OneWay}"
+                                                  Focusable="False"
+                                                  PreviewMouseLeftButtonDown="OnPageOrganizerCheckBoxPreviewMouseLeftButtonDown" />
+                                        <Border Grid.Column="1"
+                                                Background="#FFFFFF"
+                                                BorderBrush="#E5E7EB"
+                                                BorderThickness="1"
+                                                CornerRadius="3"
+                                                Padding="3">
+                                            <Grid>
+                                                <TextBlock Text="PDF"
+                                                           HorizontalAlignment="Center"
+                                                           VerticalAlignment="Center"
+                                                           FontWeight="SemiBold"
+                                                           Foreground="#94A3B8" />
+                                                <Image Source="{Binding Thumbnail}"
+                                                       Stretch="Uniform"
+                                                       RenderTransformOrigin="0.5,0.5">
+                                                    <Image.RenderTransform>
+                                                        <RotateTransform Angle="{Binding Rotation}" />
+                                                    </Image.RenderTransform>
+                                                </Image>
+                                            </Grid>
+                                        </Border>
+                                        <StackPanel Grid.Column="2"
+                                                    HorizontalAlignment="Center"
+                                                    VerticalAlignment="Top">
+                                            <TextBlock Text="{Binding PositionLabel}"
+                                                       FontWeight="Bold"
+                                                       Foreground="{StaticResource InkBrush}"
+                                                       TextAlignment="Center" />
+                                            <TextBlock Text="{Binding RotationLabel}"
+                                                       Margin="0,3,0,0"
+                                                       FontSize="10"
+                                                       Foreground="{StaticResource MutedBrush}"
+                                                       TextAlignment="Center"
+                                                       TextWrapping="Wrap" />
+                                        </StackPanel>
+                                    </Grid>
+                                </DataTemplate>
+                            </ListBox.ItemTemplate>
+                        </ListBox>
+                    </DockPanel>
                 </Border>
+
+                <GridSplitter Grid.Column="1"
+                              Width="8"
+                              HorizontalAlignment="Stretch"
+                              VerticalAlignment="Stretch"
+                              Background="Transparent" />
+
+                <Grid Grid.Column="2">
+                    <wv2:WebView2 x:Name="PdfViewer"
+                                  AllowDrop="True"
+                                  AllowExternalDrop="False"
+                                  PreviewKeyDown="OnViewerPreviewKeyDown" />
+                    <Border x:Name="ViewerLoading"
+                            Background="#F8FAFC"
+                            CornerRadius="8"
+                            AllowDrop="True">
+                        <StackPanel HorizontalAlignment="Center"
+                                    VerticalAlignment="Center"
+                                    Width="420">
+                            <Border Width="58"
+                                    Height="58"
+                                    CornerRadius="8"
+                                    Background="#EAF1FF"
+                                    HorizontalAlignment="Center"
+                                    Margin="0,0,0,14">
+                                <TextBlock Text="PDF"
+                                           HorizontalAlignment="Center"
+                                           VerticalAlignment="Center"
+                                           FontWeight="Bold"
+                                           Foreground="#1D4ED8" />
+                            </Border>
+                            <TextBlock Text="PDF를 여기에 놓으세요."
+                                       TextAlignment="Center"
+                                       FontSize="22"
+                                       FontWeight="Bold"
+                                       Foreground="{StaticResource InkBrush}" />
+                            <TextBlock Text="창의 빈 영역, 헤더, 본문 어디에 놓아도 PDF가 열립니다."
+                                       TextAlignment="Center"
+                                       TextWrapping="Wrap"
+                                       Margin="0,8,0,0"
+                                       Foreground="{StaticResource MutedBrush}" />
+                            <Button Style="{StaticResource ToolbarButtonStyle}"
+                                    HorizontalAlignment="Center"
+                                    Margin="0,18,0,0"
+                                    ToolTip="PDF 열기 (Ctrl+O)"
+                                    Click="OnOpenPdfClick">
+                                <iconPacks:PackIconMaterial Kind="FolderOpen"
+                                                            Style="{StaticResource FileIconStyle}" />
+                            </Button>
+                        </StackPanel>
+                    </Border>
+                </Grid>
             </Grid>
         </Border>
 
@@ -844,7 +992,7 @@
                 BorderThickness="0,1,0,0"
                 Padding="14,6">
             <DockPanel LastChildFill="False">
-                <TextBlock Text="Ctrl+휠: 본문 확대/축소 · Ctrl/Shift 클릭: 여러 페이지 선택 · 다른 창 썸네일로 드롭: 페이지 복사"
+                <TextBlock Text="페이지 구성 · PDF 미리보기"
                            DockPanel.Dock="Left"
                            Foreground="{StaticResource MutedBrush}"
                            FontSize="12"
