@@ -39,10 +39,6 @@ const thumbnailScheduler = await readFile(
   new URL("../src/PdfMergeTool/Services/PageOrganizerThumbnailScheduler.cs", import.meta.url),
   "utf8"
 );
-const pageOrganizerViewport = await readFile(
-  new URL("../src/PdfMergeTool/Services/PageOrganizerViewport.cs", import.meta.url),
-  "utf8"
-);
 
 const pageOrganizerThumbnailCapPattern =
   /pageNumbers\s*\.\s*Take\s*\(\s*96\s*\)/;
@@ -239,7 +235,8 @@ assert.throws(
 assertThumbnailOverlayContract(xaml);
 assert.match(mainWindow, /QueueActivePageFollow\(/);
 assert.match(mainWindow, /FollowActivePageOrganizerItem\(/);
-assert.match(mainWindow, /PageOrganizerViewport\.GetVerticalOffsetToReveal/);
+assert.match(mainWindow, /PageOrganizerList\.ScrollIntoView\(PageOrganizerRows\[rowIndex\]\);/);
+assert.doesNotMatch(mainWindow, /ScrollToVerticalOffset/);
 assert.match(mainWindow, /OnPageOrganizerPreviewKeyDown/);
 assert.match(mainWindow, /PageOrganizerList\.Focus\(\)/);
 assert.match(mainWindow, /Key\.PageUp/);
@@ -304,15 +301,12 @@ assert.match(queueViewportRefresh, /_pageOrganizerThumbnailViewportRefreshQueued
 const activePageFollow = getMethodBlock(
   mainWindow,
   "private void FollowActivePageOrganizerItem(int pageNumber, int followRevision)",
-  "private bool TryRevealPageOrganizerRowIfRealized"
+  "private bool IsCurrentViewerLoadMessage"
 );
-assert.doesNotMatch(activePageFollow, /ScrollIntoView/);
-assert.match(activePageFollow, /ScrollToEstimatedPageOrganizerRow\(rowIndex\)/);
-assert.match(activePageFollow, /followRevision == _pageOrganizerFollowRevision/);
-assert.match(
-  pageOrganizerViewport,
-  /GetVerticalOffsetToRevealIndexedRow\(\s*double currentOffset,\s*double viewportHeight,\s*int rowIndex,\s*double estimatedRowHeight,\s*double scrollableHeight\s*\)/s
-);
+assert.match(activePageFollow, /PageOrganizerList\.ScrollIntoView\(PageOrganizerRows\[rowIndex\]\);/);
+assert.doesNotMatch(activePageFollow, /ScrollToVerticalOffset/);
+assert.doesNotMatch(activePageFollow, /ScrollToEstimatedPageOrganizerRow/);
+assert.match(activePageFollow, /followRevision != _pageOrganizerFollowRevision/);
 
 const pageOrganizerColumnCount = getMethodBlock(
   mainWindow,

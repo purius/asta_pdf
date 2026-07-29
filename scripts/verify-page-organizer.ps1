@@ -147,7 +147,8 @@ if ($mainWindow -notmatch 'EditorDocumentState\? _pageOrganizerState' -or
     $mainWindow -notmatch 'QueueActivePageFollow\(' -or
     $mainWindow -notmatch 'FollowActivePageOrganizerItem\(' -or
     $mainWindow -notmatch 'IsActivePageFollowSuspended\(' -or
-    $mainWindow -notmatch 'PageOrganizerViewport\.GetVerticalOffsetToReveal' -or
+    $mainWindow -notmatch 'PageOrganizerList\.ScrollIntoView\(PageOrganizerRows\[rowIndex\]\)' -or
+    $mainWindow -match 'ScrollToVerticalOffset' -or
     $mainWindow -notmatch 'OnPageOrganizerPreviewKeyDown' -or
     $mainWindow -notmatch 'PageOrganizerList\.Focus\(\)' -or
     $mainWindow -notmatch 'Key\.PageUp' -or

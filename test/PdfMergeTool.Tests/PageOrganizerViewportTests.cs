@@ -36,12 +36,4 @@ public sealed class PageOrganizerViewportTests
 
         Assert.Equal(920d, result);
     }
-
-    [Fact]
-    public void GetVerticalOffsetToRevealIndexedRow_moves_only_far_enough_to_show_a_virtualized_row()
-    {
-        var result = PageOrganizerViewport.GetVerticalOffsetToRevealIndexedRow(0, 300, 2, 160, 1500);
-
-        Assert.Equal(180d, result);
-    }
 }

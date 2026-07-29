@@ -473,91 +473,15 @@ public partial class MainWindow : Window
     {
         if (!_pageOrganizerRowIndexesByPageNumber.TryGetValue(pageNumber, out var rowIndex) ||
             rowIndex < 0 ||
-            rowIndex >= PageOrganizerRows.Count)
-        {
-            return;
-        }
-
-        if (TryRevealPageOrganizerRowIfRealized(pageNumber))
-        {
-            return;
-        }
-
-        ScrollToEstimatedPageOrganizerRow(rowIndex);
-        var loadGeneration = _documentLoadGeneration;
-        _ = Dispatcher.BeginInvoke(new Action(() =>
-        {
-            if (followRevision == _pageOrganizerFollowRevision &&
-                loadGeneration == _documentLoadGeneration &&
-                !IsActivePageFollowSuspended() &&
-                _activePage == pageNumber)
-            {
-                TryRevealPageOrganizerRowIfRealized(pageNumber);
-            }
-        }), DispatcherPriority.Loaded);
-    }
-
-    private bool TryRevealPageOrganizerRowIfRealized(int pageNumber)
-    {
-        if (!_pageOrganizerRowIndexesByPageNumber.TryGetValue(pageNumber, out var rowIndex) ||
-            rowIndex < 0 ||
             rowIndex >= PageOrganizerRows.Count ||
-            PageOrganizerList.ItemContainerGenerator.ContainerFromIndex(rowIndex) is not FrameworkElement container)
-        {
-            return false;
-        }
-
-        var scrollViewer = FindVisualDescendant<ScrollViewer>(PageOrganizerList);
-        if (scrollViewer is null || scrollViewer.ViewportHeight <= 0 || container.ActualHeight <= 0)
-        {
-            return false;
-        }
-
-        try
-        {
-            var itemTop = container.TranslatePoint(new Point(), scrollViewer).Y;
-            var targetOffset = PageOrganizerViewport.GetVerticalOffsetToReveal(
-                scrollViewer.VerticalOffset,
-                scrollViewer.ViewportHeight,
-                itemTop,
-                itemTop + container.ActualHeight,
-                scrollViewer.ScrollableHeight);
-            if (targetOffset is { } offset)
-            {
-                scrollViewer.ScrollToVerticalOffset(offset);
-            }
-
-            return true;
-        }
-        catch (InvalidOperationException)
-        {
-            // The item can be regenerated while the PDF viewer is changing pages.
-            return false;
-        }
-    }
-
-    private void ScrollToEstimatedPageOrganizerRow(int rowIndex)
-    {
-        var scrollViewer = FindVisualDescendant<ScrollViewer>(PageOrganizerList);
-        if (scrollViewer is null ||
-            scrollViewer.ViewportHeight <= 0 ||
-            scrollViewer.ExtentHeight <= 0 ||
-            PageOrganizerRows.Count == 0)
+            followRevision != _pageOrganizerFollowRevision ||
+            IsActivePageFollowSuspended() ||
+            _activePage != pageNumber)
         {
             return;
         }
 
-        var estimatedRowHeight = scrollViewer.ExtentHeight / PageOrganizerRows.Count;
-        var targetOffset = PageOrganizerViewport.GetVerticalOffsetToRevealIndexedRow(
-            scrollViewer.VerticalOffset,
-            scrollViewer.ViewportHeight,
-            rowIndex,
-            estimatedRowHeight,
-            scrollViewer.ScrollableHeight);
-        if (targetOffset is { } offset)
-        {
-            scrollViewer.ScrollToVerticalOffset(offset);
-        }
+        PageOrganizerList.ScrollIntoView(PageOrganizerRows[rowIndex]);
     }
 
     private bool IsCurrentViewerLoadMessage(JsonElement root)
