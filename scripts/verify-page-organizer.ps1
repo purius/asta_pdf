@@ -94,7 +94,17 @@ if ($mainWindow -notmatch 'EditorDocumentState\? _pageOrganizerState' -or
     $mainWindow -notmatch 'IsDropBefore' -or
     $mainWindow -notmatch 'IsDropAfter' -or
     $mainWindow -notmatch '_pageOrganizerState\.Undo\(\)' -or
-    $mainWindow -notmatch '_pageOrganizerState\.Redo\(\)') {
+    $mainWindow -notmatch '_pageOrganizerState\.Redo\(\)' -or
+    $mainWindow -notmatch 'QueueActivePageFollow\(' -or
+    $mainWindow -notmatch 'FollowActivePageOrganizerItem\(' -or
+    $mainWindow -notmatch 'IsActivePageFollowSuspended\(' -or
+    $mainWindow -notmatch 'PageOrganizerViewport\.GetVerticalOffsetToReveal' -or
+    $mainWindow -notmatch 'OnPageOrganizerPreviewKeyDown' -or
+    $mainWindow -notmatch 'PageOrganizerList\.Focus\(\)' -or
+    $mainWindow -notmatch 'Key\.PageUp' -or
+    $mainWindow -notmatch 'Key\.PageDown' -or
+    $mainWindow -notmatch 'Key\.Home' -or
+    $mainWindow -notmatch 'Key\.End') {
     throw 'MainWindow must route Page Organizer selection, drag moves, and undo/redo through one app-owned state.'
 }
 
@@ -106,10 +116,12 @@ if ($mainWindow -match 'SendViewerCommand\("thumbZoom(In|Out|Reset)"\)' -or
 }
 
 if ($xaml -notmatch 'x:Name="PageOrganizerList"' -or
+    $xaml -notmatch 'x:Name="PageOrganizerList"[\s\S]*?Focusable="True"' -or
     $xaml -notmatch 'PreviewMouseLeftButtonDown="OnPageOrganizerItemPreviewMouseLeftButtonDown"' -or
     $xaml -notmatch 'PreviewMouseLeftButtonDown="OnPageOrganizerCheckBoxPreviewMouseLeftButtonDown"' -or
     $xaml -notmatch 'PreviewMouseLeftButtonUp="OnPageOrganizerItemPreviewMouseLeftButtonUp"' -or
     $xaml -notmatch 'PreviewKeyDown="OnViewerPreviewKeyDown"' -or
+    $xaml -notmatch 'PreviewKeyDown="OnPageOrganizerPreviewKeyDown"' -or
     $xaml -notmatch 'x:Name="PageOrganizerZoomSlider"' -or
     $xaml -notmatch '<WrapPanel Orientation="Horizontal"' -or
     $xaml -notmatch 'ScrollViewer\.HorizontalScrollBarVisibility="Disabled"' -or
