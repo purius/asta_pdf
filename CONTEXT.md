@@ -43,3 +43,7 @@ _Avoid_: editor-only undo, page undo
 **Recovery Snapshot**:
 An internal, non-source copy of unsaved editing state used only to offer recovery after an interrupted session. It never replaces a Working Save Target or the original source PDF without a user decision.
 _Avoid_: auto-save to original, backup PDF
+
+**Page Organizer**:
+The app-owned page management panel that is the sole authority for page selection, order, rotations, structural edits, and Edit History. The embedded PDF viewer renders the current document but does not own page-editing interactions.
+_Avoid_: PDF.js thumbnail editor, viewer page manager
