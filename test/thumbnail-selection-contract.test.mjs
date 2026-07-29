@@ -82,6 +82,16 @@ assert.match(xaml, /x:Name="DropBeforeIndicator"/);
 assert.match(xaml, /x:Name="DropAfterIndicator"/);
 assert.match(xaml, /Binding="\{Binding IsDropBefore\}"/);
 assert.match(xaml, /Binding="\{Binding IsDropAfter\}"/);
+assert.match(mainWindow, /QueueActivePageFollow\(/);
+assert.match(mainWindow, /FollowActivePageOrganizerItem\(/);
+assert.match(mainWindow, /PageOrganizerViewport\.GetVerticalOffsetToReveal/);
+assert.match(mainWindow, /OnPageOrganizerPreviewKeyDown/);
+assert.match(mainWindow, /PageOrganizerList\.Focus\(\)/);
+assert.match(mainWindow, /Key\.PageUp/);
+assert.match(mainWindow, /Key\.PageDown/);
+assert.match(mainWindow, /Key\.Home/);
+assert.match(mainWindow, /Key\.End/);
+assert.match(xaml, /x:Name="PageOrganizerList"[\s\S]*?Focusable="True"[\s\S]*?PreviewKeyDown="OnPageOrganizerPreviewKeyDown"/);
 
 const emittedMessages = [];
 const eventHandlers = new Map();

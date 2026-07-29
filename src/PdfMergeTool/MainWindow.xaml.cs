@@ -68,6 +68,11 @@ public partial class MainWindow : Window
     private Point? _pageOrganizerDragStartPosition;
     private int? _pageOrganizerPendingPlainSelectionPageNumber;
     private int? _pageOrganizerDropInsertionIndex;
+    private int? _pendingPageOrganizerFollowPage;
+    private int _pendingPageOrganizerFollowLoadGeneration;
+    private int _pageOrganizerFollowRequestId;
+    private bool _pageOrganizerFollowQueued;
+    private bool _isPageOrganizerDragInProgress;
     private double _pageOrganizerThumbnailHeight = DefaultPageOrganizerThumbnailHeight;
     private MergeWindow? _mergeWindow;
     private TaskCompletionSource<bool>? _printReadyCompletion;
@@ -393,7 +398,95 @@ public partial class MainWindow : Window
         var activePage = activeElement.GetInt32();
         if (_pageOrganizerState.PageNumbers.Contains(activePage))
         {
-            ApplyPageOrganizerState(_pageOrganizerState.ActivatePage(activePage));
+            var nextState = _pageOrganizerState.ActivatePage(activePage);
+            ApplyPageOrganizerState(nextState);
+            QueueActivePageFollow(activePage);
+        }
+    }
+
+    private void QueueActivePageFollow(int pageNumber)
+    {
+        if (IsActivePageFollowSuspended())
+        {
+            return;
+        }
+
+        _pendingPageOrganizerFollowPage = pageNumber;
+        _pendingPageOrganizerFollowLoadGeneration = _documentLoadGeneration;
+        if (_pageOrganizerFollowQueued)
+        {
+            return;
+        }
+
+        _pageOrganizerFollowQueued = true;
+        var requestId = ++_pageOrganizerFollowRequestId;
+        _ = Dispatcher.BeginInvoke(new Action(() =>
+        {
+            if (requestId != _pageOrganizerFollowRequestId)
+            {
+                return;
+            }
+
+            _pageOrganizerFollowQueued = false;
+            var page = _pendingPageOrganizerFollowPage;
+            var loadGeneration = _pendingPageOrganizerFollowLoadGeneration;
+            _pendingPageOrganizerFollowPage = null;
+            if (page is null || loadGeneration != _documentLoadGeneration || IsActivePageFollowSuspended())
+            {
+                return;
+            }
+
+            FollowActivePageOrganizerItem(page.Value);
+        }), DispatcherPriority.Loaded);
+    }
+
+    private void ResetActivePageFollow()
+    {
+        _pendingPageOrganizerFollowPage = null;
+        _pendingPageOrganizerFollowLoadGeneration = 0;
+        _pageOrganizerFollowQueued = false;
+        _pageOrganizerFollowRequestId++;
+    }
+
+    private bool IsActivePageFollowSuspended() =>
+        IsDocumentMutationInProgress || _isPageOrganizerDragInProgress;
+
+    private void FollowActivePageOrganizerItem(int pageNumber)
+    {
+        if (_pageOrganizerState is null)
+        {
+            return;
+        }
+
+        var index = _pageOrganizerState.PageNumbers.ToList().IndexOf(pageNumber);
+        if (index < 0 || PageOrganizerList.ItemContainerGenerator.ContainerFromIndex(index) is not FrameworkElement container)
+        {
+            return;
+        }
+
+        var scrollViewer = FindVisualDescendant<ScrollViewer>(PageOrganizerList);
+        if (scrollViewer is null || scrollViewer.ViewportHeight <= 0 || container.ActualHeight <= 0)
+        {
+            return;
+        }
+
+        try
+        {
+            var itemTop = container.TranslatePoint(new Point(), scrollViewer).Y;
+            var targetOffset = PageOrganizerViewport.GetVerticalOffsetToReveal(
+                scrollViewer.VerticalOffset,
+                scrollViewer.ViewportHeight,
+                itemTop,
+                itemTop + container.ActualHeight,
+                scrollViewer.ScrollableHeight);
+            if (targetOffset is { } offset)
+            {
+                scrollViewer.ScrollToVerticalOffset(offset);
+            }
+        }
+        catch (InvalidOperationException)
+        {
+            // The item can be regenerated while the PDF viewer is changing pages.
         }
     }
 
@@ -504,6 +597,7 @@ public partial class MainWindow : Window
     {
         var loadGeneration = _documentOperations.StartNewDocument();
         _documentLoadGeneration = loadGeneration;
+        ResetActivePageFollow();
         CancelPendingViewerDocumentOperations();
         CleanupCompatibilityState();
         _pendingPdfPath = null;
@@ -3174,6 +3268,7 @@ public partial class MainWindow : Window
             return;
         }
 
+        PageOrganizerList.Focus();
         ClearPageOrganizerPointerState();
         ApplyPageOrganizerState(
             _pageOrganizerState.SelectPage(item.PageNumber, PageSelectionMode.Toggle),
@@ -3207,6 +3302,7 @@ public partial class MainWindow : Window
             return;
         }
 
+        PageOrganizerList.Focus();
         var modifiers = Keyboard.Modifiers;
         var selectionMode = modifiers.HasFlag(ModifierKeys.Shift)
             ? PageSelectionMode.Range
@@ -3279,6 +3375,7 @@ public partial class MainWindow : Window
         }
 
         _pageOrganizerPendingPlainSelectionPageNumber = null;
+        _isPageOrganizerDragInProgress = true;
         try
         {
             var data = new DataObject(PageOrganizerDragDataFormat, pageNumber);
@@ -3286,6 +3383,7 @@ public partial class MainWindow : Window
         }
         finally
         {
+            _isPageOrganizerDragInProgress = false;
             ClearPageOrganizerPointerState();
         }
     }
@@ -3474,6 +3572,27 @@ public partial class MainWindow : Window
         return null;
     }
 
+    private static T? FindVisualDescendant<T>(DependencyObject root)
+        where T : DependencyObject
+    {
+        for (var index = 0; index < VisualTreeHelper.GetChildrenCount(root); index++)
+        {
+            var child = VisualTreeHelper.GetChild(root, index);
+            if (child is T typed)
+            {
+                return typed;
+            }
+
+            var descendant = FindVisualDescendant<T>(child);
+            if (descendant is not null)
+            {
+                return descendant;
+            }
+        }
+
+        return null;
+    }
+
     private static DependencyObject? GetVisualParent(DependencyObject current)
     {
         try
@@ -3494,6 +3613,63 @@ public partial class MainWindow : Window
     private void OnViewerPreviewKeyDown(object sender, KeyEventArgs e)
     {
         HandleApplicationKeyDown(sender, e);
+    }
+
+    private void OnPageOrganizerPreviewKeyDown(object sender, KeyEventArgs e)
+    {
+        if (!PageOrganizerList.IsKeyboardFocusWithin)
+        {
+            return;
+        }
+
+        if (TryHandlePageOrganizerNavigationKey(e))
+        {
+            e.Handled = true;
+            return;
+        }
+
+        HandleApplicationKeyDown(sender, e);
+    }
+
+    private bool TryHandlePageOrganizerNavigationKey(KeyEventArgs e)
+    {
+        var navigationKey = e.Key is Key.Left or Key.Right or Key.Up or Key.Down or
+            Key.PageUp or Key.PageDown or Key.Home or Key.End;
+        if (!navigationKey)
+        {
+            return false;
+        }
+
+        if (Keyboard.Modifiers != ModifierKeys.None)
+        {
+            return true;
+        }
+
+        switch (e.Key)
+        {
+            case Key.Left:
+            case Key.Up:
+                NavigatePageOrganizer(-1);
+                break;
+            case Key.Right:
+            case Key.Down:
+                NavigatePageOrganizer(1);
+                break;
+            case Key.PageUp:
+                NavigatePageOrganizer(-10);
+                break;
+            case Key.PageDown:
+                NavigatePageOrganizer(10);
+                break;
+            case Key.Home:
+                NavigatePageOrganizerBoundary(last: false);
+                break;
+            case Key.End:
+                NavigatePageOrganizerBoundary(last: true);
+                break;
+        }
+
+        return true;
     }
 
     private void HandleApplicationKeyDown(object sender, KeyEventArgs e)
