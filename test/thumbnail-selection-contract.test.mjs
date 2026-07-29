@@ -36,6 +36,13 @@ const xaml = await readFile(
   "utf8"
 );
 
+const pageOrganizerThumbnailCapPattern =
+  /pageNumbers\s*\.\s*Take\s*\(\s*96\s*\)/;
+const thumbnailLoadingOverlayPattern =
+  /<ProgressBar(?=\s|>)[^>]*\bIsHitTestVisible\s*=\s*"False"[^>]*>[\s\S]*?<ProgressBar\.Style>[\s\S]*?<Setter\s+Property\s*=\s*"Visibility"\s+Value\s*=\s*"Collapsed"\s*\/>[\s\S]*?<DataTrigger\s+Binding\s*=\s*"\{Binding\s+IsThumbnailLoading\}"\s+Value\s*=\s*"True"\s*>[\s\S]*?<Setter\s+Property\s*=\s*"Visibility"\s+Value\s*=\s*"Visible"\s*\/>[\s\S]*?<\/DataTrigger>[\s\S]*?<\/ProgressBar>/;
+const thumbnailRetryOverlayPattern =
+  /<Button(?=\s|>)[^>]*\bClick\s*=\s*"OnPageOrganizerThumbnailRetryClick"[^>]*>[\s\S]*?<Button\.Style>[\s\S]*?<Setter\s+Property\s*=\s*"Visibility"\s+Value\s*=\s*"Collapsed"\s*\/>[\s\S]*?<DataTrigger\s+Binding\s*=\s*"\{Binding\s+IsThumbnailFailed\}"\s+Value\s*=\s*"True"\s*>[\s\S]*?<Setter\s+Property\s*=\s*"Visibility"\s+Value\s*=\s*"Visible"\s*\/>[\s\S]*?<\/DataTrigger>[\s\S]*?<iconPacks:PackIconMaterial(?=\s|\/|>)[^>]*\bKind\s*=\s*"Refresh"[^>]*\/>[\s\S]*?<\/Button>/;
+
 assert.match(mainWindow, /EditorDocumentState\? _pageOrganizerState/);
 assert.match(mainWindow, /void ApplyPageOrganizerState\(/);
 assert.match(mainWindow, /OnPageOrganizerCheckBoxPreviewMouseLeftButtonDown/);
@@ -82,9 +89,8 @@ assert.match(xaml, /x:Name="DropBeforeIndicator"/);
 assert.match(xaml, /x:Name="DropAfterIndicator"/);
 assert.match(xaml, /Binding="\{Binding IsDropBefore\}"/);
 assert.match(xaml, /Binding="\{Binding IsDropAfter\}"/);
-assert.match(xaml, /OnPageOrganizerThumbnailRetryClick/);
-assert.match(xaml, /Binding="{Binding IsThumbnailLoading}"/);
-assert.match(xaml, /Binding="{Binding IsThumbnailFailed}"/);
+assert.match(xaml, thumbnailLoadingOverlayPattern);
+assert.match(xaml, thumbnailRetryOverlayPattern);
 assert.match(mainWindow, /QueueActivePageFollow\(/);
 assert.match(mainWindow, /FollowActivePageOrganizerItem\(/);
 assert.match(mainWindow, /PageOrganizerViewport\.GetVerticalOffsetToReveal/);
@@ -100,7 +106,10 @@ assert.match(mainWindow, /OnPageOrganizerThumbnailScrollChanged/);
 assert.match(mainWindow, /RefreshPageOrganizerThumbnailViewport/);
 assert.match(mainWindow, /OnPageOrganizerThumbnailRetryClick/);
 assert.match(mainWindow, /PageOrganizerThumbnailRenderState.Failed/);
-assert.doesNotMatch(mainWindow, /pageNumbers.Take(96)/);
+for (const restoredThumbnailCap of ["pageNumbers.Take(96)", "pageNumbers . Take ( 96 )"]) {
+  assert.match(restoredThumbnailCap, pageOrganizerThumbnailCapPattern);
+}
+assert.doesNotMatch(mainWindow, pageOrganizerThumbnailCapPattern);
 assert.match(mainWindow, /_pageOrganizerThumbnailCacheWindow = cacheWindow\.ToHashSet\(\)/);
 assert.match(mainWindow, /item\.ThumbnailRenderState = PageOrganizerThumbnailRenderState\.Loading/);
 assert.match(

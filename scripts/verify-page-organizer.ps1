@@ -115,7 +115,7 @@ if ($mainWindow -match 'SendViewerCommand\("thumbZoom(In|Out|Reset)"\)' -or
     throw 'Thumbnail zoom and A4 conversion must be owned by the WPF Page Organizer and native renderer.'
 }
 
-if ($mainWindow -match 'pageNumbers.Take(96)' -or
+if ($mainWindow -match 'pageNumbers\s*\.\s*Take\s*\(\s*96\s*\)' -or
     $mainWindow -notmatch 'PageOrganizerThumbnailScheduler' -or
     $mainWindow -notmatch 'OnPageOrganizerThumbnailScrollChanged' -or
     $mainWindow -notmatch 'RefreshPageOrganizerThumbnailViewport' -or
@@ -123,6 +123,48 @@ if ($mainWindow -match 'pageNumbers.Take(96)' -or
     $mainWindow -notmatch 'PageOrganizerThumbnailRenderState.Failed') {
     throw 'Page Organizer thumbnail scheduling, viewport refresh, and retry state must remain app-owned.'
 }
+
+$thumbnailLoadingOverlayPattern = @'
+(?xs)
+<ProgressBar(?=\s|>)
+    [^>]* \bIsHitTestVisible \s* = \s* "False"
+    [^>]* >
+.*?
+<ProgressBar\.Style>
+.*?
+<Setter \s+ Property \s* = \s* "Visibility" \s+ Value \s* = \s* "Collapsed" \s* />
+.*?
+<DataTrigger \s+ Binding \s* = \s* "\{Binding \s+ IsThumbnailLoading\}" \s+ Value \s* = \s* "True" \s* >
+.*?
+<Setter \s+ Property \s* = \s* "Visibility" \s+ Value \s* = \s* "Visible" \s* />
+.*?
+</DataTrigger>
+.*?
+</ProgressBar>
+'@
+
+$thumbnailRetryOverlayPattern = @'
+(?xs)
+<Button(?=\s|>)
+    [^>]* \bClick \s* = \s* "OnPageOrganizerThumbnailRetryClick"
+    [^>]* >
+.*?
+<Button\.Style>
+.*?
+<Setter \s+ Property \s* = \s* "Visibility" \s+ Value \s* = \s* "Collapsed" \s* />
+.*?
+<DataTrigger \s+ Binding \s* = \s* "\{Binding \s+ IsThumbnailFailed\}" \s+ Value \s* = \s* "True" \s* >
+.*?
+<Setter \s+ Property \s* = \s* "Visibility" \s+ Value \s* = \s* "Visible" \s* />
+.*?
+</DataTrigger>
+.*?
+<iconPacks:PackIconMaterial(?=\s|/|>)
+    [^>]* \bKind \s* = \s* "Refresh"
+    [^>]* />
+.*?
+</Button>
+'@
 
 if ($xaml -notmatch 'x:Name="PageOrganizerList"' -or
     $xaml -notmatch 'x:Name="PageOrganizerList"[\s\S]*?Focusable="True"' -or
@@ -137,11 +179,13 @@ if ($xaml -notmatch 'x:Name="PageOrganizerList"' -or
     $xaml -notmatch 'DragLeave="OnPageOrganizerDragLeave"' -or
     $xaml -notmatch 'x:Name="DropBeforeIndicator"' -or
     $xaml -notmatch 'x:Name="DropAfterIndicator"' -or
-    $xaml -notmatch 'Drop="OnPageOrganizerDrop"' -or
-    $xaml -notmatch 'Click="OnPageOrganizerThumbnailRetryClick"' -or
-    $xaml -notmatch 'Binding="{Binding IsThumbnailLoading}"' -or
-    $xaml -notmatch 'Binding="{Binding IsThumbnailFailed}"') {
+    $xaml -notmatch 'Drop="OnPageOrganizerDrop"') {
     throw 'MainWindow must expose the app-owned Page Organizer panel and its direct input handlers.'
+}
+
+if ($xaml -notmatch $thumbnailLoadingOverlayPattern -or
+    $xaml -notmatch $thumbnailRetryOverlayPattern) {
+    throw 'Page Organizer thumbnail overlays must expose scoped loading and retry state.'
 }
 
 Write-Output 'page organizer checks passed.'
