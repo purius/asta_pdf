@@ -71,7 +71,7 @@ if ($operationCoordinator -notmatch 'StartNewDocument\(' -or
 }
 
 if ($mainWindow -notmatch 'EditorDocumentState\? _pageOrganizerState' -or
-    $mainWindow -notmatch 'InitializePageOrganizerState\(' -or
+    $mainWindow -notmatch 'InitializePageOrganizerStateAsync\(' -or
     $mainWindow -notmatch 'ApplyPageOrganizerState\(' -or
     $mainWindow -notmatch 'OnPageOrganizerCheckBoxPreviewMouseLeftButtonDown' -or
     $mainWindow -notmatch 'OnPageOrganizerItemPreviewMouseLeftButtonDown' -or
